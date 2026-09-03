@@ -1,0 +1,96 @@
+{
+    "version": "6.1",
+    "builds": [
+        {
+            "timestamp": "2026-08-30T16:21:40",
+            "status": "SUCCESS",
+            "page_count": 24,
+            "errors": [],
+            "warnings": [
+                "ShadowVendor2.png: source resolution is low (896x1200); recommended minimum is 1500x2000.",
+                "The Memory Vending Machine png.png: source resolution is low (896x1200); recommended minimum is 1500x2000.",
+                "TheBoneLocker.png: source resolution is low (896x1200); recommended minimum is 1500x2000.",
+                "TheDollHeadVendor.png: source resolution is low (896x1200); recommended minimum is 1500x2000.",
+                "TheLarvaSnackMachine.png: source resolution is low (896x1200); recommended minimum is 1500x2000.",
+                "TheMeatLocker.png: source resolution is low (896x1200); recommended minimum is 1500x2000.",
+                "TheMimicMachine.png: source resolution is low (896x1200); recommended minimum is 1500x2000.",
+                "TheShadowVendor.png: source resolution is low (896x1200); recommended minimum is 1500x2000.",
+                "TheUnbornSpecies.png: source resolution is low (896x1200); recommended minimum is 1500x2000."
+            ],
+            "fingerprint": "06f2e922fe181fc7170a55ef713424188ca4994c4eb1d5ddd7959c202ff07dbd"
+        },
+        {
+            "timestamp": "2026-08-30T16:29:28",
+            "status": "SUCCESS",
+            "page_count": 24,
+            "errors": [],
+            "warnings": [
+                "ShadowVendor2.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "The Memory Vending Machine png.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheBoneLocker.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheDollHeadVendor.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheLarvaSnackMachine.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheMeatLocker.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheMimicMachine.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheShadowVendor.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheUnbornSpecies.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300)."
+            ],
+            "fingerprint": "3b816ea497a9ffaa1656de02a7d4b86b3671e83b774db364f746fb63b55dafd1"
+        },
+        {
+            "timestamp": "2026-08-30T16:48:43",
+            "status": "SUCCESS",
+            "page_count": 24,
+            "errors": [],
+            "warnings": [
+                "ShadowVendor2.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "The Memory Vending Machine png.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheBoneLocker.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheDollHeadVendor.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheLarvaSnackMachine.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheMeatLocker.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheMimicMachine.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheShadowVendor.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheUnbornSpecies.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300)."
+            ],
+            "fingerprint": "8d13e229f1de67fcac08f2d3a9879c4796a7e297adf30f16fdd5943200168243"
+        },
+        {
+            "timestamp": "2026-08-30T18:54:06",
+            "status": "SUCCESS",
+            "page_count": 24,
+            "errors": [],
+            "warnings": [
+                "ShadowVendor2.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "The Memory Vending Machine png.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheBoneLocker.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheDollHeadVendor.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheLarvaSnackMachine.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheMeatLocker.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheMimicMachine.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheShadowVendor.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheUnbornSpecies.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300)."
+            ],
+            "fingerprint": "2fb737bc6070d7b1df3cad7c74363ad5318ce07b07e2b6f81077c83b7a485e73"
+        },
+        {
+            "timestamp": "2026-09-01T23:07:35",
+            "status": "SUCCESS",
+            "page_count": 36,
+            "errors": [],
+            "warnings": [
+                "ShadowVendor2.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "The Memory Vending Machine png.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheBoneLocker.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheDollHeadVendor.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheLarvaSnackMachine.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheMeatLocker.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheMimicMachine.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheShadowVendor.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "TheUnbornSpecies.png: source resolution is low (896x1200); production prep will create a larger working copy (target 2550x3300).",
+                "Cover artwork effective resolution is about 191 DPI; KDP recommends at least 300 DPI for cover images."
+            ],
+            "fingerprint": "ce079729dfe8f9aa566838387620d106b8b0d0fb5b0bb1cdf3f6ec46d3b6a9c1"
+        }
+    ]
+}

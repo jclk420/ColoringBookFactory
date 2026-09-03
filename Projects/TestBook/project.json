@@ -1,0 +1,13 @@
+{
+    "title": "Test Coloring Book",
+    "author": "Jeff Clark",
+    "genre": "Fantasy",
+    "theme": "Magical Creatures",
+    "trim_width": 8.5,
+    "trim_height": 11,
+    "dpi": 300,
+    "border_pixels": 150,
+    "number_of_images": 2,
+    "min_source_width": 1500,
+    "min_source_height": 2000
+}

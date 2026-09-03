@@ -1,0 +1,252 @@
+{
+    "assembly_mode": "auto",
+    "pages": [
+        {
+            "type": "title",
+            "title": "Monster Vending Machines"
+        },
+        {
+            "type": "copyright",
+            "title": "Copyright",
+            "body": ""
+        },
+        {
+            "type": "coloring",
+            "image": "001",
+            "artwork_id": "ART-639B804043EF4819",
+            "title": "Shadow Vendor2",
+            "source": "ShadowVendor2.png"
+        },
+        {
+            "type": "coloring",
+            "image": "002",
+            "artwork_id": "ART-FB7F5E9E1FBC1564",
+            "title": "The Memory Vending Machine Png",
+            "source": "The Memory Vending Machine png.png"
+        },
+        {
+            "type": "coloring",
+            "image": "003",
+            "artwork_id": "ART-E1A76C7D88677536",
+            "title": "The Bone Locker",
+            "source": "TheBoneLocker.png"
+        },
+        {
+            "type": "coloring",
+            "image": "004",
+            "artwork_id": "ART-D6583FB1B197EF29",
+            "title": "The Bottled Nightmare Machine",
+            "source": "TheBottledNightmareMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "005",
+            "artwork_id": "ART-60C64E764012D7AD",
+            "title": "The Cathedral Machine",
+            "source": "TheCathedralMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "006",
+            "artwork_id": "ART-4F2697CDE6427862",
+            "title": "The Coin Operated Doppelganger Machine",
+            "source": "TheCoinOperatedDoppelgangerMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "007",
+            "artwork_id": "ART-8853F05BA21D8B53",
+            "title": "The Doll Head Vendor",
+            "source": "TheDollHeadVendor.png"
+        },
+        {
+            "type": "coloring",
+            "image": "008",
+            "artwork_id": "ART-A365823399633366",
+            "title": "The Doorway Machine",
+            "source": "TheDoorwayMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "009",
+            "artwork_id": "ART-66DC584A0940D538",
+            "title": "The Dream Parasite Macine",
+            "source": "TheDreamParasiteMacine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "010",
+            "artwork_id": "ART-2CDF067FB1BB6006",
+            "title": "The Eye Collector",
+            "source": "TheEyeCollector.png"
+        },
+        {
+            "type": "coloring",
+            "image": "011",
+            "artwork_id": "ART-97B79EA763FDCE68",
+            "title": "The Failed Ressurection Machine",
+            "source": "TheFailedRessurectionMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "012",
+            "artwork_id": "ART-0DB14B46125C0780",
+            "title": "The Forgotten God Vendor",
+            "source": "TheForgottenGodVendor.png"
+        },
+        {
+            "type": "coloring",
+            "image": "013",
+            "artwork_id": "ART-9A9279F550EB1714",
+            "title": "The Fungus Intelligence Vendor",
+            "source": "TheFungusIntelligenceVendor.png"
+        },
+        {
+            "type": "coloring",
+            "image": "014",
+            "artwork_id": "ART-126F5F175181F83C",
+            "title": "The God Egg Dispenser",
+            "source": "TheGodEggDispenser.png"
+        },
+        {
+            "type": "coloring",
+            "image": "015",
+            "artwork_id": "ART-1DBAE2D9C081FCDB",
+            "title": "The Human Cocoon Vendor",
+            "source": "TheHumanCocoonVendor.png"
+        },
+        {
+            "type": "coloring",
+            "image": "016",
+            "artwork_id": "ART-1FB1B652953E6B71",
+            "title": "The Human Spare Parts Machine",
+            "source": "TheHumanSparePartsMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "017",
+            "artwork_id": "ART-126FAE11BED6387B",
+            "title": "The Impossible Organ Machine",
+            "source": "TheImpossibleOrganMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "018",
+            "artwork_id": "ART-734A520D3D70312B",
+            "title": "The Infinite Meat Locker Machine",
+            "source": "TheInfiniteMeatLockerMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "019",
+            "artwork_id": "ART-02CCE417A7AFB7D0",
+            "title": "The Larva Snack Machine",
+            "source": "TheLarvaSnackMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "020",
+            "artwork_id": "ART-83840258B5BC32B0",
+            "title": "The Last Breath Machine",
+            "source": "TheLastBreathMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "021",
+            "artwork_id": "ART-A1DB6436D231C3FD",
+            "title": "The Machine That Eats Other Machines",
+            "source": "TheMachineThatEatsOtherMachines.png"
+        },
+        {
+            "type": "coloring",
+            "image": "022",
+            "artwork_id": "ART-7E281C498B041515",
+            "title": "The Meat Locker",
+            "source": "TheMeatLocker.png"
+        },
+        {
+            "type": "coloring",
+            "image": "023",
+            "artwork_id": "ART-944803AA87B952EC",
+            "title": "The Mimic Machine",
+            "source": "TheMimicMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "024",
+            "artwork_id": "ART-0BB2FCC43F993022",
+            "title": "The Parasite Exchange",
+            "source": "TheParasiteExchange.png"
+        },
+        {
+            "type": "coloring",
+            "image": "025",
+            "artwork_id": "ART-9409B6F8D678A29E",
+            "title": "The Replacement Face Vendor",
+            "source": "TheReplacementFaceVendor.png"
+        },
+        {
+            "type": "coloring",
+            "image": "026",
+            "artwork_id": "ART-7158645DE92D78B1",
+            "title": "The Reverse Vending Machine",
+            "source": "TheReverseVendingMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "027",
+            "artwork_id": "ART-E422E6BB47DB1A31",
+            "title": "The Screaming Fossil Machine",
+            "source": "TheScreamingFossilMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "028",
+            "artwork_id": "ART-BB686D72687C3E32",
+            "title": "The Shadow Vendor",
+            "source": "TheShadowVendor.png"
+        },
+        {
+            "type": "coloring",
+            "image": "029",
+            "artwork_id": "ART-6DFC0F3F3BFB6FE7",
+            "title": "The Species Archive Machine",
+            "source": "TheSpeciesArchiveMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "030",
+            "artwork_id": "ART-39ABE1477A0132FD",
+            "title": "The Time Lost V Vendor",
+            "source": "TheTimeLostVVendor.png"
+        },
+        {
+            "type": "coloring",
+            "image": "031",
+            "artwork_id": "ART-49384DF4F3032715",
+            "title": "The Tiny People Machine",
+            "source": "TheTinyPeopleMachine.png"
+        },
+        {
+            "type": "coloring",
+            "image": "032",
+            "artwork_id": "ART-D4748C70EFA870EE",
+            "title": "The Tooth Dispenser",
+            "source": "TheToothDispenser.png"
+        },
+        {
+            "type": "coloring",
+            "image": "033",
+            "artwork_id": "ART-1078301891172163",
+            "title": "The Unborn Species",
+            "source": "TheUnbornSpecies.png"
+        },
+        {
+            "type": "coloring",
+            "image": "034",
+            "artwork_id": "ART-C4172450644539E4",
+            "title": "The Wrong Vending Machine",
+            "source": "TheWrongVendingMachine.png"
+        }
+    ]
+}

@@ -1,0 +1,28 @@
+{
+    "assembly_mode": "auto",
+    "pages": [
+        {
+            "type": "title",
+            "title": "Test Coloring Book"
+        },
+        {
+            "type": "copyright",
+            "title": "Copyright",
+            "body": ""
+        },
+        {
+            "type": "coloring",
+            "image": "001",
+            "artwork_id": "ART-125CCF604E9D3C86",
+            "title": "Firefly Gemini Flash .A Nightmarish Unicorn Standing Within A Shattered Underground Gothic Realm, Its Body 110152",
+            "source": "Firefly_Gemini Flash_.A nightmarish unicorn standing within a shattered underground gothic realm, its body 110152.png"
+        },
+        {
+            "type": "coloring",
+            "image": "002",
+            "artwork_id": "ART-3E83185BD85A38D7",
+            "title": "Firefly Gemini Flash A Terrifying Supernatural Unicorn Emerging From A Haunted Graveyard Filled With Twist 110152",
+            "source": "Firefly_Gemini Flash_A terrifying supernatural unicorn emerging from a haunted graveyard filled with twist 110152.png"
+        }
+    ]
+}

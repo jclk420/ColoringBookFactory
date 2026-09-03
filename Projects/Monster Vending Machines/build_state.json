@@ -1,0 +1,279 @@
+{
+    "version": "6.1",
+    "images": {
+        "ART-639B804043EF4819": {
+            "hash": "639b804043ef4819d3a485f9a57d87683e20a7be3b647b50f5e06d2d23cb0505",
+            "size": 1456296,
+            "modified": 1788055114.3999777,
+            "source_name": "ShadowVendor2.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-639B804043EF4819.png"
+        },
+        "ART-FB7F5E9E1FBC1564": {
+            "hash": "fb7f5e9e1fbc15646703b2d7d0555149568c730f607e8e422f0697c52f90d9ee",
+            "size": 1600705,
+            "modified": 1788054791.510708,
+            "source_name": "The Memory Vending Machine png.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-FB7F5E9E1FBC1564.png"
+        },
+        "ART-E1A76C7D88677536": {
+            "hash": "e1a76c7d88677536bf61ada30fe5ed1a309c99b346fe0df5a8a558a2b9b62545",
+            "size": 1147985,
+            "modified": 1787951132.4582667,
+            "source_name": "TheBoneLocker.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-E1A76C7D88677536.png"
+        },
+        "ART-D6583FB1B197EF29": {
+            "hash": "d6583fb1b197ef29c3bc9c961e603fe06565604907acd022f8c05ab6970facd7",
+            "size": 5540632,
+            "modified": 1788065302.9868994,
+            "source_name": "TheBottledNightmareMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-D6583FB1B197EF29.png"
+        },
+        "ART-60C64E764012D7AD": {
+            "hash": "60c64e764012d7ad20b7b929eefb7aa4d7e3531671fc269fd6b8abf55bfccbb1",
+            "size": 6286873,
+            "modified": 1788242261.974484,
+            "source_name": "TheCathedralMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-60C64E764012D7AD.png"
+        },
+        "ART-4F2697CDE6427862": {
+            "hash": "4f2697cde642786275ac20c12c6636f06e2524399eeebeb4360e6b96352973f2",
+            "size": 4849763,
+            "modified": 1788242009.4666333,
+            "source_name": "TheCoinOperatedDoppelgangerMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-4F2697CDE6427862.png"
+        },
+        "ART-8853F05BA21D8B53": {
+            "hash": "8853f05ba21d8b53a70d0f6b4298c8f61fd69419127de5498e916bac5c17817b",
+            "size": 1056435,
+            "modified": 1787956485.493099,
+            "source_name": "TheDollHeadVendor.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-8853F05BA21D8B53.png"
+        },
+        "ART-A365823399633366": {
+            "hash": "a365823399633366fdc73a4dfe07685a86a7970bd9a32648832c0db316837c4c",
+            "size": 5156696,
+            "modified": 1788153567.2239945,
+            "source_name": "TheDoorwayMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-A365823399633366.png"
+        },
+        "ART-66DC584A0940D538": {
+            "hash": "66dc584a0940d538d12b138bd1b1ab81f6303209f139c3829230be82f4a50f7d",
+            "size": 4978787,
+            "modified": 1788242148.986076,
+            "source_name": "TheDreamParasiteMacine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-66DC584A0940D538.png"
+        },
+        "ART-2CDF067FB1BB6006": {
+            "hash": "2cdf067fb1bb600694df938b926c54c88cc3aa16bcb9b1d930899112c6315679",
+            "size": 5879588,
+            "modified": 1788079993.3915074,
+            "source_name": "TheEyeCollector.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-2CDF067FB1BB6006.png"
+        },
+        "ART-97B79EA763FDCE68": {
+            "hash": "97b79ea763fdce68d917c163e6ba297549cde9ff44ecdbea55f28c7ccfa2f538",
+            "size": 4924418,
+            "modified": 1788079657.9624898,
+            "source_name": "TheFailedRessurectionMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-97B79EA763FDCE68.png"
+        },
+        "ART-0DB14B46125C0780": {
+            "hash": "0db14b46125c0780648b5ed36a66da0eb244ff8458b790c026e918541b0cd597",
+            "size": 7401933,
+            "modified": 1788080554.9655638,
+            "source_name": "TheForgottenGodVendor.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-0DB14B46125C0780.png"
+        },
+        "ART-9A9279F550EB1714": {
+            "hash": "9a9279f550eb1714013883121672e8a82cb5f444da8d9fe0dce56b797300bf79",
+            "size": 5409365,
+            "modified": 1788153729.5323987,
+            "source_name": "TheFungusIntelligenceVendor.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-9A9279F550EB1714.png"
+        },
+        "ART-126F5F175181F83C": {
+            "hash": "126f5f175181f83cf6041cbdbd707a1ed207e0019a62a986ab825ed4b0ccb575",
+            "size": 4997891,
+            "modified": 1788242630.51794,
+            "source_name": "TheGodEggDispenser.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-126F5F175181F83C.png"
+        },
+        "ART-1DBAE2D9C081FCDB": {
+            "hash": "1dbae2d9c081fcdb69810c3027eb1c567e48e11c6fb876fd1f9513270cc6947d",
+            "size": 4686001,
+            "modified": 1788242500.322096,
+            "source_name": "TheHumanCocoonVendor.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-1DBAE2D9C081FCDB.png"
+        },
+        "ART-1FB1B652953E6B71": {
+            "hash": "1fb1b652953e6b7132db01db883d42e77fb21f17b349d6aa6af981fcceeb695a",
+            "size": 4712889,
+            "modified": 1788143989.5185478,
+            "source_name": "TheHumanSparePartsMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-1FB1B652953E6B71.png"
+        },
+        "ART-126FAE11BED6387B": {
+            "hash": "126fae11bed6387b2fb753c909fdb038aa56ee452f1390c420f12989f6b838ff",
+            "size": 7332086,
+            "modified": 1788066992.5250616,
+            "source_name": "TheImpossibleOrganMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-126FAE11BED6387B.png"
+        },
+        "ART-734A520D3D70312B": {
+            "hash": "734a520d3d70312bc437f6ec2775528a906b7ae39fd33288a095efb2e09d7b7c",
+            "size": 5448699,
+            "modified": 1788242327.2559369,
+            "source_name": "TheInfiniteMeatLockerMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-734A520D3D70312B.png"
+        },
+        "ART-02CCE417A7AFB7D0": {
+            "hash": "02cce417a7afb7d0f18018489c7aeec3e9f3aa4f0cc606701ec4899d3a6a0d37",
+            "size": 1200711,
+            "modified": 1787931280.7247725,
+            "source_name": "TheLarvaSnackMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-02CCE417A7AFB7D0.png"
+        },
+        "ART-83840258B5BC32B0": {
+            "hash": "83840258b5bc32b038debab13a5f4de0355a3b24b9942dd13c9472300df0a853",
+            "size": 7483471,
+            "modified": 1788066932.2785308,
+            "source_name": "TheLastBreathMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-83840258B5BC32B0.png"
+        },
+        "ART-A1DB6436D231C3FD": {
+            "hash": "a1db6436d231c3fdb093f4493dd018bd8e829227049b7b2c2d445a7d738f9479",
+            "size": 5492300,
+            "modified": 1788243240.8976483,
+            "source_name": "TheMachineThatEatsOtherMachines.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-A1DB6436D231C3FD.png"
+        },
+        "ART-7E281C498B041515": {
+            "hash": "7e281c498b04151534de1147c177be8ebecf5a5a250f749f81121e5b24689ee3",
+            "size": 1187962,
+            "modified": 1787951225.7688084,
+            "source_name": "TheMeatLocker.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-7E281C498B041515.png"
+        },
+        "ART-944803AA87B952EC": {
+            "hash": "944803aa87b952ecdb022ad8baaed4358028afa88c6ef344928e5c5270a35242",
+            "size": 1294178,
+            "modified": 1787950803.116648,
+            "source_name": "TheMimicMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-944803AA87B952EC.png"
+        },
+        "ART-0BB2FCC43F993022": {
+            "hash": "0bb2fcc43f993022ee3572ccef3cfdf958a11feadddd8948930d55f44a88ae56",
+            "size": 2540228,
+            "modified": 1788062135.729403,
+            "source_name": "TheParasiteExchange.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-0BB2FCC43F993022.png"
+        },
+        "ART-9409B6F8D678A29E": {
+            "hash": "9409b6f8d678a29e9fbe8a37f045296b7b51bf19f1790f3caa68c1fb783bcd85",
+            "size": 7118049,
+            "modified": 1788066630.065235,
+            "source_name": "TheReplacementFaceVendor.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-9409B6F8D678A29E.png"
+        },
+        "ART-7158645DE92D78B1": {
+            "hash": "7158645de92d78b13d2e833ccfe5ead75e44cdb3a12362629d2907846c44010c",
+            "size": 2787245,
+            "modified": 1788240887.951157,
+            "source_name": "TheReverseVendingMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-7158645DE92D78B1.png"
+        },
+        "ART-E422E6BB47DB1A31": {
+            "hash": "e422e6bb47db1a318eff9c3b5020eeee394f3bb1e18593d3924bdf9647a07d45",
+            "size": 4867511,
+            "modified": 1788143497.9860842,
+            "source_name": "TheScreamingFossilMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-E422E6BB47DB1A31.png"
+        },
+        "ART-BB686D72687C3E32": {
+            "hash": "bb686d72687c3e3287a6af818b95d3c6ccff47f77a72beecf58da1687831ea44",
+            "size": 1425742,
+            "modified": 1788055003.265157,
+            "source_name": "TheShadowVendor.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-BB686D72687C3E32.png"
+        },
+        "ART-6DFC0F3F3BFB6FE7": {
+            "hash": "6dfc0f3f3bfb6fe70a951a9be964195f308bd057bdd2ca9c41db7ccc76e4cd53",
+            "size": 5158731,
+            "modified": 1788241111.6830337,
+            "source_name": "TheSpeciesArchiveMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-6DFC0F3F3BFB6FE7.png"
+        },
+        "ART-39ABE1477A0132FD": {
+            "hash": "39abe1477a0132fdb419ea2f4d2f2ef368ebad674a3ed415ba07f45fa50af433",
+            "size": 5549964,
+            "modified": 1788068297.4917839,
+            "source_name": "TheTimeLostVVendor.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-39ABE1477A0132FD.png"
+        },
+        "ART-49384DF4F3032715": {
+            "hash": "49384df4f3032715e74803edcd019d7d32a014c74a15d1af84e44d76a1c3d35d",
+            "size": 5778670,
+            "modified": 1788067701.328858,
+            "source_name": "TheTinyPeopleMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-49384DF4F3032715.png"
+        },
+        "ART-D4748C70EFA870EE": {
+            "hash": "d4748c70efa870eedc2e606c03e2d1d7a8d8da9b32d4dbb69cf74f11f0267984",
+            "size": 4736350,
+            "modified": 1788065194.544964,
+            "source_name": "TheToothDispenser.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-D4748C70EFA870EE.png"
+        },
+        "ART-1078301891172163": {
+            "hash": "10783018911721638829fa00cde68908ab0427dddc65f6d0932ded4bc053e62f",
+            "size": 1367662,
+            "modified": 1788062037.5087378,
+            "source_name": "TheUnbornSpecies.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-1078301891172163.png"
+        },
+        "ART-C4172450644539E4": {
+            "hash": "c4172450644539e4d8648825951eac7f655a87da75a4bc062da9ff61602d3c6d",
+            "size": 5166849,
+            "modified": 1788243157.5575893,
+            "source_name": "TheWrongVendingMachine.png",
+            "process_signature": "97b8057e7803ba51b1a9da5d29e50cb38903fa9c41e01cb7f7faa164c5599903",
+            "processed_id": "ART-C4172450644539E4.png"
+        }
+    },
+    "last_build": "2026-09-01T23:07:29",
+    "build_fingerprint": "ce079729dfe8f9aa566838387620d106b8b0d0fb5b0bb1cdf3f6ec46d3b6a9c1"
+}

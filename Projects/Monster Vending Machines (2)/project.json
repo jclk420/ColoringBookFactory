@@ -1,0 +1,29 @@
+{
+    "title": "Monster Vending Machines",
+    "author": "Author",
+    "genre": "Coloring Book",
+    "theme": "Coloring Book",
+    "trim_width": 8.5,
+    "trim_height": 11,
+    "dpi": 300,
+    "border_pixels": 150,
+    "number_of_images": 20,
+    "min_source_width": 1500,
+    "min_source_height": 2000,
+    "kdp_ink_type": "black_white",
+    "kdp_auto_pad_minimum_pages": true,
+    "kdp_minimum_pages": 24,
+    "kdp_maximum_pages": 828,
+    "kdp_generate_cover": true,
+    "cover_subtitle": "A Coloring Adventure",
+    "cover_blurb": "Explore strange creatures, dark machines, and unforgettable nightmares—one page at a time.",
+    "assembly_mode": "auto",
+    "assembly": {
+        "include_title_page": true,
+        "include_copyright_page": true,
+        "include_toc": false,
+        "artwork_title_prefix": ""
+    },
+    "import_source_folder": "C:\\Users\\J\\Desktop\\MonsterVendingMachines",
+    "imported_at": "2026-08-30T03:33:27"
+}

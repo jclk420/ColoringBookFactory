@@ -1,0 +1,71 @@
+# ============================================================
+# COLORING BOOK FACTORY - GITIGNORE
+# Keep source code + project metadata
+# Exclude generated production files
+# ============================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+ENV/
+
+# ============================================================
+# PROJECT INPUT ARTWORK
+# ============================================================
+
+Projects/*/INPUT/
+
+# ============================================================
+# GENERATED ARTWORK / PAGE FILES
+# ============================================================
+
+Projects/*/PROCESSED/
+Projects/*/PAGES/
+
+# ============================================================
+# GENERATED PRODUCTION OUTPUT
+# ============================================================
+
+Projects/*/PDF/
+Projects/*/FINAL/
+Projects/*/KDP_PACKAGE/
+Projects/*/QC/
+Projects/*/BUILD_SNAPSHOTS/
+Projects/*/REPORTS/
+
+# Generated PDFs anywhere
+*.pdf
+
+# ============================================================
+# GENERATED IMAGE FILES
+# ============================================================
+
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.tif
+*.tiff
+
+# ============================================================
+# GENERATED / TEMPORARY DATA
+# ============================================================
+
+*.log
+*.tmp
+*.bak
+*.cache
+
+# ============================================================
+# OPERATING SYSTEM / EDITOR FILES
+# ============================================================
+
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
