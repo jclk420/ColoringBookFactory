@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "factory_version": "7.2",
+    "platform_engine_version": "2.0",
+    "platform": "Gumroad",
+    "status": "READY",
+    "project": "NightmareUnicornsFinished (2)",
+    "title": "NightmareUnicornsFinished",
+    "generated": "2026-09-04T01:21:39",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (2)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "variant_mode": "copy",
+    "files": [
+        "PLATFORMS\\GUMROAD\\METADATA.json",
+        "PLATFORMS\\GUMROAD\\NightmareUnicornsFinished_DIGITAL.pdf",
+        "PLATFORMS\\GUMROAD\\PREVIEW_SHEET.png",
+        "PLATFORMS\\GUMROAD\\PRODUCT_DESCRIPTION.txt"
+    ],
+    "file_hashes": {
+        "NightmareUnicornsFinished_DIGITAL.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PREVIEW_SHEET.png": "b6a0b043867a96ed92368b070198a17eaae89fe0092908c7cff8ddb8880fdb18",
+        "METADATA.json": "acc2d6b18959714285342f28822fab451ef62dd5fc44ddcb136627dca75d80d7",
+        "PRODUCT_DESCRIPTION.txt": "09f8904dc3ec9cc0e49bdcecf7e8e13554a2f43a93bf826d0d9bc8e1ad360776"
+    },
+    "warnings": [],
+    "preflight": "PLATFORM_PREFLIGHT.json",
+    "package_validation": {
+        "status": "PASS",
+        "errors": [],
+        "warnings": []
+    }
+}

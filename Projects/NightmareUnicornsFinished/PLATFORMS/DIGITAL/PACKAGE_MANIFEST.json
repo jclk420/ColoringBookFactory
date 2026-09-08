@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "factory_version": "7.3",
+    "platform_engine_version": "2.1",
+    "platform": "Digital PDF",
+    "status": "READY",
+    "project": "NightmareUnicornsFinished",
+    "title": "NightmareUnicornsFinished",
+    "generated": "2026-09-04T01:30:28",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "variant_mode": "copy",
+    "files": [
+        "PLATFORMS\\DIGITAL\\METADATA.json",
+        "PLATFORMS\\DIGITAL\\NightmareUnicornsFinished_DIGITAL.pdf",
+        "PLATFORMS\\DIGITAL\\PREVIEW_SHEET.png"
+    ],
+    "file_hashes": {
+        "NightmareUnicornsFinished_DIGITAL.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PREVIEW_SHEET.png": "b6a0b043867a96ed92368b070198a17eaae89fe0092908c7cff8ddb8880fdb18",
+        "METADATA.json": "b924717a75c8713559892050f80be05bd5a579b840457dbf71a7fb162602ce7f"
+    },
+    "warnings": [],
+    "preflight": "PLATFORM_PREFLIGHT.json",
+    "package_validation": {
+        "status": "PASS",
+        "errors": [],
+        "warnings": []
+    }
+}

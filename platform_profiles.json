@@ -1,0 +1,78 @@
+{
+    "version": "1.0",
+    "profiles": {
+        "KDP": {
+            "name": "Amazon KDP",
+            "type": "print",
+            "enabled": true,
+            "output_dir": "KDP",
+            "source": "master_pdf",
+            "files": [
+                "interior_pdf",
+                "cover_pdf",
+                "metadata",
+                "checklist"
+            ],
+            "notes": "Print package. KDP-specific validation remains authoritative."
+        },
+        "Gumroad": {
+            "name": "Gumroad",
+            "type": "digital",
+            "enabled": true,
+            "output_dir": "GUMROAD",
+            "source": "master_pdf",
+            "files": [
+                "digital_pdf",
+                "cover_preview",
+                "preview_sheet",
+                "metadata",
+                "product_description"
+            ],
+            "notes": "Digital delivery package; does not alter the master PDF."
+        },
+        "Digital PDF": {
+            "name": "Universal Digital PDF",
+            "type": "digital",
+            "enabled": true,
+            "output_dir": "DIGITAL",
+            "source": "master_pdf",
+            "files": [
+                "digital_pdf",
+                "cover_preview",
+                "preview_sheet",
+                "metadata"
+            ],
+            "notes": "Platform-neutral downloadable PDF package."
+        },
+        "Etsy": {
+            "name": "Etsy Digital",
+            "type": "digital",
+            "enabled": false,
+            "output_dir": "ETSY",
+            "source": "master_pdf",
+            "files": [
+                "digital_pdf",
+                "cover_preview",
+                "preview_sheet",
+                "metadata",
+                "product_description"
+            ],
+            "notes": "Enable when this platform is part of the publishing plan."
+        },
+        "Shopify": {
+            "name": "Shopify Digital",
+            "type": "digital",
+            "enabled": false,
+            "output_dir": "SHOPIFY",
+            "source": "master_pdf",
+            "files": [
+                "digital_pdf",
+                "cover_preview",
+                "preview_sheet",
+                "metadata",
+                "product_description"
+            ],
+            "notes": "Enable when this platform is part of the publishing plan."
+        }
+    }
+}

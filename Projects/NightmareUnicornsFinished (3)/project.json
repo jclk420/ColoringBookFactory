@@ -1,0 +1,21 @@
+{
+    "title": "NightmareUnicornsFinished",
+    "author": "JAC",
+    "trim_width": 8.5,
+    "trim_height": 11.0,
+    "dpi": 300,
+    "production_profile": "Imported Finished PDF",
+    "factory_version": "8.0",
+    "platform_engine_version": "3.0",
+    "world_engine_version": "1.1",
+    "source_pdf": "C:\\Users\\J\\Desktop\\NightmareUnicornsFinished.pdf",
+    "source_pdf_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "source_pdf_pages": 64,
+    "source_pdf_size_mb": 40.77,
+    "imported_at": "2026-09-07T02:38:49",
+    "imported_pdf_metadata": {
+        "/CreationDate": "D:20260903221653Z",
+        "/ModDate": "D:20260903221658Z",
+        "/Producer": "Adobe PDF Library 18.0"
+    }
+}

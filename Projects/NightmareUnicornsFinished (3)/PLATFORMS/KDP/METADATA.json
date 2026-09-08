@@ -1,0 +1,47 @@
+{
+    "schema_version": 3,
+    "factory_version": "8.0",
+    "platform_engine_version": "3.0",
+    "platform": "KDP",
+    "platform_type": "print",
+    "generated": "2026-09-07T02:38:50",
+    "title": "NightmareUnicornsFinished",
+    "subtitle": "",
+    "author": "JAC",
+    "description": "",
+    "series": "",
+    "series_number": "",
+    "world": "",
+    "page_count": 64,
+    "source_master": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (3)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "source_master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "profile": {
+        "name": "Amazon KDP",
+        "type": "print",
+        "enabled": true,
+        "output_dir": "KDP",
+        "source": "master_pdf",
+        "files": [
+            "interior_pdf",
+            "cover_pdf",
+            "metadata",
+            "checklist"
+        ],
+        "variant": {
+            "mode": "copy",
+            "filename_suffix": "_KDP_INTERIOR"
+        },
+        "rules": {
+            "min_pages": 24,
+            "max_pages": 828,
+            "require_title": true,
+            "require_author": false,
+            "require_cover": false,
+            "require_landscape": false,
+            "max_file_mb": 650,
+            "expected_trim_from_project": true
+        },
+        "notes": "Print package. KDP-specific validation remains authoritative."
+    },
+    "preflight_status": "READY"
+}

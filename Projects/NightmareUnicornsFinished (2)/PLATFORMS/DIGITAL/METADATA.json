@@ -1,0 +1,46 @@
+{
+    "schema_version": 3,
+    "factory_version": "7.2",
+    "platform_engine_version": "2.0",
+    "platform": "Digital PDF",
+    "platform_type": "digital",
+    "generated": "2026-09-04T01:21:39",
+    "title": "NightmareUnicornsFinished",
+    "subtitle": "",
+    "author": "",
+    "description": "",
+    "series": "",
+    "series_number": "",
+    "world": "",
+    "page_count": 64,
+    "source_master": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (2)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "source_master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "profile": {
+        "name": "Universal Digital PDF",
+        "type": "digital",
+        "enabled": true,
+        "output_dir": "DIGITAL",
+        "source": "master_pdf",
+        "files": [
+            "digital_pdf",
+            "cover_preview",
+            "preview_sheet",
+            "metadata"
+        ],
+        "variant": {
+            "mode": "copy",
+            "filename_suffix": "_DIGITAL"
+        },
+        "rules": {
+            "min_pages": 1,
+            "max_pages": 10000,
+            "require_title": true,
+            "require_author": false,
+            "require_cover": false,
+            "require_landscape": false,
+            "max_file_mb": 500
+        },
+        "notes": "Platform-neutral downloadable PDF package."
+    },
+    "preflight_status": "READY"
+}

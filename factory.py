@@ -6,13 +6,38 @@ import json
 import textwrap
 import shutil
 import sys
+import zipfile
+import re
 import os
 from datetime import datetime
 from hashlib import sha256
 
 # ============================================================
-# COLORING BOOK FACTORY v6.2
+# COLORING BOOK FACTORY v8.1
 # WORLD-AWARE PRODUCTION ENGINE + AUTOMATED ASSEMBLY + PAGE BUILDER + PDF/KDP PREFLIGHT + PRODUCTION CENTER
+#
+# v8.2 changes:
+#   - New "Clone a project from template" option: pick an existing book
+#     as a style/structure template and stamp out a new project with
+#     trim size, DPI, border, KDP page-count rules, ink type, and
+#     assembly mode carried over. Title, subtitle, description, keywords,
+#     categories, artwork, and world/series attachment always start
+#     blank on the clone, so a template's own listing text or world
+#     canon status can never leak into the new book by accident.
+#
+# v8.1 changes:
+#   - Worlds & Universes screen no longer dead-ends when no worlds exist
+#     (it used to print "No worlds created yet." and return immediately,
+#     hiding "Create new world" and every other option).
+#   - World Management Center: view world books, world production history,
+#     archive/restore a world (with type-to-confirm safety), search worlds,
+#     and list/remove existing world entities (not just add new ones).
+#   - Production events (interior builds and platform package generation)
+#     now write into the attached world's production history.
+#   - Platform status displays (Platform Audit, Platform Engine self-test,
+#     project health, and platform package generation) now print the
+#     actual warning text next to any non-zero warning count, instead of
+#     just a count, so a READY_WITH_WARNINGS result is self-explanatory.
 # ============================================================
 
 FACTORY = Path(__file__).resolve().parent
@@ -20,7 +45,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "6.2"
+FACTORY_VERSION = "8.2"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -441,6 +466,38 @@ def add_world_entity(world, category, entity):
     return True
 
 
+def record_world_production_event(project, event_type, status, page_count=0, errors=0, warnings=0):
+    """Append a production event to the attached world's history, if any.
+
+    Never invents a world attachment; a standalone project simply has no
+    world to record against.
+    """
+    world = get_project_world(project)
+    if not world:
+        return False
+    try:
+        settings = load_json(project / "project.json")
+    except Exception:
+        settings = {}
+    history = world.setdefault("production_history", [])
+    history.append({
+        "date": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project),
+        "title": settings.get("title", project.name),
+        "event": event_type,
+        "status": status,
+        "pages": page_count,
+        "errors": errors,
+        "warnings": warnings,
+    })
+    # Keep this list from growing without bound across a long-lived world.
+    if len(history) > 500:
+        world["production_history"] = history[-500:]
+    world["updated"] = datetime.now().isoformat(timespec="seconds")
+    save_world(world)
+    return True
+
+
 def detach_project_from_world(project):
     """Remove a project from its current world without deleting the project."""
     settings = load_json(project / "project.json")
@@ -701,147 +758,297 @@ def world_continuity_report(world):
     return report, issues, warnings
 
 
-def world_list_menu():
-    index = load_world_index()
-    worlds = index.get("worlds", {})
-    print("\n" + "=" * 60)
-    print("WORLDS & UNIVERSES")
-    print("=" * 60)
-    if not worlds:
-        print("No worlds created yet.")
-        return
-    for i, (wid, meta) in enumerate(sorted(worlds.items()), 1):
-        world = load_world(wid) or meta
-        print(f"{i}. {world.get('name', wid)} [{wid}]")
-        print(
-            f"   Series: {len(world_entity_list(world, 'series'))} | "
-            f"Characters: {len(world_entity_list(world, 'characters'))} | "
-            f"Locations: {len(world_entity_list(world, 'locations'))} | "
-            f"Books: {len(world_entity_list(world, 'books'))}"
-        )
-    print("\nN. Create new world")
-    print("O. Open/manage world")
-    print("B. Export world bible")
-    print("C. Run continuity check")
-    print("A. Attach a book project to a world")
-    print("S. Manage series")
-    print("X. Back")
-    choice = input("Choose: ").strip().lower()
-    if choice == "x":
-        return
-    if choice == "n":
-        name = input("World name: ").strip()
-        if not name:
-            return
-        description = input("World description: ").strip()
-        genre = input("Genre: ").strip()
-        tone = input("Tone: ").strip()
-        world = new_world_record(name, description, genre, tone)
-        save_world(world)
-        print(f"\nWORLD CREATED: {world['name']}")
-        print(f"World folder: {world_path(world['world_id'])}")
-        return
-    if choice == "s":
-        print("\nSeries are stored inside each world and can be assigned to books.")
+def remove_world_entity(world, category, index_pos):
+    """Remove a world entity by its 1-based display position. Never invents state."""
+    items = world_entity_list(world, category)
+    if index_pos < 1 or index_pos > len(items):
+        return None
+    removed = items.pop(index_pos - 1)
+    world["updated"] = datetime.now().isoformat(timespec="seconds")
+    save_world(world)
+    if world.get("auto_update_world_bible", True):
         try:
-            idx = int(input("World number: ").strip()) - 1
-            ordered = sorted(load_world_index().get("worlds", {}).keys())
-            wid = ordered[idx]
-            world = load_world(wid)
-            if not world:
-                raise ValueError("World not found")
-            series = input("Series name to add: ").strip()
-            if series:
-                world.setdefault("series", [])
-                if series not in world["series"]:
-                    world["series"].append(series)
-                    world["updated"] = datetime.now().isoformat(timespec="seconds")
-                    save_world(world)
-                    write_world_bible(world)
-                    print(f"Series added: {series}")
-                else:
-                    print("Series already exists.")
-        except Exception as error:
-            print(f"ERROR: {error}")
-        return
+            write_world_bible(world)
+        except Exception:
+            pass
+    return removed
 
-    worlds = load_world_index().get("worlds", {})
-    if not worlds:
-        print("No worlds available.")
-        return
-    try:
-        idx = int(input("World number: ").strip()) - 1
-        ordered = sorted(worlds.keys())
-        wid = ordered[idx]
-        world = load_world(wid)
-    except (ValueError, IndexError, TypeError):
-        print("Invalid world selection.")
-        return
-    if not world:
-        print("World could not be loaded.")
-        return
-    if choice == "b":
-        print(f"World Bible: {write_world_bible(world)}")
-    elif choice == "c":
-        report, errors, warnings = world_continuity_report(world)
-        print(f"Continuity errors: {len(errors)} | warnings: {len(warnings)}")
-        print(f"Report: {report}")
-    elif choice == "a":
-        project = choose_project()
-        if project:
-            try:
-                print("\nRelationship:")
-                print("1. Canon")
-                print("2. Related")
-                print("3. Inspired by")
-                print("4. Non-canon")
-                rel_choice = input("Choose [1]: ").strip() or "1"
-                rel = {"1": "canon", "2": "related", "3": "inspired_by", "4": "non_canon"}.get(rel_choice, "canon")
-                series = input("Series name [optional]: ").strip()
-                attach_project_to_world(project, wid, rel, series)
-                print(f"Attached '{project.name}' to world '{world['name']}' as {rel}.")
-            except Exception as error:
-                print(f"ERROR: {error}")
-    elif choice == "o":
+
+def _describe_world_entity(item):
+    if isinstance(item, dict):
+        return item.get("name") or item.get("title") or "Unnamed"
+    return str(item)
+
+
+def world_manage_menu(world, wid):
+    """Detail screen for a single world: view, add to, and remove from every category."""
+    categories = {
+        "1": ("rules", "Rules"),
+        "2": ("characters", "Characters"),
+        "3": ("creatures", "Creatures"),
+        "4": ("locations", "Locations"),
+        "5": ("objects", "Objects"),
+        "6": ("factions", "Factions"),
+        "7": ("lore", "Lore"),
+        "8": ("timeline", "Timeline"),
+    }
+    while True:
+        world = load_world(wid) or world
         print(f"\nWORLD: {world.get('name', wid)}")
         print(f"Description: {world.get('description', '')}")
         print(f"Genre: {world.get('genre', '')} | Tone: {world.get('tone', '')}")
-        print("\n1. Add rule")
-        print("2. Add character")
-        print("3. Add creature")
-        print("4. Add location")
-        print("5. Add object")
-        print("6. Add faction")
-        print("7. Add lore entry")
-        print("8. Add timeline event")
+        for key, (category, label) in categories.items():
+            print(f"{key}. {label} ({len(world_entity_list(world, category))})")
         print("9. Export world bible")
         print("10. Continuity check")
-        sub = input("Choose: ").strip()
-        if sub == "1":
-            rule = input("World rule: ").strip()
-            if rule: add_world_entity(world, "rules", rule)
-        elif sub in {"2", "3", "4", "5", "6"}:
-            category = {"2":"characters", "3":"creatures", "4":"locations", "5":"objects", "6":"factions"}[sub]
-            name = input("Name: ").strip()
-            description = input("Description: ").strip()
-            appearance = input("Appearance / important details: ").strip()
-            item = {"name": name, "description": description, "appearance": appearance, "created": datetime.now().isoformat(timespec="seconds")}
-            add_world_entity(world, category, item)
-        elif sub == "7":
-            title = input("Lore title: ").strip()
-            body = input("Lore text: ").strip()
-            add_world_entity(world, "lore", {"title": title, "body": body})
-        elif sub == "8":
-            date = input("Timeline date/order: ").strip()
-            title = input("Event title: ").strip()
-            description = input("Event description: ").strip()
-            add_world_entity(world, "timeline", {"date": date, "title": title, "description": description})
+        print("X. Back")
+        sub = input("Choose: ").strip().lower()
+        if sub == "x":
+            return
+        if sub in categories:
+            category, label = categories[sub]
+            items = world_entity_list(world, category)
+            print(f"\n{label.upper()}")
+            if not items:
+                print("(none yet)")
+            for i, item in enumerate(items, 1):
+                print(f"  {i}. {_describe_world_entity(item)}")
+            print("\nA. Add new")
+            if items:
+                print("R. Remove one")
+            print("X. Back")
+            action = input("Choose: ").strip().lower()
+            if action == "a":
+                if category == "rules":
+                    rule = input("World rule: ").strip()
+                    if rule:
+                        add_world_entity(world, "rules", rule)
+                elif category == "lore":
+                    title = input("Lore title: ").strip()
+                    body = input("Lore text: ").strip()
+                    add_world_entity(world, "lore", {"title": title, "body": body})
+                elif category == "timeline":
+                    date = input("Timeline date/order: ").strip()
+                    title = input("Event title: ").strip()
+                    description = input("Event description: ").strip()
+                    add_world_entity(world, "timeline", {"date": date, "title": title, "description": description})
+                else:
+                    name = input("Name: ").strip()
+                    description = input("Description: ").strip()
+                    appearance = input("Appearance / important details: ").strip()
+                    item = {"name": name, "description": description, "appearance": appearance,
+                            "created": datetime.now().isoformat(timespec="seconds")}
+                    add_world_entity(world, category, item)
+            elif action == "r" and items:
+                try:
+                    pos = int(input("Number to remove: ").strip())
+                    removed = remove_world_entity(world, category, pos)
+                    if removed is not None:
+                        print(f"Removed: {_describe_world_entity(removed)}")
+                    else:
+                        print("Invalid selection.")
+                except ValueError:
+                    print("Invalid selection.")
         elif sub == "9":
             print(f"World Bible: {write_world_bible(world)}")
         elif sub == "10":
             report, errors, warnings = world_continuity_report(world)
             print(f"Continuity errors: {len(errors)} | warnings: {len(warnings)}")
             print(f"Report: {report}")
+
+
+def world_list_menu():
+    while True:
+        index = load_world_index()
+        all_worlds = index.get("worlds", {})
+        active = {wid: meta for wid, meta in all_worlds.items() if not meta.get("archived")}
+        archived = {wid: meta for wid, meta in all_worlds.items() if meta.get("archived")}
+        ordered = sorted(active.keys())
+
+        print("\n" + "=" * 60)
+        print("WORLDS & UNIVERSES")
+        print("=" * 60)
+        if not active:
+            print("No worlds created yet. Start with 'N' to create your first one.")
+        else:
+            for i, wid in enumerate(ordered, 1):
+                world = load_world(wid) or active[wid]
+                print(f"{i}. {world.get('name', wid)} [{wid}]")
+                print(
+                    f"   Series: {len(world_entity_list(world, 'series'))} | "
+                    f"Characters: {len(world_entity_list(world, 'characters'))} | "
+                    f"Creatures: {len(world_entity_list(world, 'creatures'))} | "
+                    f"Locations: {len(world_entity_list(world, 'locations'))} | "
+                    f"Books: {len(world_entity_list(world, 'books'))}"
+                )
+        if archived:
+            print(f"\n({len(archived)} archived world(s) hidden from this list)")
+
+        print("\nN. Create new world")
+        if active:
+            print("O. Open/manage world")
+            print("B. Export world bible")
+            print("C. Run continuity check")
+            print("A. Attach a book project to a world")
+            print("S. Manage series")
+            print("V. View world's books")
+            print("H. World production history")
+            print("D. Archive a world")
+        if archived:
+            print("U. Restore an archived world")
+        print("F. Find a world by name")
+        print("X. Back")
+        choice = input("Choose: ").strip().lower()
+
+        if choice == "x":
+            return
+
+        if choice == "n":
+            name = input("World name: ").strip()
+            if not name:
+                continue
+            description = input("World description: ").strip()
+            genre = input("Genre: ").strip()
+            tone = input("Tone: ").strip()
+            world = new_world_record(name, description, genre, tone)
+            save_world(world)
+            print(f"\nWORLD CREATED: {world['name']}")
+            print(f"World folder: {world_path(world['world_id'])}")
+            continue
+
+        if choice == "f":
+            term = input("Search text: ").strip().lower()
+            matches = [(wid, meta) for wid, meta in all_worlds.items() if term in str(meta.get("name", wid)).lower()]
+            if not matches:
+                print("No matching worlds.")
+            else:
+                for wid, meta in matches:
+                    tag = " [ARCHIVED]" if meta.get("archived") else ""
+                    print(f"- {meta.get('name', wid)} [{wid}]{tag}")
+            continue
+
+        if choice == "u":
+            if not archived:
+                print("No archived worlds.")
+                continue
+            restore_ordered = sorted(archived.keys())
+            for i, wid in enumerate(restore_ordered, 1):
+                print(f"{i}. {archived[wid].get('name', wid)}")
+            try:
+                idx = int(input("World number to restore: ").strip()) - 1
+                wid = restore_ordered[idx]
+                world = load_world(wid)
+                if not world:
+                    raise ValueError("World not found")
+                world["archived"] = False
+                world["updated"] = datetime.now().isoformat(timespec="seconds")
+                save_world(world)
+                refreshed = load_world_index()
+                refreshed["worlds"].setdefault(wid, {})["archived"] = False
+                save_world_index(refreshed)
+                print(f"Restored: {world.get('name', wid)}")
+            except (ValueError, IndexError, TypeError):
+                print("Invalid selection.")
+            continue
+
+        if not active:
+            print("No worlds available yet. Choose 'N' to create one.")
+            continue
+
+        if choice == "s":
+            print("\nSeries are stored inside each world and can be assigned to books.")
+            try:
+                idx = int(input("World number: ").strip()) - 1
+                wid = ordered[idx]
+                world = load_world(wid)
+                if not world:
+                    raise ValueError("World not found")
+                series = input("Series name to add: ").strip()
+                if series:
+                    world.setdefault("series", [])
+                    if series not in world["series"]:
+                        world["series"].append(series)
+                        world["updated"] = datetime.now().isoformat(timespec="seconds")
+                        save_world(world)
+                        write_world_bible(world)
+                        print(f"Series added: {series}")
+                    else:
+                        print("Series already exists.")
+            except Exception as error:
+                print(f"ERROR: {error}")
+            continue
+
+        try:
+            idx = int(input("World number: ").strip()) - 1
+            wid = ordered[idx]
+            world = load_world(wid)
+        except (ValueError, IndexError, TypeError):
+            print("Invalid world selection.")
+            continue
+        if not world:
+            print("World could not be loaded.")
+            continue
+
+        if choice == "b":
+            print(f"World Bible: {write_world_bible(world)}")
+        elif choice == "c":
+            report, errors, warnings = world_continuity_report(world)
+            print(f"Continuity errors: {len(errors)} | warnings: {len(warnings)}")
+            print(f"Report: {report}")
+        elif choice == "a":
+            project = choose_project()
+            if project:
+                try:
+                    print("\nRelationship:")
+                    print("1. Canon")
+                    print("2. Related")
+                    print("3. Inspired by")
+                    print("4. Non-canon")
+                    rel_choice = input("Choose [1]: ").strip() or "1"
+                    rel = {"1": "canon", "2": "related", "3": "inspired_by", "4": "non_canon"}.get(rel_choice, "canon")
+                    series = input("Series name [optional]: ").strip()
+                    attach_project_to_world(project, wid, rel, series)
+                    print(f"Attached '{project.name}' to world '{world['name']}' as {rel}.")
+                except Exception as error:
+                    print(f"ERROR: {error}")
+        elif choice == "v":
+            books = world_entity_list(world, "books")
+            print(f"\nBOOKS IN {world.get('name', wid)}")
+            if not books:
+                print("No books attached to this world yet.")
+            for b in books:
+                if isinstance(b, dict):
+                    print(
+                        f"- {b.get('title', 'Untitled')} | Series: {b.get('series') or 'None'} | "
+                        f"{b.get('relationship', 'canon')} | {b.get('project', '')}"
+                    )
+        elif choice == "h":
+            history = world.get("production_history", [])
+            print(f"\nPRODUCTION HISTORY FOR {world.get('name', wid)}")
+            if not history:
+                print("No recorded production events for this world yet.")
+            for entry in history[-25:]:
+                print(
+                    f"- {entry.get('date', '')} | {entry.get('event', '')} | {entry.get('title', '')} | "
+                    f"{entry.get('status', '')} | pages={entry.get('pages', 0)} "
+                    f"errors={entry.get('errors', 0)} warnings={entry.get('warnings', 0)}"
+                )
+        elif choice == "d":
+            print(f"\nThis will archive '{world.get('name', wid)}' and hide it from the active list.")
+            print("Nothing on disk is deleted; it can be restored later with 'U'.")
+            confirm = input(f"Type the world's name to confirm ('{world.get('name', wid)}'): ").strip()
+            if confirm == world.get("name", wid):
+                world["archived"] = True
+                world["updated"] = datetime.now().isoformat(timespec="seconds")
+                save_world(world)
+                refreshed = load_world_index()
+                refreshed["worlds"].setdefault(wid, {})["archived"] = True
+                save_world_index(refreshed)
+                print(f"Archived: {world.get('name', wid)}")
+            else:
+                print("Name did not match. Archiving cancelled.")
+        elif choice == "o":
+            world_manage_menu(world, wid)
 
 
 # ============================================================
@@ -2507,8 +2714,11 @@ def kdp_preflight(project, settings, pdf_file, page_count):
         errors.append(f"Trim size {trim_w} x {trim_h} is outside KDP paperback custom-trim limits.")
 
     try:
-        from PyPDF2 import PdfReader
-        reader = PdfReader(str(pdf_file))
+        Reader = _pdf_reader_class()
+        if Reader is None:
+            warnings.append("No supported PDF reader is installed; KDP PDF structural validation was skipped.")
+            return errors, warnings
+        reader = Reader(str(pdf_file), strict=False)
         if len(reader.pages) != page_count:
             errors.append(f"KDP preflight: PDF page count {len(reader.pages)} does not match built page count {page_count}.")
         expected_w = trim_w * 72
@@ -3137,6 +3347,11 @@ def build_book(project):
 
     if settings.get("build_history_enabled", True):
         record_build_history(project, "NOT READY" if all_errors else "SUCCESS", len(built_pages), all_errors, all_warnings, current_fingerprint)
+    record_world_production_event(
+        project, "interior_build",
+        "NOT READY" if all_errors else "SUCCESS",
+        page_count=len(built_pages), errors=len(all_errors), warnings=len(all_warnings),
+    )
 
     print("\n" + "=" * 60)
     print("BUILD COMPLETE - NOT READY" if all_errors else "BUILD COMPLETE - SUCCESS")
@@ -3241,6 +3456,16 @@ def resolve_project_name(project_name):
         project = PROJECTS / f"{base} ({counter})"
         counter += 1
     return project, "new_copy"
+
+
+def unique_project_name(project_name):
+    """Return a project folder name that does not already exist.
+
+    Compatibility helper used by the v7 Platform Center PDF-import path.
+    Existing projects are preserved; duplicates become ``Name (2)``, ``Name (3)``, etc.
+    """
+    project, _status = resolve_project_name(str(project_name).strip() or "Imported PDF")
+    return project.name
 
 
 def merge_import_config(config, title, author, genre, theme):
@@ -3542,6 +3767,120 @@ def create_project():
     )
 
 
+def clone_project_from_template():
+    """Start a new project from an existing one's production settings.
+
+    Only structural/style settings travel with the clone (trim size, DPI,
+    border, KDP page-count rules, ink type, assembly mode, world-safety
+    toggles). Anything specific to the finished book — title, subtitle,
+    description, keywords, categories, artwork, page count, world/series
+    attachment — always starts blank so a clone can never accidentally
+    ship with the template's own listing text or be mistaken for canon
+    in a world it was never actually placed in.
+    """
+    print("\n" + "=" * 60)
+    print("CLONE PROJECT FROM TEMPLATE")
+    print("=" * 60)
+    print("Pick an existing project to copy production settings from.")
+    print("Artwork, pages, and book-specific text always start fresh.\n")
+
+    source = choose_project()
+    if not source:
+        return
+    try:
+        source_settings = load_json(source / "project.json")
+    except Exception:
+        print("Could not read that project's settings.")
+        return
+
+    folder_name = input("\nNew project folder name: ").strip()
+    if not folder_name:
+        print("Cancelled.")
+        return
+    project = PROJECTS / folder_name
+    if project.exists():
+        print("A project with that folder name already exists.")
+        return
+
+    title = input("Book title: ").strip() or folder_name
+    default_author = source_settings.get("author", "Author")
+    author = input(f"Author [{default_author}]: ").strip() or default_author
+    default_theme = source_settings.get("theme", "")
+    theme = input(f"Theme/creature [{default_theme}]: ").strip() or default_theme
+
+    project.mkdir(parents=True, exist_ok=True)
+    setup_project(project)
+
+    carried_keys = [
+        "trim_width", "trim_height", "dpi", "border_pixels",
+        "min_source_width", "min_source_height", "genre",
+        "kdp_ink_type", "kdp_auto_pad_minimum_pages", "kdp_minimum_pages",
+        "kdp_maximum_pages", "kdp_generate_cover", "assembly_mode",
+        "continuity_gate", "auto_update_world_bible", "auto_register_artwork_entities",
+        "production_profile_version",
+    ]
+    settings = {key: source_settings[key] for key in carried_keys if key in source_settings}
+    settings.update({
+        "title": title,
+        "author": author,
+        "theme": theme,
+        "number_of_images": 0,
+        "universe_name": "",
+        "series_name": "",
+        "world_relationship": "standalone",
+        "world_canon": False,
+        "subtitle": "",
+        "description": "",
+        "keywords": [],
+        "categories": [],
+        "cloned_from_project": str(source),
+        "cloned_from_title": source_settings.get("title", source.name),
+        "cloned_on": datetime.now().isoformat(timespec="seconds"),
+    })
+    save_json(project / "project.json", settings)
+    save_json(project / "book.json", {"pages": []})
+
+    print(f"\nPROJECT CREATED FROM TEMPLATE: {source_settings.get('title', source.name)}")
+    print(project)
+    print(
+        f"\nCarried over: trim {settings.get('trim_width')}x{settings.get('trim_height')}\", "
+        f"{settings.get('dpi')} DPI, border {settings.get('border_pixels')}px, "
+        f"ink={settings.get('kdp_ink_type')}, pages {settings.get('kdp_minimum_pages')}-{settings.get('kdp_maximum_pages')}, "
+        f"assembly={settings.get('assembly_mode')}"
+    )
+    print("Starts fresh: title, subtitle, description, keywords, categories, artwork, world/series attachment.")
+
+    if input("\nAttach this book to a world now? (y/N): ").strip().lower() == "y":
+        index = load_world_index()
+        active = {wid: meta for wid, meta in index.get("worlds", {}).items() if not meta.get("archived")}
+        if not active:
+            print("No worlds available yet — create one from 'Worlds & Universes' first.")
+        else:
+            ordered = sorted(active.keys())
+            for i, wid in enumerate(ordered, 1):
+                print(f"{i}. {active[wid].get('name', wid)}")
+            try:
+                idx = int(input("World number: ").strip()) - 1
+                wid = ordered[idx]
+                print("\nRelationship:")
+                print("1. Canon")
+                print("2. Related")
+                print("3. Inspired by")
+                print("4. Non-canon")
+                rel_choice = input("Choose [1]: ").strip() or "1"
+                rel = {"1": "canon", "2": "related", "3": "inspired_by", "4": "non_canon"}.get(rel_choice, "canon")
+                series = input("Series name [optional]: ").strip()
+                attach_project_to_world(project, wid, rel, series)
+                print(f"Attached to world '{active[wid].get('name', wid)}' as {rel}.")
+            except (ValueError, IndexError, TypeError) as error:
+                print(f"Invalid selection ({error}); skipped world attachment.")
+            except Exception as error:
+                print(f"ERROR: {error}")
+
+    print("\nPut artwork into:")
+    print(project / "INPUT")
+
+
 # ============================================================
 # PRODUCTION DASHBOARD
 # ============================================================
@@ -3680,6 +4019,1408 @@ def production_dashboard():
         print(f"  Status: {status}")
         print(f"  Package: {'YES' if (project / 'KDP_PACKAGE').exists() else 'NO'}")
 
+
+# ============================================================
+# v7.2 PLATFORM FACTORY — MULTI-PLATFORM VARIANT + VALIDATION ENGINE
+# ============================================================
+
+# NOTE: FACTORY_VERSION is intentionally not redefined here anymore — it was
+# previously reset to "8.0" at this point in the file, silently overriding
+# the "8.1" constant declared near the top of the module. Declaring the
+# app version in two places is exactly how a build can display a stale
+# version number without anyone noticing; it now has a single source of truth.
+PLATFORM_ENGINE_VERSION = "3.0"
+PLATFORM_DIRNAME = "PLATFORMS"
+PLATFORM_PROFILES_FILENAME = "platform_profiles.json"
+PLATFORM_AUDIT_FILENAME = "PLATFORM_AUDIT.json"
+PLATFORM_INDEX_FILENAME = "PLATFORM_INDEX.json"
+
+# Platform profiles are recipes, not hard-coded publishing workflows.  A new
+# marketplace can be added by editing JSON rather than changing the factory.
+DEFAULT_PLATFORM_PROFILES = {
+    "KDP": {
+        "name": "Amazon KDP", "type": "print", "enabled": True, "output_dir": "KDP",
+        "source": "master_pdf", "files": ["interior_pdf", "cover_pdf", "metadata", "checklist"],
+        "variant": {"mode": "copy", "filename_suffix": "_KDP_INTERIOR"},
+        "rules": {"min_pages": 24, "max_pages": 828, "require_title": True,
+                  "require_author": False, "require_cover": False, "require_landscape": False,
+                  "max_file_mb": 650, "expected_trim_from_project": True},
+        "notes": "KDP-specific factory preflight remains authoritative for measurable print rules."
+    },
+    "Gumroad": {
+        "name": "Gumroad", "type": "digital", "enabled": True, "output_dir": "GUMROAD",
+        "source": "master_pdf", "files": ["digital_pdf", "cover_preview", "preview_sheet", "metadata", "product_description"],
+        "variant": {"mode": "copy", "filename_suffix": "_DIGITAL"},
+        "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                  "require_author": False, "require_cover": False, "require_landscape": False,
+                  "max_file_mb": 500},
+        "notes": "Digital delivery package; master is never modified."
+    },
+    "Digital PDF": {
+        "name": "Universal Digital PDF", "type": "digital", "enabled": True, "output_dir": "DIGITAL",
+        "source": "master_pdf", "files": ["digital_pdf", "cover_preview", "preview_sheet", "metadata"],
+        "variant": {"mode": "copy", "filename_suffix": "_DIGITAL"},
+        "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                  "require_author": False, "require_cover": False, "require_landscape": False,
+                  "max_file_mb": 500},
+        "notes": "Platform-neutral downloadable PDF package."
+    },
+    "Etsy": {
+        "name": "Etsy Digital", "type": "digital", "enabled": False, "output_dir": "ETSY",
+        "source": "master_pdf", "files": ["digital_pdf", "cover_preview", "preview_sheet", "metadata", "product_description"],
+        "variant": {"mode": "copy", "filename_suffix": "_DIGITAL"},
+        "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                  "require_author": False, "require_cover": True, "require_landscape": False,
+                  "max_file_mb": 500},
+        "notes": "Digital marketplace package; enable when ready."
+    },
+    "Shopify": {
+        "name": "Shopify Digital", "type": "digital", "enabled": False, "output_dir": "SHOPIFY",
+        "source": "master_pdf", "files": ["digital_pdf", "cover_preview", "preview_sheet", "metadata", "product_description"],
+        "variant": {"mode": "copy", "filename_suffix": "_DIGITAL"},
+        "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                  "require_author": False, "require_cover": True, "require_landscape": False,
+                  "max_file_mb": 500},
+        "notes": "Digital storefront package; enable when ready."
+    },
+}
+
+
+def platform_profiles_path():
+    return FACTORY / PLATFORM_PROFILES_FILENAME
+
+
+def load_platform_profiles():
+    path = platform_profiles_path()
+    if not path.exists():
+        save_platform_profiles(json.loads(json.dumps(DEFAULT_PLATFORM_PROFILES)))
+        return json.loads(json.dumps(DEFAULT_PLATFORM_PROFILES))
+    try:
+        data = load_json(path)
+        profiles = data.get("profiles", {}) if isinstance(data, dict) else {}
+        merged = json.loads(json.dumps(DEFAULT_PLATFORM_PROFILES))
+        for key, value in profiles.items():
+            if isinstance(value, dict):
+                base = merged.get(key, {})
+                base.update({k: v for k, v in value.items() if k != "rules" and k != "variant"})
+                base["rules"] = {**merged.get(key, {}).get("rules", {}), **value.get("rules", {})}
+                base["variant"] = {**merged.get(key, {}).get("variant", {}), **value.get("variant", {})}
+                merged[key] = base
+        return merged
+    except Exception:
+        return json.loads(json.dumps(DEFAULT_PLATFORM_PROFILES))
+
+
+def save_platform_profiles(profiles):
+    save_json(platform_profiles_path(), {"version": PLATFORM_ENGINE_VERSION,
+                                        "updated": datetime.now().isoformat(timespec="seconds"),
+                                        "profiles": profiles})
+
+
+def platform_master_dir(project):
+    path = project / "MASTER"
+    path.mkdir(exist_ok=True)
+    return path
+
+
+def find_master_pdf(project):
+    master = project / "MASTER"
+    if master.exists():
+        existing = sorted(master.glob("*_MASTER.pdf"))
+        if existing:
+            return existing[0]
+    settings = load_project_settings_safe(project)
+    title = kdp_safe_filename(settings.get("title", project.name))
+    candidates = [project / "PDF" / f"{title}.pdf", project / "PDF" / "final.pdf"]
+    if (project / "PDF").exists():
+        candidates.extend(sorted((project / "PDF").glob("*.pdf")))
+    candidates.extend(sorted((project / "FINAL").glob("*.pdf")) if (project / "FINAL").exists() else [])
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def find_existing_book_pdf(project):
+    roots = [project / "PDF", project / "FINAL", project / "KDP_PACKAGE", project]
+    found = []
+    for root in roots:
+        if root.exists():
+            found.extend(root.glob("*.pdf"))
+    found = [p for p in found if PLATFORM_DIRNAME not in p.parts and "MASTER" not in p.parts]
+    if not found:
+        return None
+    found.sort(key=lambda p: ("INTERIOR" not in p.name.upper(), len(p.parts), p.name.lower()))
+    return found[0]
+
+
+def load_project_settings_safe(project):
+    path = project / "project.json"
+    if not path.exists():
+        return {"title": project.name, "author": ""}
+    try:
+        data = load_json(path)
+        return data if isinstance(data, dict) else {"title": project.name, "author": ""}
+    except Exception:
+        return {"title": project.name, "author": ""}
+
+
+def _pdf_reader_class():
+    try:
+        from pypdf import PdfReader
+        return PdfReader
+    except ImportError:
+        try:
+            from PyPDF2 import PdfReader
+            return PdfReader
+        except ImportError:
+            return None
+
+
+def pdf_page_count(path):
+    try:
+        Reader = _pdf_reader_class()
+        return len(Reader(str(path), strict=False).pages) if Reader else None
+    except Exception:
+        return None
+
+
+def inspect_pdf(path):
+    result = {"path": str(path) if path else None, "exists": bool(path and Path(path).exists()),
+              "page_count": None, "sizes": [], "unique_sizes": [], "file_size_mb": None,
+              "encrypted": None, "metadata": {}, "error": None}
+    if not result["exists"]:
+        result["error"] = "PDF does not exist."
+        return result
+    pdf = Path(path)
+    result["file_size_mb"] = round(pdf.stat().st_size / (1024 * 1024), 3)
+    try:
+        Reader = _pdf_reader_class()
+        if Reader is None:
+            result["error"] = "No supported PDF reader is installed (pypdf or PyPDF2)."
+            return result
+        reader = Reader(str(pdf), strict=False)
+        result["encrypted"] = bool(reader.is_encrypted)
+        if reader.is_encrypted:
+            try:
+                if not reader.decrypt(""):
+                    result["error"] = "PDF is encrypted and could not be opened with an empty password."
+                    return result
+            except Exception as error:
+                result["error"] = f"PDF encryption check failed: {error}"
+                return result
+        result["page_count"] = len(reader.pages)
+        meta = reader.metadata or {}
+        result["metadata"] = {str(k): str(v) for k, v in meta.items() if v is not None}
+        sizes = []
+        for page in reader.pages:
+            w = round(float(page.mediabox.width) / 72, 4)
+            h = round(float(page.mediabox.height) / 72, 4)
+            sizes.append({"width": w, "height": h,
+                          "orientation": "landscape" if w > h else "portrait" if h > w else "square"})
+        result["sizes"] = sizes
+        result["unique_sizes"] = sorted({f"{x['width']}x{x['height']}" for x in sizes})
+    except ImportError:
+        result["error"] = "PyPDF2 is not installed."
+    except Exception as error:
+        result["error"] = str(error)
+    return result
+
+
+def platform_required_metadata(settings, profile):
+    rules = profile.get("rules", {})
+    errors = []
+    if rules.get("require_title", True) and not str(settings.get("title", "")).strip():
+        errors.append("Required metadata missing: title.")
+    if rules.get("require_author", False) and not str(settings.get("author", "")).strip():
+        errors.append("Required metadata missing: author.")
+    return errors
+
+
+def _platform_cover(project):
+    master = project / "MASTER"
+    if not master.exists():
+        return None
+    candidates = sorted(master.glob("MASTER_COVER.*"))
+    return candidates[0] if candidates else None
+
+
+def platform_preflight(project, platform_name, master_pdf=None, profile=None):
+    profiles = load_platform_profiles()
+    profile = profile or profiles.get(platform_name)
+    settings = load_project_settings_safe(project)
+    errors, warnings = [], []
+    if not profile:
+        return {"status": "BLOCKED", "platform": platform_name, "errors": [f"Unknown platform: {platform_name}"], "warnings": []}
+    master_pdf = master_pdf or find_master_pdf(project)
+    info = inspect_pdf(master_pdf) if master_pdf else {"exists": False, "error": "No master PDF found.", "page_count": None, "unique_sizes": [], "sizes": [], "file_size_mb": None}
+    if not info.get("exists"):
+        errors.append("Master PDF is missing.")
+    if info.get("error"):
+        errors.append(info["error"])
+    rules = profile.get("rules", {})
+    page_count = info.get("page_count")
+    if page_count is not None:
+        if page_count < int(rules.get("min_pages", 1)):
+            errors.append(f"Page count {page_count} is below platform minimum {rules['min_pages']}.")
+        if page_count > int(rules.get("max_pages", 10000)):
+            errors.append(f"Page count {page_count} exceeds platform maximum {rules['max_pages']}.")
+    size_mb = info.get("file_size_mb")
+    if size_mb is not None and size_mb > float(rules.get("max_file_mb", 999999)):
+        errors.append(f"PDF size {size_mb:.3f} MB exceeds profile limit of {rules['max_file_mb']} MB.")
+    if rules.get("require_landscape") is False and any(x.get("orientation") == "landscape" for x in info.get("sizes", [])):
+        warnings.append("One or more PDF pages are landscape; confirm this is intentional.")
+    errors.extend(platform_required_metadata(settings, profile))
+    if platform_name == "KDP" and page_count is not None and not info.get("error"):
+        try:
+            kdp_errors, kdp_warnings = kdp_preflight(project, settings, master_pdf, page_count)
+            errors.extend([f"KDP engine: {x}" for x in kdp_errors])
+            warnings.extend([f"KDP engine: {x}" for x in kdp_warnings])
+        except Exception as error:
+            errors.append(f"KDP engine preflight failed: {error}")
+    expected = None
+    if rules.get("expected_trim_from_project") and settings.get("trim_width") and settings.get("trim_height"):
+        expected = (float(settings["trim_width"]), float(settings["trim_height"]))
+        bad = []
+        for n, item in enumerate(info.get("sizes", []), 1):
+            if abs(item["width"] - expected[0]) > 0.01 or abs(item["height"] - expected[1]) > 0.01:
+                bad.append(n)
+        if bad:
+            errors.append(f"Page dimensions do not match project trim {expected[0]} x {expected[1]} in on {len(bad)} page(s).")
+    cover = _platform_cover(project)
+    if rules.get("require_cover") and not cover:
+        errors.append("Required cover asset is missing from MASTER.")
+    status = "BLOCKED" if errors else ("READY_WITH_WARNINGS" if warnings else "READY")
+    return {"schema_version": 2, "factory_version": FACTORY_VERSION, "platform_engine_version": PLATFORM_ENGINE_VERSION,
+            "platform": platform_name, "platform_type": profile.get("type"), "status": status,
+            "timestamp": datetime.now().isoformat(timespec="seconds"), "master_pdf": str(master_pdf) if master_pdf else None,
+            "pdf": info, "metadata": {"title": settings.get("title", ""), "author": settings.get("author", ""),
+                                      "page_count": page_count, "trim_width": settings.get("trim_width"),
+                                      "trim_height": settings.get("trim_height")}, "rules": rules,
+            "variant": profile.get("variant", {}), "errors": errors, "warnings": warnings}
+
+
+def ensure_master_book(project, source_pdf=None):
+    settings = load_project_settings_safe(project)
+    master = platform_master_dir(project)
+    existing = find_master_pdf(project)
+    if existing and existing.parent.resolve() == master.resolve():
+        return existing, [], ["Existing MASTER PDF preserved; master assets are immutable."]
+    pdf = source_pdf or existing or find_existing_book_pdf(project)
+    if pdf is None:
+        return None, ["No source PDF found for master package."], []
+    master_pdf = master / f"{kdp_safe_filename(settings.get('title', project.name))}_MASTER.pdf"
+    if master_pdf.exists():
+        return master_pdf, [], ["Existing MASTER PDF preserved; source was not copied over it."]
+    shutil.copy2(pdf, master_pdf)
+    metadata = {
+        "schema_version": 3, "factory_version": FACTORY_VERSION, "platform_engine_version": PLATFORM_ENGINE_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"), "title": settings.get("title", project.name),
+        "subtitle": settings.get("subtitle", settings.get("cover_subtitle", "")), "author": settings.get("author", ""),
+        "series": settings.get("series_name", ""), "series_number": settings.get("series_number", ""),
+        "world": settings.get("universe_name", ""), "world_id": settings.get("world_id", ""),
+        "description": settings.get("description", settings.get("cover_blurb", "")),
+        "short_description": settings.get("short_description", ""), "long_description": settings.get("long_description", ""),
+        "keywords": settings.get("keywords", []), "categories": settings.get("categories", []),
+        "age_range": settings.get("age_range", ""), "language": settings.get("language", "English"),
+        "themes": settings.get("themes", []), "trim_width": settings.get("trim_width"),
+        "trim_height": settings.get("trim_height"), "dpi": settings.get("dpi", 300),
+        "page_count": pdf_page_count(master_pdf), "source_pdf": str(pdf), "master_pdf": str(master_pdf),
+        "source_sha256": file_hash(master_pdf),
+    }
+    save_json(master / "master_metadata.json", metadata)
+    source_cover = None
+    for candidate in [project / "COVER", project / "KDP_PACKAGE"]:
+        if candidate.exists():
+            covers = sorted(candidate.glob("*.pdf")) + sorted(candidate.glob("*.png")) + sorted(candidate.glob("*.jpg")) + sorted(candidate.glob("*.jpeg"))
+            if covers:
+                source_cover = covers[0]
+                break
+    if source_cover:
+        target = master / f"MASTER_COVER{source_cover.suffix.lower()}"
+        if not target.exists():
+            shutil.copy2(source_cover, target)
+    return master_pdf, [], []
+
+
+def create_preview_sheet(project, output_dir, master_pdf, settings):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    preview = output_dir / "PREVIEW_SHEET.png"
+    images = []
+    cover = _platform_cover(project)
+    if cover and cover.suffix.lower() in IMAGE_EXTENSIONS:
+        try: images.append(Image.open(cover).convert("RGB"))
+        except Exception: pass
+    try:
+        for item in get_images(project)[:5]:
+            try: images.append(Image.open(item).convert("RGB"))
+            except Exception: pass
+    except Exception: pass
+    if not images:
+        img = Image.new("RGB", (1200, 1600), "white")
+        draw = ImageDraw.Draw(img)
+        draw.text((80, 120), str(settings.get("title", project.name)), fill="black")
+        draw.text((80, 180), "Digital Preview", fill="black")
+        img.save(preview)
+        return preview
+    thumb_w, thumb_h = 600, 800
+    canvas_img = Image.new("RGB", (thumb_w * 3, thumb_h * 2), "white")
+    for index, img in enumerate(images[:6]):
+        img.thumbnail((thumb_w - 40, thumb_h - 40))
+        x = (index % 3) * thumb_w + (thumb_w - img.width) // 2
+        y = (index // 3) * thumb_h + (thumb_h - img.height) // 2
+        canvas_img.paste(img, (x, y))
+    canvas_img.save(preview)
+    return preview
+
+
+def write_product_description(project, output_dir, settings, platform_name):
+    title = settings.get("title", project.name)
+    author = settings.get("author", "")
+    description = settings.get("long_description") or settings.get("description") or settings.get("cover_blurb") or f"A coloring book by {author}."
+    keywords = settings.get("keywords", [])
+    if isinstance(keywords, str): keywords = [x.strip() for x in keywords.split(",") if x.strip()]
+    text = f"{title}\n\n{description}\n\nAuthor: {author}\nFormat: Printable/Digital PDF\nPlatform package: {platform_name}\n\nKeywords: {', '.join(keywords)}\n"
+    path = output_dir / "PRODUCT_DESCRIPTION.txt"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _copy_required_kdp_assets(project, root, generated):
+    kdp_package = project / "KDP_PACKAGE"
+    if not kdp_package.exists(): return
+    for item in kdp_package.iterdir():
+        if item.is_file() and item.suffix.lower() in {".pdf", ".txt", ".json", ".png", ".jpg", ".jpeg"}:
+            target = root / item.name
+            shutil.copy2(item, target)
+            if target not in generated: generated.append(target)
+
+
+def _copy_variant_pdf(master_pdf, root, title, profile):
+    variant = profile.get("variant", {})
+    mode = variant.get("mode", "copy")
+    suffix = variant.get("filename_suffix", "_PLATFORM")
+    target = root / f"{title}{suffix}.pdf"
+    if mode == "copy":
+        shutil.copy2(master_pdf, target)
+        return target, []
+    if mode == "rebuild_pdf":
+        # Reserved extension point: a profile can request a rebuild in a future
+        # recipe. We refuse silently changing content instead of guessing.
+        return None, [f"Variant mode '{mode}' is not implemented; master was not modified."]
+    return None, [f"Unknown platform variant mode: {mode}"]
+
+
+def validate_generated_package(root, master_pdf, profile, generated):
+    errors, warnings = [], []
+    expected_files = set()
+    files = profile.get("files", [])
+    if "digital_pdf" in files or "interior_pdf" in files:
+        expected_files.add("pdf")
+    if "preview_sheet" in files: expected_files.add("preview")
+    if "metadata" in files: expected_files.add("metadata")
+    if "product_description" in files: expected_files.add("description")
+    if "cover_pdf" in files and not any("COVER" in p.name.upper() for p in generated):
+        warnings.append("Profile requested a cover PDF but no cover was generated by the source project.")
+    pdfs = [p for p in generated if p.suffix.lower() == ".pdf" and p.exists()]
+    if "pdf" in expected_files and not pdfs:
+        errors.append("Required platform PDF was not generated.")
+    for p in pdfs:
+        info = inspect_pdf(p)
+        if info.get("error"): errors.append(f"Generated PDF failed inspection: {p.name}: {info['error']}")
+        master_hash = file_hash(master_pdf)
+        # Copy-mode variants must be byte-identical to MASTER. This is a deliberate
+        # safety invariant until a profile explicitly implements a transformation.
+        if profile.get("variant", {}).get("mode") == "copy" and file_hash(p) != master_hash:
+            errors.append(f"Variant integrity mismatch: {p.name} differs from MASTER despite copy mode.")
+    for label, filename in [("preview", "PREVIEW_SHEET.png"), ("metadata", "METADATA.json"), ("description", "PRODUCT_DESCRIPTION.txt")]:
+        if label in expected_files and not (root / filename).exists(): errors.append(f"Required artifact missing: {filename}")
+    return errors, warnings
+
+
+def generate_platform_package(project, platform_name, source_pdf=None, quiet=False):
+    profiles = load_platform_profiles()
+    profile = profiles.get(platform_name)
+    if not profile: return {"status": "BLOCKED", "errors": [f"Unknown platform: {platform_name}"], "warnings": []}
+    settings = load_project_settings_safe(project)
+    master_pdf, errors, warnings = ensure_master_book(project, source_pdf=source_pdf)
+    if errors or master_pdf is None: return {"status": "BLOCKED", "errors": errors, "warnings": warnings}
+    audit = platform_preflight(project, platform_name, master_pdf, profile)
+    root = project / PLATFORM_DIRNAME / profile.get("output_dir", platform_name.upper().replace(" ", "_"))
+    root.mkdir(parents=True, exist_ok=True)
+    audit_path = root / "PLATFORM_PREFLIGHT.json"
+    save_json(audit_path, audit)
+    if audit["status"] == "BLOCKED":
+        if not quiet:
+            print(f"\n{platform_name} package BLOCKED")
+            for error in audit["errors"]: print(f"ERROR: {error}")
+        return {"status": "BLOCKED", "output": root, "audit": audit, "errors": audit["errors"], "warnings": audit["warnings"]}
+
+    # Transaction-style generation: build into a staging directory first, validate,
+    # then publish the complete package. Existing package files are never partially
+    # overwritten by a failed build.
+    staging = root / ".staging"
+    if staging.exists(): shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    title = kdp_safe_filename(settings.get("title", project.name))
+    generated = []
+    try:
+        variant_pdf, variant_errors = _copy_variant_pdf(master_pdf, staging, title, profile)
+        if variant_errors: raise RuntimeError("; ".join(variant_errors))
+        generated.append(variant_pdf)
+        cover = _platform_cover(project)
+        if cover:
+            target = staging / f"{title}_COVER{cover.suffix.lower()}"
+            shutil.copy2(cover, target); generated.append(target)
+        if "preview_sheet" in profile.get("files", []): generated.append(create_preview_sheet(project, staging, master_pdf, settings))
+        metadata = {
+            "schema_version": 3, "factory_version": FACTORY_VERSION, "platform_engine_version": PLATFORM_ENGINE_VERSION,
+            "platform": platform_name, "platform_type": profile.get("type"), "generated": datetime.now().isoformat(timespec="seconds"),
+            "title": settings.get("title", project.name), "subtitle": settings.get("subtitle", settings.get("cover_subtitle", "")),
+            "author": settings.get("author", ""), "description": settings.get("description", settings.get("cover_blurb", "")),
+            "series": settings.get("series_name", ""), "series_number": settings.get("series_number", ""),
+            "world": settings.get("universe_name", ""), "page_count": audit.get("pdf", {}).get("page_count"),
+            "source_master": str(master_pdf), "source_master_sha256": file_hash(master_pdf),
+            "profile": profile, "preflight_status": audit["status"],
+        }
+        metadata_path = staging / "METADATA.json"; save_json(metadata_path, metadata); generated.append(metadata_path)
+        if "product_description" in profile.get("files", []): generated.append(write_product_description(project, staging, settings, platform_name))
+        if platform_name == "KDP": _copy_required_kdp_assets(project, staging, generated)
+        check_errors, check_warnings = validate_generated_package(staging, master_pdf, profile, generated)
+        if check_errors: raise RuntimeError("Package validation failed: " + " | ".join(check_errors))
+        final_status = "READY_WITH_WARNINGS" if (audit["warnings"] or check_warnings) else "READY"
+        manifest = {
+            "schema_version": 3, "factory_version": FACTORY_VERSION, "platform_engine_version": PLATFORM_ENGINE_VERSION,
+            "platform": platform_name, "status": final_status, "project": project.name,
+            "title": settings.get("title", project.name), "generated": datetime.now().isoformat(timespec="seconds"),
+            "master_pdf": str(master_pdf), "master_sha256": file_hash(master_pdf),
+            "variant_mode": profile.get("variant", {}).get("mode", "copy"),
+            "files": [str(p.relative_to(staging)) for p in generated if p.exists()],
+            "file_hashes": {str(p.relative_to(staging)): file_hash(p) for p in generated if p.exists()},
+            "warnings": audit["warnings"] + check_warnings, "preflight": "PLATFORM_PREFLIGHT.json",
+            "package_validation": {"status": "PASS", "errors": [], "warnings": check_warnings},
+        }
+        save_json(staging / "PACKAGE_MANIFEST.json", manifest)
+        generated.append(staging / "PACKAGE_MANIFEST.json")
+        # Publish atomically at the directory level as far as Windows filesystem
+        # semantics permit: old package becomes a backup, then staging becomes live.
+        backup = root.with_name(root.name + ".previous")
+        if backup.exists(): shutil.rmtree(backup, ignore_errors=True)
+        live_contents = [x for x in root.iterdir() if x.name != ".staging"]
+        # Move old contents aside rather than deleting them before validation.
+        for item in live_contents:
+            if backup.exists(): break
+            backup.mkdir(parents=True, exist_ok=True)
+            break
+        if live_contents:
+            for item in live_contents:
+                target = backup / item.name
+                shutil.move(str(item), str(target))
+        for item in list(staging.iterdir()): shutil.move(str(item), str(root / item.name))
+        staging.rmdir()
+        if backup.exists(): shutil.rmtree(backup, ignore_errors=True)
+        # Recompute final manifest paths after publication.
+        manifest["files"] = [str(p) for p in sorted((root / f).relative_to(project) for f in manifest["files"] if (root / f).exists())]
+        save_json(root / "PACKAGE_MANIFEST.json", manifest)
+        record_world_production_event(
+            project, f"platform_package:{platform_name}", final_status,
+            page_count=audit.get("pdf", {}).get("page_count") or 0,
+            errors=0, warnings=len(manifest["warnings"]),
+        )
+        if not quiet:
+            print(f"\n{platform_name} package {final_status}")
+            print(f"Output: {root}\nFiles: {len(manifest['files'])}")
+            for warning in manifest["warnings"]: print(f"WARNING: {warning}")
+        return {"status": final_status, "output": root, "manifest": manifest, "audit": audit, "warnings": manifest["warnings"]}
+    except Exception as error:
+        shutil.rmtree(staging, ignore_errors=True)
+        if not quiet: print(f"\n{platform_name} package FAILED: {error}")
+        return {"status": "BLOCKED", "output": root, "audit": audit, "errors": [str(error)], "warnings": audit["warnings"]}
+
+
+def generate_all_platform_packages(project):
+    profiles = load_platform_profiles()
+    enabled = [name for name, profile in profiles.items() if profile.get("enabled", False)]
+    print("\nGENERATING ALL ENABLED PLATFORM PACKAGES")
+    print("-" * 60)
+    results = {}
+    for name in enabled:
+        result = generate_platform_package(project, name, quiet=True)
+        results[name] = result
+        print(f"{name}: {result.get('status')}")
+    save_json(project / PLATFORM_INDEX_FILENAME, {"schema_version": 1, "generated": datetime.now().isoformat(timespec="seconds"),
+                                                 "platforms": {n: {"status": r.get("status"), "output": str(r.get("output", ""))} for n, r in results.items()}})
+    return results
+
+
+def platform_requirement_comparison(project):
+    profiles = load_platform_profiles(); master = find_master_pdf(project); rows = []
+    for name, profile in profiles.items():
+        audit = platform_preflight(project, name, master, profile); rules = profile.get("rules", {})
+        rows.append({"platform": name, "enabled": bool(profile.get("enabled")), "type": profile.get("type"),
+                     "status": audit.get("status"), "pages": audit.get("pdf", {}).get("page_count"),
+                     "max_mb": rules.get("max_file_mb"), "min_pages": rules.get("min_pages"),
+                     "max_pages": rules.get("max_pages"), "cover_required": bool(rules.get("require_cover")),
+                     "variant": profile.get("variant", {}).get("mode", "copy"), "errors": len(audit.get("errors", [])),
+                     "warnings": len(audit.get("warnings", []))})
+    return rows
+
+
+def import_existing_pdf_to_master(project, pdf_path):
+    if not pdf_path or not Path(pdf_path).exists(): print("PDF not found."); return None
+    pdf_path = Path(pdf_path); settings_path = project / "project.json"
+    if not settings_path.exists():
+        info = inspect_pdf(pdf_path); trim_w, trim_h = 8.5, 11
+        if info.get("sizes"):
+            trim_w, trim_h = info["sizes"][0]["width"], info["sizes"][0]["height"]
+        save_json(settings_path, {"title": pdf_path.stem, "author": "", "trim_width": trim_w, "trim_height": trim_h,
+                                  "dpi": 300, "production_profile": "Imported PDF", "factory_version": FACTORY_VERSION,
+                                  "platform_engine_version": PLATFORM_ENGINE_VERSION})
+    master, errors, warnings = ensure_master_book(project, source_pdf=pdf_path)
+    if errors:
+        print("\n".join(f"ERROR: {x}" for x in errors)); return None
+    info = inspect_pdf(master)
+    print(f"\nMASTER PDF created/preserved: {master}\nPages: {info.get('page_count', 'unknown')} | Size: {info.get('file_size_mb', 'unknown')} MB")
+    for warning in warnings: print(f"WARNING: {warning}")
+    return master
+
+
+def _normalize_dropped_path(raw):
+    """Normalize a Windows Explorer drag/drop or pasted PDF path."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    # Explorer may supply a quoted path, including whitespace in the filename.
+    if text.startswith("{") and text.endswith("}"):
+        text = text[1:-1]
+    text = text.strip().strip('"').strip()
+    if not text:
+        return None
+    # Handle the common case where the console receives a quoted path followed
+    # by whitespace. For multi-file drops, only the first PDF is used.
+    candidates = []
+    if '"' in text:
+        import re
+        candidates.extend(re.findall(r'"([^"]+\\.pdf)"', text, flags=re.I))
+    candidates.append(text)
+    for candidate in candidates:
+        path = Path(candidate).expanduser()
+        if path.exists() and path.is_file() and path.suffix.lower() == ".pdf":
+            return path
+    return None
+
+
+def choose_pdf_file(prompt="PDF file"):
+    """Open a native PDF picker, with optional drag/drop support.
+
+    On Windows, the popup is the preferred method. If tkinterdnd2 is installed,
+    PDFs can also be dropped directly onto the popup. Without it, Explorer
+    drag/drop into the console still works because the returned path is
+    normalized by _normalize_dropped_path(). A manual path remains available
+    as a fallback if the GUI cannot start.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox
+    except Exception:
+        raw = input(f"{prompt}: ").strip()
+        return _normalize_dropped_path(raw)
+
+    # Optional enhanced drag/drop. tkinterdnd2 is deliberately optional so the
+    # Factory remains usable on a clean Python/Windows installation.
+    try:
+        from tkinterdnd2 import TkinterDnD, DND_FILES
+        dnd_available = True
+    except Exception:
+        TkinterDnD = None
+        DND_FILES = None
+        dnd_available = False
+
+    try:
+        root_cls = TkinterDnD.Tk if dnd_available else tk.Tk
+        root = root_cls()
+        root.withdraw()
+        root.title("Coloring Book Factory - Select Finished PDF")
+
+        selected = {"path": None}
+
+        if dnd_available:
+            # A compact drag/drop window avoids forcing the user through a
+            # directory tree when the PDF is already visible in Explorer.
+            win = tk.Toplevel(root)
+            win.title("Select Finished PDF")
+            win.geometry("560x250")
+            win.resizable(False, False)
+            win.attributes("-topmost", True)
+            win.protocol("WM_DELETE_WINDOW", win.destroy)
+
+            tk.Label(win, text="Finished PDF", font=("Segoe UI", 16, "bold")).pack(pady=(22, 6))
+            drop = tk.Label(
+                win,
+                text="DRAG & DROP A PDF HERE\n\nor click Browse",
+                relief="groove", bd=2, width=52, height=5,
+                font=("Segoe UI", 11)
+            )
+            drop.pack(padx=25, pady=8, fill="both")
+
+            def accept_drop(event):
+                try:
+                    items = root.tk.splitlist(event.data)
+                except Exception:
+                    items = [event.data]
+                for item in items:
+                    path = _normalize_dropped_path(item)
+                    if path:
+                        selected["path"] = path
+                        win.destroy()
+                        return
+                messagebox.showerror("Invalid file", "Please drop a PDF file.", parent=win)
+
+            def browse():
+                path = filedialog.askopenfilename(
+                    parent=win, title="Select Finished PDF",
+                    filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
+                )
+                path = _normalize_dropped_path(path)
+                if path:
+                    selected["path"] = path
+                    win.destroy()
+
+            drop.drop_target_register(DND_FILES)
+            drop.dnd_bind("<<Drop>>", accept_drop)
+            tk.Button(win, text="Browse for PDF…", command=browse, width=20).pack(pady=(2, 15))
+            root.wait_window(win)
+        else:
+            # Native Windows picker works everywhere Tk is available. The
+            # console also accepts a pasted/dropped path if the dialog is
+            # cancelled, so there is no loss of functionality.
+            path = filedialog.askopenfilename(
+                parent=root, title="Select Finished PDF",
+                filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
+            )
+            selected["path"] = _normalize_dropped_path(path)
+
+        root.destroy()
+        if selected["path"]:
+            print(f"Selected PDF: {selected['path']}")
+            return selected["path"]
+
+    except Exception as error:
+        try:
+            root.destroy()
+        except Exception:
+            pass
+        print(f"PDF picker unavailable ({error}). Falling back to path entry.")
+
+    raw = input(f"{prompt} (you can drag/drop a PDF into this console): ").strip()
+    return _normalize_dropped_path(raw)
+
+
+def run_platform_self_test():
+    """Offline integration test for the v7.2 platform pipeline."""
+    import tempfile
+    from reportlab.pdfgen import canvas as _canvas
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="CBF_v72_TEST_") as temp:
+        root = Path(temp); project = root / "Projects" / "Test Platform Book"; project.mkdir(parents=True)
+        save_json(project / "project.json", {"title": "Platform Test Book", "author": "Test Author", "trim_width": 8.5, "trim_height": 11, "dpi": 300})
+        (project / "PDF").mkdir()
+        pdf = project / "PDF" / "source.pdf"
+        c = _canvas.Canvas(str(pdf), pagesize=(8.5 * 72, 11 * 72))
+        for _ in range(24): c.drawString(72, 72, "Coloring Book Factory v7.2 TEST"); c.showPage()
+        c.save()
+        master, e, _ = ensure_master_book(project, pdf)
+        if e: failures.append("ensure_master_book: " + str(e))
+        else:
+            audit = platform_preflight(project, "KDP", master, load_platform_profiles()["KDP"])
+            if audit["status"] == "BLOCKED": failures.append("KDP preflight unexpectedly blocked: " + str(audit["errors"]))
+            result = generate_platform_package(project, "KDP", quiet=True)
+            if result["status"] not in {"READY", "READY_WITH_WARNINGS"}: failures.append("KDP package failed: " + str(result.get("errors")))
+            live = project / "PLATFORMS" / "KDP"
+            if not (live / "PACKAGE_MANIFEST.json").exists(): failures.append("manifest missing")
+            if not any(x.suffix == ".pdf" for x in live.iterdir()): failures.append("variant PDF missing")
+            variant = next((x for x in live.iterdir() if x.suffix == ".pdf"), None)
+            if variant and file_hash(variant) != file_hash(master): failures.append("copy variant hash mismatch")
+    if failures:
+        print("\nPLATFORM ENGINE SELF-TEST: FAIL")
+        for f in failures: print("  FAIL:", f)
+        return False
+    print("\nPLATFORM ENGINE SELF-TEST: PASS")
+    print("  Master immutability: PASS")
+    print("  PDF inspection: PASS")
+    print("  Rule-driven preflight: PASS")
+    print("  Transactional package build: PASS")
+    print("  Variant SHA-256 integrity: PASS")
+    return True
+
+
+# ============================================================
+# v8.0 PUBLISHING / DELIVERY ENGINE
+# ============================================================
+
+PUBLISHING_ENGINE_VERSION = "1.0"
+DELIVERY_DIRNAME = "DELIVERY"
+FACTORY_BACKUP_DIRNAME = "_FACTORY_BACKUPS"
+
+
+def _safe_json_read(path, fallback=None):
+    try:
+        data = load_json(path)
+        return data if isinstance(data, dict) else (fallback if fallback is not None else {})
+    except Exception:
+        return fallback if fallback is not None else {}
+
+
+def project_health_scan(project):
+    """Deep, non-destructive health scan for a project."""
+    settings = load_project_settings_safe(project)
+    health = {
+        "project": project.name,
+        "title": settings.get("title", project.name),
+        "status": "HEALTHY",
+        "errors": [],
+        "warnings": [],
+        "artwork": 0,
+        "pages": 0,
+        "master": None,
+        "platforms": {},
+    }
+
+    required = ["project.json", "book.json", "INPUT", "PROCESSED", "PAGES",
+                "PDF", "FINAL", "REPORTS"]
+    for name in required:
+        if not (project / name).exists():
+            health["warnings"].append(f"Missing project component: {name}")
+
+    images = get_images(project)
+    health["artwork"] = len(images)
+
+    book = _safe_json_read(project / "book.json", {"pages": []})
+    pages = book.get("pages", []) if isinstance(book, dict) else []
+    health["pages"] = len(pages)
+
+    master = find_master_pdf(project)
+    if master:
+        info = inspect_pdf(master)
+        health["master"] = {
+            "path": str(master),
+            "pages": info.get("page_count"),
+            "size_mb": info.get("file_size_mb"),
+            "dimensions": info.get("unique_sizes", []),
+            "sha256": file_hash(master),
+        }
+        if info.get("error"):
+            health["errors"].append(f"MASTER PDF inspection failed: {info['error']}")
+    else:
+        # A normal artwork project is expected to have a buildable source,
+        # while an empty/new project is merely incomplete rather than broken.
+        if images:
+            health["warnings"].append("No MASTER PDF exists yet.")
+
+    report = project / "REPORTS" / "final_report.txt"
+    if report.exists():
+        report_text = report.read_text(encoding="utf-8", errors="replace")
+        if "STATUS: BUILD SUCCESSFUL" not in report_text:
+            if "STATUS: BUILD FAILED" in report_text or "NOT READY" in report_text:
+                health["warnings"].append("Latest production report is not a clean success.")
+
+    profiles = load_platform_profiles()
+    for name, profile in profiles.items():
+        if not profile.get("enabled", False):
+            continue
+        try:
+            audit = platform_preflight(project, name, master, profile) if master else {
+                "status": "BLOCKED", "errors": ["MASTER PDF is missing."], "warnings": []
+            }
+            health["platforms"][name] = {
+                "status": audit.get("status"),
+                "errors": len(audit.get("errors", [])),
+                "warnings": len(audit.get("warnings", [])),
+                "error_details": list(audit.get("errors", [])),
+                "warning_details": list(audit.get("warnings", [])),
+            }
+        except Exception as error:
+            health["platforms"][name] = {"status": "BLOCKED", "errors": 1, "warnings": 0, "error_details": [str(error)], "warning_details": []}
+            health["errors"].append(f"{name} audit failed: {error}")
+
+    if health["errors"]:
+        health["status"] = "BLOCKED"
+    elif health["warnings"]:
+        health["status"] = "REVIEW"
+
+    save_json(project / "REPORTS" / "PROJECT_HEALTH.json", {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        **health,
+    })
+    return health
+
+
+def print_project_health(health):
+    print(f"\n{health['title']}: {health['status']}")
+    print(f"  Artwork: {health['artwork']} | Manifest pages: {health['pages']}")
+    if health.get("master"):
+        m = health["master"]
+        print(f"  MASTER: {m['pages']} pages | {m['size_mb']} MB")
+    for name, data in health.get("platforms", {}).items():
+        print(f"  {name}: {data['status']} | errors={data['errors']} warnings={data['warnings']}")
+        for warning_text in data.get("warning_details", []):
+            print(f"    WARNING: {warning_text}")
+        for error_text in data.get("error_details", []):
+            print(f"    ERROR: {error_text}")
+    for error in health.get("errors", []):
+        print(f"  ERROR: {error}")
+    for warning in health.get("warnings", []):
+        print(f"  WARNING: {warning}")
+
+
+def factory_health_dashboard():
+    """Scan every project and produce one machine-readable health dashboard."""
+    projects = get_projects()
+    print("\n" + "=" * 78)
+    print("FACTORY HEALTH DASHBOARD")
+    print("=" * 78)
+    if not projects:
+        print("No projects found.")
+        return
+
+    results = []
+    counts = {"HEALTHY": 0, "REVIEW": 0, "BLOCKED": 0}
+    for project in projects:
+        try:
+            health = project_health_scan(project)
+            results.append(health)
+            counts[health["status"]] = counts.get(health["status"], 0) + 1
+            print_project_health(health)
+        except Exception as error:
+            counts["BLOCKED"] += 1
+            results.append({"project": project.name, "status": "BLOCKED",
+                            "errors": [str(error)], "warnings": []})
+            print(f"\n{project.name}: BLOCKED")
+            print(f"  ERROR: {error}")
+
+    report = PROJECTS / "FACTORY_HEALTH.json"
+    save_json(report, {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "summary": {"projects": len(projects), **counts},
+        "projects": results,
+    })
+    print("\n" + "-" * 78)
+    print(f"FACTORY TOTAL: {len(projects)} projects | "
+          f"Healthy {counts['HEALTHY']} | Review {counts['REVIEW']} | Blocked {counts['BLOCKED']}")
+    print(f"Dashboard saved: {report}")
+
+
+def create_delivery_zip(project, platform_name=None):
+    """Create a clean ZIP delivery artifact from a validated platform package."""
+    settings = load_project_settings_safe(project)
+    title = kdp_safe_filename(settings.get("title", project.name))
+    platform_root = project / PLATFORM_DIRNAME
+    if platform_name:
+        profiles = load_platform_profiles()
+        profile = profiles.get(platform_name)
+        if not profile:
+            return None, [f"Unknown platform: {platform_name}"]
+        source = platform_root / profile.get("output_dir", platform_name.upper())
+        zip_label = platform_name.replace(" ", "_").upper()
+    else:
+        return None, ["Platform name is required."]
+
+    manifest = source / "PACKAGE_MANIFEST.json"
+    if not source.exists() or not manifest.exists():
+        return None, [f"Validated package is missing: {source}"]
+
+    delivery = project / DELIVERY_DIRNAME
+    delivery.mkdir(parents=True, exist_ok=True)
+    target = delivery / f"{title}_{zip_label}_PACKAGE.zip"
+    temp = delivery / f".{target.stem}.staging.zip"
+    if temp.exists():
+        temp.unlink()
+
+    try:
+        with zipfile.ZipFile(temp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+            for item in sorted(source.rglob("*")):
+                if item.is_file() and ".staging" not in item.parts:
+                    zf.write(item, item.relative_to(source))
+        temp.replace(target)
+        return target, []
+    except Exception as error:
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        return None, [str(error)]
+
+
+def create_delivery_index(project, results):
+    delivery = project / DELIVERY_DIRNAME
+    delivery.mkdir(parents=True, exist_ok=True)
+    settings = load_project_settings_safe(project)
+    index = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "publishing_engine_version": PUBLISHING_ENGINE_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "project": project.name,
+        "title": settings.get("title", project.name),
+        "master_pdf": str(find_master_pdf(project) or ""),
+        "platforms": {},
+    }
+    for name, result in results.items():
+        entry = {
+            "status": result.get("status"),
+            "package": str(result.get("output", "")),
+            "zip": None,
+        }
+        if result.get("status") in {"READY", "READY_WITH_WARNINGS"}:
+            zip_file, errors = create_delivery_zip(project, name)
+            if zip_file:
+                entry["zip"] = str(zip_file)
+            if errors:
+                entry["zip_errors"] = errors
+        index["platforms"][name] = entry
+
+    path = delivery / "DELIVERY_INDEX.json"
+    save_json(path, index)
+    return path
+
+
+def one_click_publish(project):
+    """End-to-end production command: build/import -> audit -> packages -> ZIP delivery."""
+    print("\n" + "=" * 78)
+    print("ONE-CLICK PUBLISH")
+    print("=" * 78)
+    print("MASTER is treated as immutable. Platform packages are generated from it.")
+
+    settings = load_project_settings_safe(project)
+    master = find_master_pdf(project)
+
+    # Imported finished PDFs already have their source of truth. Normal projects
+    # need the regular production build before platform packaging.
+    imported = str(settings.get("production_profile", "")).lower().startswith("imported")
+    if not master and not imported:
+        print("\nBUILDING SOURCE BOOK...")
+        build_book(project)
+        master = find_master_pdf(project)
+
+    if not master and imported:
+        print("ERROR: Imported project has no MASTER PDF.")
+        return
+
+    if not master:
+        print("ERROR: No MASTER PDF was produced.")
+        return
+
+    print(f"\nMASTER: {master}")
+    health = project_health_scan(project)
+    print_project_health(health)
+    if health["status"] == "BLOCKED":
+        print("\nPUBLISH STOPPED: project health is BLOCKED.")
+        return
+
+    print("\nGENERATING ENABLED PLATFORM PACKAGES...")
+    results = generate_all_platform_packages(project)
+    delivery_index = create_delivery_index(project, results)
+
+    # Re-scan after packaging so the dashboard records the actual final state.
+    health = project_health_scan(project)
+    print("\nFINAL PUBLISH SUMMARY")
+    print("-" * 78)
+    for name, result in results.items():
+        print(f"{name:<16} {result.get('status')}")
+    print(f"Delivery index: {delivery_index}")
+    print(f"Project health: {health['status']}")
+
+    successful = [n for n, r in results.items()
+                  if r.get("status") in {"READY", "READY_WITH_WARNINGS"}]
+    if successful:
+        print("\nDELIVERY ZIP FILES")
+        for name in successful:
+            zip_file = project / DELIVERY_DIRNAME / (
+                f"{kdp_safe_filename(settings.get('title', project.name))}_"
+                f"{name.replace(' ', '_').upper()}_PACKAGE.zip"
+            )
+            if zip_file.exists():
+                print(f"  {name}: {zip_file}")
+
+    return results
+
+
+def create_project_snapshot(project):
+    """Create a timestamped ZIP snapshot without touching production outputs."""
+    backup_root = project / FACTORY_BACKUP_DIRNAME
+    backup_root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target = backup_root / f"{project.name}_{stamp}.zip"
+    temp = backup_root / f".{target.stem}.tmp.zip"
+
+    excluded = {FACTORY_BACKUP_DIRNAME, ".staging"}
+    with zipfile.ZipFile(temp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for item in sorted(project.rglob("*")):
+            if not item.is_file():
+                continue
+            if any(part in excluded for part in item.relative_to(project).parts):
+                continue
+            zf.write(item, item.relative_to(project))
+    temp.replace(target)
+    return target
+
+
+def convert_existing_pdf_enhanced():
+    """Professional PDF intake: inspect first, then create immutable MASTER and publish."""
+    print("\n" + "=" * 78)
+    print("PDF INTAKE / CONVERSION")
+    print("=" * 78)
+    pdf = choose_pdf_file("Finished PDF")
+    if not pdf:
+        print("No valid PDF selected.")
+        return
+
+    info = inspect_pdf(pdf)
+    if info.get("error"):
+        print(f"ERROR: {info['error']}")
+        return
+
+    print("\nSOURCE PDF")
+    print("-" * 78)
+    print(f"File: {pdf}")
+    print(f"Pages: {info.get('page_count')}")
+    print(f"Size: {info.get('file_size_mb')} MB")
+    print(f"Page sizes: {', '.join(info.get('unique_sizes', [])) or 'unknown'}")
+    print(f"Encrypted: {info.get('encrypted')}")
+
+    title = pdf.stem
+    name = input(f"\nProject name [{title}]: ").strip() or title
+    author = input("Author [blank = unknown]: ").strip()
+
+    project_name = re.sub(r"[^A-Za-z0-9._ -]+", "", name).strip().rstrip(".") or "Imported PDF"
+    project = PROJECTS / unique_project_name(project_name)
+    project.mkdir(parents=True, exist_ok=True)
+    setup_project(project)
+    (project / "MASTER").mkdir(exist_ok=True)
+
+    sizes = info.get("sizes") or [{"width": 8.5, "height": 11}]
+    settings = {
+        "title": title,
+        "author": author,
+        "trim_width": sizes[0]["width"],
+        "trim_height": sizes[0]["height"],
+        "dpi": 300,
+        "production_profile": "Imported Finished PDF",
+        "factory_version": FACTORY_VERSION,
+        "platform_engine_version": PLATFORM_ENGINE_VERSION,
+        "world_engine_version": WORLD_ENGINE_VERSION,
+        "source_pdf": str(pdf),
+        "source_pdf_sha256": file_hash(pdf),
+        "source_pdf_pages": info.get("page_count"),
+        "source_pdf_size_mb": info.get("file_size_mb"),
+        "imported_at": datetime.now().isoformat(timespec="seconds"),
+        "imported_pdf_metadata": info.get("metadata", {}),
+    }
+    save_json(project / "project.json", settings)
+    save_json(project / "book.json", {"pages": [], "source": "imported_pdf"})
+
+    master = import_existing_pdf_to_master(project, pdf)
+    if not master:
+        print("ERROR: MASTER creation failed.")
+        return
+
+    print("\nMASTER LOCKED IN.")
+    results = generate_all_platform_packages(project)
+    create_delivery_index(project, results)
+    health = project_health_scan(project)
+    print_project_health(health)
+    print(f"\nImported project: {project}")
+    return project
+
+
+def manage_platform_profiles_v2():
+    """Expanded profile manager with safe rule editing and enable/disable controls."""
+    profiles = load_platform_profiles()
+    names = list(profiles.keys())
+
+    while True:
+        print("\n" + "=" * 78)
+        print("PLATFORM PROFILE MANAGER v3")
+        print("=" * 78)
+        for i, name in enumerate(names, 1):
+            p = profiles[name]
+            r = p.get("rules", {})
+            print(f"{i}. {name:<14} {'ON ' if p.get('enabled') else 'OFF'} | "
+                  f"{p.get('type','?'):<8} | pages {r.get('min_pages')}-{r.get('max_pages')} | "
+                  f"{r.get('max_file_mb')} MB")
+        print("\nA. Add custom platform")
+        print("E. Edit selected profile")
+        print("T. Toggle selected profile")
+        print("X. Back")
+        choice = input("Choose: ").strip().lower()
+        if choice == "x":
+            return
+        if choice == "a":
+            name = input("Platform name: ").strip()
+            if not name:
+                continue
+            if name in profiles:
+                print("That platform already exists.")
+                continue
+            out = re.sub(r"[^A-Za-z0-9_-]+", "_", name).upper()
+            profiles[name] = {
+                "name": name, "type": "digital", "enabled": False,
+                "output_dir": out,
+                "source": "master_pdf",
+                "files": ["digital_pdf", "preview_sheet", "metadata", "product_description"],
+                "variant": {"mode": "copy", "filename_suffix": "_DIGITAL"},
+                "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                          "require_author": False, "require_cover": False,
+                          "require_landscape": False, "max_file_mb": 500},
+                "notes": "Custom user-defined profile.",
+            }
+            save_platform_profiles(profiles)
+            names = list(profiles.keys())
+            print(f"Added custom profile: {name}")
+            continue
+        if not choice.isdigit() or not (1 <= int(choice) <= len(names)):
+            print("Invalid choice.")
+            continue
+        selected = names[int(choice) - 1]
+        profile = profiles[selected]
+        if choice and False:
+            pass
+        action = input("Toggle (T) or edit (E)? ").strip().lower()
+        if action == "t":
+            profile["enabled"] = not profile.get("enabled", False)
+            save_platform_profiles(profiles)
+            print(f"{selected}: {'ENABLED' if profile['enabled'] else 'DISABLED'}")
+        elif action == "e":
+            rules = profile.setdefault("rules", {})
+            raw = input(f"Max file MB [{rules.get('max_file_mb', 500)}]: ").strip()
+            if raw:
+                try:
+                    rules["max_file_mb"] = float(raw)
+                except ValueError:
+                    print("Invalid number; unchanged.")
+            raw = input(f"Minimum pages [{rules.get('min_pages', 1)}]: ").strip()
+            if raw:
+                try:
+                    rules["min_pages"] = int(raw)
+                except ValueError:
+                    print("Invalid number; unchanged.")
+            raw = input(f"Maximum pages [{rules.get('max_pages', 10000)}]: ").strip()
+            if raw:
+                try:
+                    rules["max_pages"] = int(raw)
+                except ValueError:
+                    print("Invalid number; unchanged.")
+            author_required = input(
+                f"Require author? [{'Y' if rules.get('require_author') else 'N'}]: "
+            ).strip().lower()
+            if author_required in {"y", "n"}:
+                rules["require_author"] = author_required == "y"
+            save_platform_profiles(profiles)
+            print(f"Saved profile: {selected}")
+
+
+def platform_center():
+    while True:
+        profiles = load_platform_profiles()
+        print("\n" + "=" * 78)
+        print(f"PLATFORM & PUBLISHING CENTER v{PLATFORM_ENGINE_VERSION}")
+        print("=" * 78)
+        print("1. ONE-CLICK PUBLISH (build + audit + all packages + ZIPs)")
+        print("2. Generate KDP Package")
+        print("3. Generate Gumroad Package")
+        print("4. Generate ALL Platform Packages")
+        print("5. Convert Existing PDF")
+        print("6. Manage Platform Profiles")
+        print("7. Platform Preflight / Audit")
+        print("8. Compare Platform Requirements")
+        print("9. Factory Health Dashboard")
+        print("10. Create Project Snapshot")
+        print("11. Create Delivery ZIPs")
+        print("12. Run Platform Engine Self-Test")
+        print("13. Back")
+        choice = input("Choose: ").strip()
+
+        if choice in {"1", "2", "3", "4"}:
+            project = choose_project()
+            if not project:
+                continue
+            if choice == "1":
+                one_click_publish(project)
+            elif choice == "2":
+                generate_platform_package(project, "KDP")
+            elif choice == "3":
+                generate_platform_package(project, "Gumroad")
+            else:
+                generate_all_platform_packages(project)
+            input("\nPress Enter to continue...")
+
+        elif choice == "5":
+            project = convert_existing_pdf_enhanced()
+            input("\nPress Enter to continue...")
+
+        elif choice == "6":
+            manage_platform_profiles_v2()
+
+        elif choice == "7":
+            project = choose_project()
+            if not project:
+                continue
+            master, errors, warnings = ensure_master_book(project)
+            print("\nPLATFORM AUDIT\n" + "-" * 78)
+            if errors:
+                for error in errors:
+                    print("ERROR:", error)
+                input("\nPress Enter to continue...")
+                continue
+            audits = {}
+            for name, profile in profiles.items():
+                if not profile.get("enabled"):
+                    continue
+                audit = platform_preflight(project, name, master, profile)
+                audits[name] = audit
+                print(f"{name}: {audit['status']} | pages={audit['pdf'].get('page_count')} | "
+                      f"errors={len(audit['errors'])} | warnings={len(audit['warnings'])}")
+                for error in audit["errors"]:
+                    print("  ERROR:", error)
+                for warning in audit["warnings"]:
+                    print("  WARNING:", warning)
+            save_json(project / PLATFORM_AUDIT_FILENAME, {
+                "schema_version": 3,
+                "generated": datetime.now().isoformat(timespec="seconds"),
+                "audits": audits,
+            })
+            input("\nPress Enter to continue...")
+
+        elif choice == "8":
+            project = choose_project()
+            if not project:
+                continue
+            print("\nPLATFORM REQUIREMENT COMPARISON\n" + "-" * 78)
+            for row in platform_requirement_comparison(project):
+                print(f"{row['platform']:<14} {'ON' if row['enabled'] else 'OFF':<4} "
+                      f"{row['status']:<18} pages {row['min_pages']}-{row['max_pages']} | "
+                      f"max {row['max_mb']} MB | cover "
+                      f"{'YES' if row['cover_required'] else 'NO'} | variant {row['variant']}")
+            input("\nPress Enter to continue...")
+
+        elif choice == "9":
+            factory_health_dashboard()
+            input("\nPress Enter to continue...")
+
+        elif choice == "10":
+            project = choose_project()
+            if project:
+                try:
+                    snapshot = create_project_snapshot(project)
+                    print(f"\nSnapshot created:\n{snapshot}")
+                except Exception as error:
+                    print(f"ERROR: {error}")
+            input("\nPress Enter to continue...")
+
+        elif choice == "11":
+            project = choose_project()
+            if project:
+                results = {}
+                for name, profile in profiles.items():
+                    if profile.get("enabled"):
+                        zip_file, errors = create_delivery_zip(project, name)
+                        if zip_file:
+                            print(f"{name}: {zip_file}")
+                            results[name] = {"status": "ZIPPED", "zip": str(zip_file)}
+                        else:
+                            print(f"{name}: FAILED - {'; '.join(errors)}")
+                if results:
+                    print(f"Delivery index: {create_delivery_index(project, results)}")
+            input("\nPress Enter to continue...")
+
+        elif choice == "12":
+            run_platform_self_test()
+            input("\nPress Enter to continue...")
+
+        elif choice == "13":
+            return
+        else:
+            print("Invalid choice.")
+    while True:
+        profiles = load_platform_profiles()
+        print("\n" + "=" * 72); print("PLATFORM CENTER v7.2"); print("=" * 72)
+        print("1. Generate KDP Package")
+        print("2. Generate Gumroad Package")
+        print("3. Generate ALL Platform Packages")
+        print("4. Convert Existing PDF")
+        print("5. Manage Platform Profiles")
+        print("6. Platform Preflight / Audit")
+        print("7. Compare Platform Requirements")
+        print("8. Run Platform Engine Self-Test")
+        print("9. Back")
+        choice = input("Choose: ").strip()
+        if choice in {"1", "2", "3"}:
+            project = choose_project()
+            if not project: continue
+            if choice == "1": generate_platform_package(project, "KDP")
+            elif choice == "2": generate_platform_package(project, "Gumroad")
+            else: generate_all_platform_packages(project)
+            input("\nPress Enter to continue...")
+        elif choice == "4":
+            print("\nSelect the finished PDF from the popup, or drag/drop it onto the popup.")
+            pdf = choose_pdf_file("Finished PDF path")
+            if not pdf:
+                print("No valid PDF selected.")
+                continue
+            name = input("New project name (blank = PDF filename): ").strip() or pdf.stem
+            project = PROJECTS / unique_project_name(name); project.mkdir(parents=True, exist_ok=True); setup_project(project)
+            (project / "MASTER").mkdir(exist_ok=True)
+            info = inspect_pdf(pdf); trim_w, trim_h = (info.get("sizes") or [{"width": 8.5, "height": 11}])[0]["width"], (info.get("sizes") or [{"width": 8.5, "height": 11}])[0]["height"]
+            save_json(project / "project.json", {"title": pdf.stem, "author": "", "trim_width": trim_w, "trim_height": trim_h, "dpi": 300,
+                                                  "production_profile": "Imported Finished PDF", "factory_version": FACTORY_VERSION,
+                                                  "platform_engine_version": PLATFORM_ENGINE_VERSION, "world_engine_version": WORLD_ENGINE_VERSION})
+            save_json(project / "book.json", {"pages": [], "source": "imported_pdf"})
+            master = import_existing_pdf_to_master(project, pdf)
+            if master: generate_all_platform_packages(project)
+            input("\nPress Enter to continue...")
+        elif choice == "5":
+            print("\nPLATFORM PROFILES")
+            names = list(profiles.keys())
+            for i, name in enumerate(names, 1):
+                profile = profiles[name]; rules = profile.get("rules", {})
+                print(f"{i}. {name}: {'ENABLED' if profile.get('enabled') else 'disabled'} | {profile.get('type')} | {rules.get('min_pages')}-{rules.get('max_pages')} pages | {rules.get('max_file_mb')} MB | variant={profile.get('variant', {}).get('mode', 'copy')}")
+            raw = input("Enter profile number to toggle, or Enter to go back: ").strip()
+            if raw.isdigit() and 0 <= int(raw) - 1 < len(names):
+                name = names[int(raw) - 1]; profiles[name]["enabled"] = not profiles[name].get("enabled", False); save_platform_profiles(profiles)
+                print(f"{name}: {'ENABLED' if profiles[name]['enabled'] else 'disabled'}")
+        elif choice == "6":
+            project = choose_project()
+            if not project: continue
+            master, errors, _ = ensure_master_book(project)
+            print("\nPLATFORM AUDIT\n" + "-" * 72)
+            if errors:
+                for error in errors: print("ERROR:", error)
+                input("\nPress Enter to continue..."); continue
+            audits = {}
+            for name, profile in profiles.items():
+                if not profile.get("enabled"): continue
+                audit = platform_preflight(project, name, master, profile); audits[name] = audit
+                print(f"{name}: {audit['status']} | pages={audit['pdf'].get('page_count')} | errors={len(audit['errors'])} | warnings={len(audit['warnings'])}")
+                for error in audit["errors"]: print("  ERROR:", error)
+                for warning in audit["warnings"]: print("  WARNING:", warning)
+            save_json(project / PLATFORM_AUDIT_FILENAME, {"schema_version": 2, "generated": datetime.now().isoformat(timespec="seconds"), "audits": audits})
+            input("\nPress Enter to continue...")
+        elif choice == "7":
+            project = choose_project()
+            if not project: continue
+            print("\nPLATFORM REQUIREMENT COMPARISON\n" + "-" * 72)
+            for row in platform_requirement_comparison(project):
+                print(f"{row['platform']:<14} {'ON' if row['enabled'] else 'OFF':<4} {row['status']:<18} pages {row['min_pages']}-{row['max_pages']} | max {row['max_mb']} MB | cover {'YES' if row['cover_required'] else 'NO'} | variant {row['variant']}")
+            input("\nPress Enter to continue...")
+        elif choice == "8":
+            run_platform_self_test(); input("\nPress Enter to continue...")
+        elif choice == "9": return
+        else: print("Invalid choice.")
+
 # ============================================================
 # MAIN MENU
 # ============================================================
@@ -3708,7 +5449,9 @@ def main():
         print("6. Production Dashboard")
         print("7. Worlds & Universes")
         print("8. Production Center")
-        print("9. Exit")
+        print("9. Platform & Publishing Center")
+        print("10. Clone a project from template")
+        print("11. Exit")
 
         print()
 
@@ -3762,6 +5505,14 @@ def main():
             production_center()
             input("\nPress Enter to return to menu...")
         elif choice == "9":
+            platform_center()
+            input("\nPress Enter to return to menu...")
+
+        elif choice == "10":
+            clone_project_from_template()
+            input("\nPress Enter to return to menu...")
+
+        elif choice == "11":
             print("\nGoodbye.")
             break
 

@@ -1,0 +1,1117 @@
+{
+    "schema_version": 3,
+    "generated": "2026-09-07T02:41:27",
+    "audits": {
+        "KDP": {
+            "schema_version": 2,
+            "factory_version": "8.0",
+            "platform_engine_version": "3.0",
+            "platform": "KDP",
+            "platform_type": "print",
+            "status": "READY",
+            "timestamp": "2026-09-07T02:41:27",
+            "master_pdf": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (3)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+            "pdf": {
+                "path": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (3)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+                "exists": true,
+                "page_count": 64,
+                "sizes": [
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    }
+                ],
+                "unique_sizes": [
+                    "8.5x11.0"
+                ],
+                "file_size_mb": 40.77,
+                "encrypted": false,
+                "metadata": {
+                    "/CreationDate": "D:20260903221653Z",
+                    "/ModDate": "D:20260903221658Z",
+                    "/Producer": "Adobe PDF Library 18.0"
+                },
+                "error": null
+            },
+            "metadata": {
+                "title": "NightmareUnicornsFinished",
+                "author": "JAC",
+                "page_count": 64,
+                "trim_width": 8.5,
+                "trim_height": 11.0
+            },
+            "rules": {
+                "min_pages": 24,
+                "max_pages": 828,
+                "require_title": true,
+                "require_author": false,
+                "require_cover": false,
+                "require_landscape": false,
+                "max_file_mb": 650,
+                "expected_trim_from_project": true
+            },
+            "variant": {
+                "mode": "copy",
+                "filename_suffix": "_KDP_INTERIOR"
+            },
+            "errors": [],
+            "warnings": []
+        },
+        "Gumroad": {
+            "schema_version": 2,
+            "factory_version": "8.0",
+            "platform_engine_version": "3.0",
+            "platform": "Gumroad",
+            "platform_type": "digital",
+            "status": "READY",
+            "timestamp": "2026-09-07T02:41:27",
+            "master_pdf": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (3)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+            "pdf": {
+                "path": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (3)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+                "exists": true,
+                "page_count": 64,
+                "sizes": [
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    }
+                ],
+                "unique_sizes": [
+                    "8.5x11.0"
+                ],
+                "file_size_mb": 40.77,
+                "encrypted": false,
+                "metadata": {
+                    "/CreationDate": "D:20260903221653Z",
+                    "/ModDate": "D:20260903221658Z",
+                    "/Producer": "Adobe PDF Library 18.0"
+                },
+                "error": null
+            },
+            "metadata": {
+                "title": "NightmareUnicornsFinished",
+                "author": "JAC",
+                "page_count": 64,
+                "trim_width": 8.5,
+                "trim_height": 11.0
+            },
+            "rules": {
+                "min_pages": 1,
+                "max_pages": 10000,
+                "require_title": true,
+                "require_author": false,
+                "require_cover": false,
+                "require_landscape": false,
+                "max_file_mb": 500
+            },
+            "variant": {
+                "mode": "copy",
+                "filename_suffix": "_DIGITAL"
+            },
+            "errors": [],
+            "warnings": []
+        },
+        "Digital PDF": {
+            "schema_version": 2,
+            "factory_version": "8.0",
+            "platform_engine_version": "3.0",
+            "platform": "Digital PDF",
+            "platform_type": "digital",
+            "status": "READY",
+            "timestamp": "2026-09-07T02:41:27",
+            "master_pdf": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (3)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+            "pdf": {
+                "path": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (3)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+                "exists": true,
+                "page_count": 64,
+                "sizes": [
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    },
+                    {
+                        "width": 8.5,
+                        "height": 11.0,
+                        "orientation": "portrait"
+                    }
+                ],
+                "unique_sizes": [
+                    "8.5x11.0"
+                ],
+                "file_size_mb": 40.77,
+                "encrypted": false,
+                "metadata": {
+                    "/CreationDate": "D:20260903221653Z",
+                    "/ModDate": "D:20260903221658Z",
+                    "/Producer": "Adobe PDF Library 18.0"
+                },
+                "error": null
+            },
+            "metadata": {
+                "title": "NightmareUnicornsFinished",
+                "author": "JAC",
+                "page_count": 64,
+                "trim_width": 8.5,
+                "trim_height": 11.0
+            },
+            "rules": {
+                "min_pages": 1,
+                "max_pages": 10000,
+                "require_title": true,
+                "require_author": false,
+                "require_cover": false,
+                "require_landscape": false,
+                "max_file_mb": 500
+            },
+            "variant": {
+                "mode": "copy",
+                "filename_suffix": "_DIGITAL"
+            },
+            "errors": [],
+            "warnings": []
+        }
+    }
+}

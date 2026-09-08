@@ -1,0 +1,18 @@
+{
+    "schema_version": 1,
+    "generated": "2026-09-04T01:30:29",
+    "platforms": {
+        "KDP": {
+            "status": "READY_WITH_WARNINGS",
+            "output": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished\\PLATFORMS\\KDP"
+        },
+        "Gumroad": {
+            "status": "READY",
+            "output": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished\\PLATFORMS\\GUMROAD"
+        },
+        "Digital PDF": {
+            "status": "READY",
+            "output": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished\\PLATFORMS\\DIGITAL"
+        }
+    }
+}
