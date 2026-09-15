@@ -1,0 +1,383 @@
+{
+    "schema_version": 4,
+    "factory_version": "11.1",
+    "platform_engine_version": "4.0",
+    "universal_publishing_version": "1.1",
+    "platform": "KDP",
+    "platform_type": "print",
+    "status": "READY_WITH_WARNINGS",
+    "timestamp": "2026-09-11T05:17:16",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "pdf": {
+        "path": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+        "exists": true,
+        "page_count": 64,
+        "sizes": [
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            }
+        ],
+        "unique_sizes": [
+            "8.5x11.0"
+        ],
+        "file_size_mb": 40.77,
+        "encrypted": false,
+        "metadata": {
+            "/CreationDate": "D:20260903221653Z",
+            "/ModDate": "D:20260903221658Z",
+            "/Producer": "Adobe PDF Library 18.0"
+        },
+        "error": null,
+        "has_annotations": false,
+        "has_bookmarks": false,
+        "has_javascript": false,
+        "has_forms": false,
+        "page_resources": {}
+    },
+    "metadata": {
+        "title": "NightmareUnicornsFinished",
+        "author": "JAC",
+        "page_count": 64,
+        "trim_width": 8.5,
+        "trim_height": 11.0
+    },
+    "rules": {
+        "min_pages": 24,
+        "max_pages": 828,
+        "require_title": true,
+        "require_author": false,
+        "require_cover": false,
+        "require_landscape": false,
+        "max_file_mb": 650,
+        "expected_trim_from_project": true,
+        "max_files": 2,
+        "requires_single_page": true,
+        "min_dpi": 300,
+        "advisory": false
+    },
+    "variant": {
+        "mode": "copy",
+        "filename_suffix": "_KDP_INTERIOR"
+    },
+    "errors": [],
+    "warnings": [
+        "No separate MASTER_COVER asset is present. KDP will require a cover file unless using KDP Cover Creator."
+    ]
+}

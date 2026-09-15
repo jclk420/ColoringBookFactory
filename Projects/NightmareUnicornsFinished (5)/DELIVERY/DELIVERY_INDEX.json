@@ -1,0 +1,31 @@
+{
+    "schema_version": 1,
+    "factory_version": "11.4",
+    "publishing_engine_version": "1.0",
+    "generated": "2026-09-15T08:36:45",
+    "project": "NightmareUnicornsFinished (5)",
+    "title": "NightmareUnicornsFinished",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "platforms": {
+        "KDP": {
+            "status": "READY_WITH_WARNINGS",
+            "package": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\PLATFORMS\\KDP",
+            "zip": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\DELIVERY\\NightmareUnicornsFinished_KDP_PACKAGE.zip"
+        },
+        "Gumroad": {
+            "status": "READY_WITH_WARNINGS",
+            "package": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\PLATFORMS\\GUMROAD",
+            "zip": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\DELIVERY\\NightmareUnicornsFinished_GUMROAD_PACKAGE.zip"
+        },
+        "Payhip": {
+            "status": "READY",
+            "package": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\PLATFORMS\\PAYHIP",
+            "zip": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\DELIVERY\\NightmareUnicornsFinished_PAYHIP_PACKAGE.zip"
+        },
+        "Digital PDF": {
+            "status": "READY",
+            "package": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\PLATFORMS\\DIGITAL",
+            "zip": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\DELIVERY\\NightmareUnicornsFinished_DIGITAL_PDF_PACKAGE.zip"
+        }
+    }
+}

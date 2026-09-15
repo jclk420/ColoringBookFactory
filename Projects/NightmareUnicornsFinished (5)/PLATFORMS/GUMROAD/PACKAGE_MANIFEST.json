@@ -1,0 +1,141 @@
+{
+    "schema_version": 5,
+    "factory_version": "11.4",
+    "platform_engine_version": "4.3",
+    "universal_publishing_version": "1.2",
+    "platform": "Gumroad",
+    "status": "READY_WITH_WARNINGS",
+    "project": "NightmareUnicornsFinished (5)",
+    "title": "NightmareUnicornsFinished",
+    "generated": "2026-09-15T08:36:44",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "variant_mode": "digital_copy",
+    "files": [
+        "GUMROAD_ASSETS.json",
+        "GUMROAD_UPLOAD_CHECKLIST.txt",
+        "METADATA.json",
+        "NightmareUnicornsFinished_DIGITAL.pdf",
+        "PACKAGE_MANIFEST.json",
+        "PLATFORM_PREFLIGHT.json",
+        "PRODUCT_DESCRIPTION.txt",
+        "README.txt",
+        "cover.png",
+        "thumb-01.png",
+        "thumb-02.png",
+        "thumb-03.png",
+        "thumb-04.png",
+        "thumbnail.png"
+    ],
+    "file_hashes": {
+        "GUMROAD_ASSETS.json": "37a7705066ca6989c584811ad88fd06b2f0227c1695001949062c0fdf408cd2c",
+        "GUMROAD_UPLOAD_CHECKLIST.txt": "1ebefe02568772865ae67eb42b852e8db430476f7230f7f5097c6c7914937318",
+        "METADATA.json": "16873723883c2bc4c463491061540158e6a58529a7044d33b9f434ba2f2fd3e1",
+        "NightmareUnicornsFinished_DIGITAL.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PACKAGE_MANIFEST.json": "c0dc4c51cb7795991c61580b8544655dcb2b13e6236ea902e4e0dfc563fb5da0",
+        "PLATFORM_PREFLIGHT.json": "223cbb6784848f9a05d3115d2de69b705fb50fcc533291f1f534be876362edbc",
+        "PRODUCT_DESCRIPTION.txt": "3db0185f8f1a359eee1fa95f788c7aa585ccd9a5e4e010acd0af611a0e20a7cc",
+        "README.txt": "9c6557c612d1c8c66f485560527a9fa67250508acd9e4ad3b85be89b6a483c2b",
+        "cover.png": "63c79dc95ee4cb7130cae2b031a2661d248c9b221a884eae76709db4aeeafef0",
+        "thumb-01.png": "71729d6cf5a2ef32c45701035f3c5ae5d4182d4033d52ab306e98a28627e9685",
+        "thumb-02.png": "aa3a89aa56792fb2cb71cb9eb893466398c38bb22f39679837b67cc7cfb1f561",
+        "thumb-03.png": "c5e749b64e13f2b17bfe305e02dcfb3d8398ba77e748ade529d8fd95d833cf11",
+        "thumb-04.png": "795a9a8d461ec6afe67e3272e29d161e18b46b88c6f50f05273a29d3741ed17a",
+        "thumbnail.png": "71729d6cf5a2ef32c45701035f3c5ae5d4182d4033d52ab306e98a28627e9685"
+    },
+    "warnings": [
+        "This platform profile contains advisory limits; verify the marketplace's current seller requirements before publishing."
+    ],
+    "preflight": "PLATFORM_PREFLIGHT.json",
+    "gumroad_asset_validation": {
+        "status": "PASS",
+        "errors": [],
+        "warnings": []
+    },
+    "gumroad_asset_report": {
+        "status": "PASS",
+        "renderer": "PDFium/pypdfium2",
+        "rendered_candidate_count": 20,
+        "selected_preview_count": 4,
+        "target_preview_count": 4,
+        "selected_preview_pages": [
+            6,
+            15,
+            24,
+            33
+        ],
+        "cover": {
+            "file": "cover.png",
+            "dimensions": {
+                "width": 1280,
+                "height": 720,
+                "dpi": [
+                    72.01,
+                    72.01
+                ],
+                "bytes": 328798
+            },
+            "pass": true
+        },
+        "product_thumbnail": {
+            "file": "thumbnail.png",
+            "dimensions": {
+                "width": 600,
+                "height": 600,
+                "dpi": [
+                    72.01,
+                    72.01
+                ],
+                "bytes": 412876
+            },
+            "pass": true
+        },
+        "previews": {
+            "files": [
+                "thumb-01.png",
+                "thumb-02.png",
+                "thumb-03.png",
+                "thumb-04.png"
+            ],
+            "pass": true,
+            "dimensions": {
+                "thumb-01.png": {
+                    "width": 600,
+                    "height": 600,
+                    "dpi": [
+                        72.01,
+                        72.01
+                    ],
+                    "bytes": 412876
+                },
+                "thumb-02.png": {
+                    "width": 600,
+                    "height": 600,
+                    "dpi": [
+                        72.01,
+                        72.01
+                    ],
+                    "bytes": 113523
+                },
+                "thumb-03.png": {
+                    "width": 600,
+                    "height": 600,
+                    "dpi": [
+                        72.01,
+                        72.01
+                    ],
+                    "bytes": 472381
+                },
+                "thumb-04.png": {
+                    "width": 600,
+                    "height": 600,
+                    "dpi": [
+                        72.01,
+                        72.01
+                    ],
+                    "bytes": 119515
+                }
+            }
+        }
+    }
+}

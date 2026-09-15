@@ -1,0 +1,31 @@
+{
+    "schema_version": 1,
+    "factory_version": "11.2",
+    "publishing_engine_version": "1.0",
+    "generated": "2026-09-15T05:08:09",
+    "project": "Nightmare Unicorns A Horror Coloring Adventure (2)",
+    "title": "NightmareUnicornsFinished",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (2)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "platforms": {
+        "KDP": {
+            "status": "READY_WITH_WARNINGS",
+            "package": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (2)\\PLATFORMS\\KDP",
+            "zip": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (2)\\DELIVERY\\NightmareUnicornsFinished_KDP_PACKAGE.zip"
+        },
+        "Gumroad": {
+            "status": "BLOCKED",
+            "package": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (2)\\PLATFORMS\\GUMROAD",
+            "zip": null
+        },
+        "Payhip": {
+            "status": "READY",
+            "package": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (2)\\PLATFORMS\\PAYHIP",
+            "zip": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (2)\\DELIVERY\\NightmareUnicornsFinished_PAYHIP_PACKAGE.zip"
+        },
+        "Digital PDF": {
+            "status": "READY",
+            "package": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (2)\\PLATFORMS\\DIGITAL",
+            "zip": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (2)\\DELIVERY\\NightmareUnicornsFinished_DIGITAL_PDF_PACKAGE.zip"
+        }
+    }
+}

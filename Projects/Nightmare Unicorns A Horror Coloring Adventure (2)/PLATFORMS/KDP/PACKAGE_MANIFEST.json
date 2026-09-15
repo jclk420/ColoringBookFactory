@@ -1,0 +1,30 @@
+{
+    "schema_version": 5,
+    "factory_version": "11.2",
+    "platform_engine_version": "4.1",
+    "universal_publishing_version": "1.2",
+    "platform": "KDP",
+    "status": "READY_WITH_WARNINGS",
+    "project": "Nightmare Unicorns A Horror Coloring Adventure (2)",
+    "title": "NightmareUnicornsFinished",
+    "generated": "2026-09-15T05:08:08",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (2)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "variant_mode": "copy",
+    "files": [
+        "METADATA.json",
+        "NightmareUnicornsFinished_KDP_INTERIOR.pdf",
+        "PACKAGE_MANIFEST.json",
+        "PLATFORM_PREFLIGHT.json"
+    ],
+    "file_hashes": {
+        "METADATA.json": "1ed08058971d69f4dab134c86fd4aa519211d6564a5c2d7201e265340fab6394",
+        "NightmareUnicornsFinished_KDP_INTERIOR.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PACKAGE_MANIFEST.json": "808e268abdd8335f5cdd4da87fec27e7220e3a8ad8e11e47bbeb0d4df9dc7d30",
+        "PLATFORM_PREFLIGHT.json": "ff2e415ada313c873f6e9d10c1fbe38fa85880252f689650469aba52c329734e"
+    },
+    "warnings": [
+        "No separate MASTER_COVER asset is present. KDP will require a cover file unless using KDP Cover Creator."
+    ],
+    "preflight": "PLATFORM_PREFLIGHT.json"
+}

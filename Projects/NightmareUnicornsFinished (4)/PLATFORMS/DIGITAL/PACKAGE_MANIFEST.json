@@ -1,0 +1,30 @@
+{
+    "schema_version": 5,
+    "factory_version": "11.4",
+    "platform_engine_version": "4.3",
+    "universal_publishing_version": "1.2",
+    "platform": "Digital PDF",
+    "status": "READY",
+    "project": "NightmareUnicornsFinished (4)",
+    "title": "NightmareUnicornsFinished",
+    "generated": "2026-09-15T05:51:33",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (4)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "variant_mode": "copy",
+    "files": [
+        "METADATA.json",
+        "NightmareUnicornsFinished_DIGITAL.pdf",
+        "PACKAGE_MANIFEST.json",
+        "PLATFORM_PREFLIGHT.json",
+        "PREVIEW_SHEET.png"
+    ],
+    "file_hashes": {
+        "METADATA.json": "6a220f13f319d72e0e0dc5e0d7cc665a49526e5c8c015954e65622b2e2d1e8f6",
+        "NightmareUnicornsFinished_DIGITAL.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PACKAGE_MANIFEST.json": "368f83727419d21ed450cee8ba7b84a2aea495307087b56b494daa6c4268db6e",
+        "PLATFORM_PREFLIGHT.json": "8e00a3c3c41abed2a059180dac88d3649d393d31f38afa0e5e1b40f8d0c02e1b",
+        "PREVIEW_SHEET.png": "b6a0b043867a96ed92368b070198a17eaae89fe0092908c7cff8ddb8880fdb18"
+    },
+    "warnings": [],
+    "preflight": "PLATFORM_PREFLIGHT.json"
+}

@@ -1,0 +1,32 @@
+{
+    "schema_version": 4,
+    "factory_version": "11.1",
+    "platform_engine_version": "4.0",
+    "universal_publishing_version": "1.1",
+    "platform": "Gumroad",
+    "status": "READY_WITH_WARNINGS",
+    "project": "Nightmare Unicorns A Horror Coloring Adventure",
+    "title": "NightmareUnicornsFinished",
+    "generated": "2026-09-11T05:17:17",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "variant_mode": "digital_copy",
+    "files": [
+        "NightmareUnicornsFinished_DIGITAL.pdf",
+        "PREVIEW_SHEET.png",
+        "METADATA.json",
+        "PRODUCT_DESCRIPTION.txt",
+        "PLATFORM_PREFLIGHT.json"
+    ],
+    "file_hashes": {
+        "NightmareUnicornsFinished_DIGITAL.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PREVIEW_SHEET.png": "b6a0b043867a96ed92368b070198a17eaae89fe0092908c7cff8ddb8880fdb18",
+        "METADATA.json": "1906c0771a028f9c55e99b2d290c65c50411404c3ad4ba5e99b9030566ef4eda",
+        "PRODUCT_DESCRIPTION.txt": "3db0185f8f1a359eee1fa95f788c7aa585ccd9a5e4e010acd0af611a0e20a7cc",
+        "PLATFORM_PREFLIGHT.json": "28e219d887305e6b43ad0df7ef0179566c94362e3678af4f859cd046b4088b45"
+    },
+    "warnings": [
+        "This platform profile contains advisory limits; verify the marketplace's current seller requirements before publishing."
+    ],
+    "preflight": "PLATFORM_PREFLIGHT.json"
+}

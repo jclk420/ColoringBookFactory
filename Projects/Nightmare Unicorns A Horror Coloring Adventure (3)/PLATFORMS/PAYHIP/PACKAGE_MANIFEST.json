@@ -1,0 +1,34 @@
+{
+    "schema_version": 5,
+    "factory_version": "11.3",
+    "platform_engine_version": "4.2",
+    "universal_publishing_version": "1.2",
+    "platform": "Payhip",
+    "status": "READY",
+    "project": "Nightmare Unicorns A Horror Coloring Adventure (3)",
+    "title": "NightmareUnicornsFinished",
+    "generated": "2026-09-15T05:39:12",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (3)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "variant_mode": "copy",
+    "files": [
+        "METADATA.json",
+        "NightmareUnicornsFinished_PAYHIP.pdf",
+        "PACKAGE_MANIFEST.json",
+        "PLATFORM_PREFLIGHT.json",
+        "PREVIEW_SHEET.png",
+        "PRODUCT_DESCRIPTION.txt",
+        "README.txt"
+    ],
+    "file_hashes": {
+        "METADATA.json": "ed11f553b45425a65d863e1a3856342711344d7aac501efc19c67a8ccc5f3486",
+        "NightmareUnicornsFinished_PAYHIP.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PACKAGE_MANIFEST.json": "4c8f349c9f6258bbf05464caceafde85bd84240b49b3db326451c0f79ae74b3f",
+        "PLATFORM_PREFLIGHT.json": "52bad4f5f868ffb7a2fb848dd338a4ebc9bb2cc1e2779c95fd146a796084f3d4",
+        "PREVIEW_SHEET.png": "b6a0b043867a96ed92368b070198a17eaae89fe0092908c7cff8ddb8880fdb18",
+        "PRODUCT_DESCRIPTION.txt": "a50f266b7eaea393c96ef1c41031ecd5bad54c554d719232bae7a7b89613480b",
+        "README.txt": "6e5cbe46448b4d595fef6f6a0c4251d1167016081948f97faa827533fee59d58"
+    },
+    "warnings": [],
+    "preflight": "PLATFORM_PREFLIGHT.json"
+}

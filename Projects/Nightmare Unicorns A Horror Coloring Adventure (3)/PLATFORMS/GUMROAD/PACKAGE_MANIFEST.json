@@ -1,0 +1,52 @@
+{
+    "schema_version": 5,
+    "factory_version": "11.3",
+    "platform_engine_version": "4.2",
+    "universal_publishing_version": "1.2",
+    "platform": "Gumroad",
+    "status": "READY_WITH_WARNINGS",
+    "project": "Nightmare Unicorns A Horror Coloring Adventure (3)",
+    "title": "NightmareUnicornsFinished",
+    "generated": "2026-09-15T05:39:12",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (3)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "variant_mode": "digital_copy",
+    "files": [
+        "GUMROAD_ASSETS.json",
+        "GUMROAD_UPLOAD_CHECKLIST.txt",
+        "METADATA.json",
+        "NightmareUnicornsFinished_DIGITAL.pdf",
+        "PACKAGE_MANIFEST.json",
+        "PLATFORM_PREFLIGHT.json",
+        "PRODUCT_DESCRIPTION.txt",
+        "README.txt",
+        "cover.png",
+        "thumbnail.png"
+    ],
+    "file_hashes": {
+        "GUMROAD_ASSETS.json": "9d1ef65fd4764c23c2c8c44a297a10997da0d8192b893de88bafd49885c30e1d",
+        "GUMROAD_UPLOAD_CHECKLIST.txt": "bb79e99ce7b64cf060762cc8e4209986de0091e9f6f94c5da157ab750bb19fad",
+        "METADATA.json": "ae34c610361a611ad4c06c45b3b1565b5509ced90243f37598eb352ab75b6560",
+        "NightmareUnicornsFinished_DIGITAL.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PACKAGE_MANIFEST.json": "9d3c4044d640abd0dfa0eb70bd977a5432741dc18768d6e41d3f7dbcd9c787ef",
+        "PLATFORM_PREFLIGHT.json": "252752f7c660c40ea7bf64156077fe7e84f1fbf7c222275d9fa80e63d5401baa",
+        "PRODUCT_DESCRIPTION.txt": "3db0185f8f1a359eee1fa95f788c7aa585ccd9a5e4e010acd0af611a0e20a7cc",
+        "README.txt": "275f578fedcbe2dbee1d5d76a6fa30b1232d1f030e0891eeb426910210767056",
+        "cover.png": "2c0c215d417d01cd3cb96c62c3f164af9c8e015b2facec053206d59184ab04b6",
+        "thumbnail.png": "01a7f8f223cb86b3966f855683edfe84ba32dff9a28b04eee1e2f0f8c085abcf"
+    },
+    "warnings": [
+        "This platform profile contains advisory limits; verify the marketplace's current seller requirements before publishing.",
+        "PyMuPDF is not installed; vector-only PDF rendering fallback unavailable.",
+        "No raster artwork could be extracted from the MASTER PDF. Install PyMuPDF (PyMuPDF package) for vector-PDF preview rendering, or provide a rasterized cover/artwork source.",
+        "Only 0 interior preview thumbnail(s) were generated; target is 4."
+    ],
+    "preflight": "PLATFORM_PREFLIGHT.json",
+    "gumroad_asset_validation": {
+        "status": "PASS",
+        "errors": [],
+        "warnings": [
+            "Only 0 interior preview thumbnail(s) were generated; target is 4."
+        ]
+    }
+}

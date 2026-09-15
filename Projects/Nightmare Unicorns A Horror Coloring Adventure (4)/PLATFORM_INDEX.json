@@ -1,0 +1,41 @@
+{
+    "schema_version": 5,
+    "factory_version": "11.4",
+    "platform_engine_version": "4.3",
+    "universal_publishing_version": "1.2",
+    "generated": "2026-09-15T05:44:06",
+    "platforms": {
+        "KDP": {
+            "status": "READY_WITH_WARNINGS",
+            "output": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (4)\\PLATFORMS\\KDP",
+            "errors": [],
+            "warnings": [
+                "No separate MASTER_COVER asset is present. KDP will require a cover file unless using KDP Cover Creator."
+            ]
+        },
+        "Gumroad": {
+            "status": "READY_WITH_WARNINGS",
+            "output": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (4)\\PLATFORMS\\GUMROAD",
+            "errors": [],
+            "warnings": [
+                "This platform profile contains advisory limits; verify the marketplace's current seller requirements before publishing.",
+                "PyMuPDF is not installed and automatic installation failed. Original error: DLL load failed while importing _extra: The specified module could not be found.; install error: DLL load failed while importing _extra: The specified module could not be found.",
+                "No usable interior artwork previews could be rendered from the MASTER PDF. The Factory attempted embedded-image extraction and the universal PDF renderer.",
+                "No interior preview was available; product thumbnail fell back to the generated Gumroad cover.",
+                "Only 0 interior preview thumbnail(s) were generated; target is 4."
+            ]
+        },
+        "Payhip": {
+            "status": "READY",
+            "output": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (4)\\PLATFORMS\\PAYHIP",
+            "errors": [],
+            "warnings": []
+        },
+        "Digital PDF": {
+            "status": "READY",
+            "output": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (4)\\PLATFORMS\\DIGITAL",
+            "errors": [],
+            "warnings": []
+        }
+    }
+}

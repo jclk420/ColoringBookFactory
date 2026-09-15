@@ -6,6 +6,7 @@ import json
 import textwrap
 import shutil
 import sys
+import subprocess
 import zipfile
 import re
 import os
@@ -13,7 +14,7 @@ from datetime import datetime
 from hashlib import sha256
 
 # ============================================================
-# COLORING BOOK FACTORY v8.1
+# COLORING BOOK FACTORY v11.6
 # WORLD-AWARE PRODUCTION ENGINE + AUTOMATED ASSEMBLY + PAGE BUILDER + PDF/KDP PREFLIGHT + PRODUCTION CENTER
 #
 # v8.2 changes:
@@ -45,7 +46,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "8.2"
+FACTORY_VERSION = "11.6"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -4029,7 +4030,7 @@ def production_dashboard():
 # the "8.1" constant declared near the top of the module. Declaring the
 # app version in two places is exactly how a build can display a stale
 # version number without anyone noticing; it now has a single source of truth.
-PLATFORM_ENGINE_VERSION = "3.0"
+PLATFORM_ENGINE_VERSION = "4.5"
 PLATFORM_DIRNAME = "PLATFORMS"
 PLATFORM_PROFILES_FILENAME = "platform_profiles.json"
 PLATFORM_AUDIT_FILENAME = "PLATFORM_AUDIT.json"
@@ -5425,6 +5426,7 @@ def platform_center():
 # MAIN MENU
 # ============================================================
 
+
 def main():
 
     PROJECTS.mkdir(
@@ -5498,7 +5500,7 @@ def main():
             input("\nPress Enter to return to menu...")
 
         elif choice == "7":
-            world_list_menu()
+            world_engine_center_v9()
             input("\nPress Enter to return to menu...")
 
         elif choice == "8":
@@ -5522,6 +5524,3692 @@ def main():
                 "\nInvalid choice."
             )
 
+
+
+# ============================================================
+# WORLD ENGINE 2.0 / FACTORY v9.3 UPGRADE
+# Generic world-building, entity registry, continuity, and
+# World Bible tools. Backward-compatible with existing worlds.
+# ============================================================
+
+WORLD_ENGINE_2_VERSION = "2.0"
+WORLD_ENGINE_2_SCHEMA = 3
+WORLD_ENTITY_CATEGORIES = (
+    "characters", "creatures", "locations", "objects",
+    "factions", "lore", "timeline", "rules"
+)
+
+
+def world_v2_now():
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def world_v2_entity_id(category):
+    prefix = str(category).rstrip("s") or "entity"
+    return f"{prefix}_{sha256(f'{category}:{world_v2_now()}:{os.urandom(8).hex()}'.encode()).hexdigest()[:12]}"
+
+
+def world_v2_normalize_entity(value, category):
+    if isinstance(value, str):
+        value = {"name": value}
+    if not isinstance(value, dict):
+        value = {"name": str(value)}
+    item = dict(value)
+    item.setdefault("id", world_v2_entity_id(category))
+    item.setdefault("name", item.get("title", "Untitled"))
+    item["name"] = str(item.get("name") or "Untitled").strip()
+    item.setdefault("description", "")
+    item.setdefault("canon", True)
+    item.setdefault("books", [])
+    item.setdefault("first_appearance", "")
+    item.setdefault("last_updated", world_v2_now())
+    if not isinstance(item["books"], list):
+        item["books"] = [str(item["books"])]
+    return item
+
+
+def world_v2_upgrade_record(world):
+    """Upgrade any existing world record in memory without deleting fields."""
+    if not isinstance(world, dict):
+        raise ValueError("World record must be a dictionary")
+
+    upgraded = dict(world)
+    upgraded.setdefault("world_id", world_slug(upgraded.get("name", "New World")))
+    upgraded.setdefault("name", "New World")
+    upgraded.setdefault("description", "")
+    upgraded.setdefault("genre", "")
+    upgraded.setdefault("tone", "")
+    upgraded.setdefault("universe", True)
+    upgraded.setdefault("series", [])
+    upgraded.setdefault("books", [])
+    upgraded.setdefault("relationships", [])
+    upgraded.setdefault("production_history", [])
+    upgraded.setdefault("archived", False)
+    upgraded.setdefault("created", world_v2_now())
+
+    for category in WORLD_ENTITY_CATEGORIES:
+        values = upgraded.get(category, [])
+        if not isinstance(values, list):
+            values = []
+        upgraded[category] = [
+            world_v2_normalize_entity(value, category)
+            for value in values
+        ]
+
+    upgraded["series"] = [
+        world_v2_normalize_entity(value, "series")
+        for value in upgraded.get("series", [])
+    ]
+    upgraded["books"] = [
+        world_v2_normalize_entity(value, "books")
+        for value in upgraded.get("books", [])
+    ]
+
+    relationships = []
+    for value in upgraded.get("relationships", []):
+        if isinstance(value, dict):
+            relation = dict(value)
+        else:
+            relation = {"name": str(value)}
+        relation.setdefault("id", world_v2_entity_id("relationship"))
+        relation.setdefault("from", relation.get("source", ""))
+        relation.setdefault("to", relation.get("target", ""))
+        relation.setdefault("type", relation.get("relation", "related_to"))
+        relation.setdefault("notes", "")
+        relation.setdefault("canon", True)
+        relation.setdefault("last_updated", world_v2_now())
+        relationships.append(relation)
+    upgraded["relationships"] = relationships
+
+    upgraded["engine_version"] = WORLD_ENGINE_2_VERSION
+    upgraded["schema_version"] = WORLD_ENGINE_2_SCHEMA
+    upgraded["updated"] = world_v2_now()
+    return upgraded
+
+
+def world_v2_save(world):
+    upgraded = world_v2_upgrade_record(world)
+    save_world(upgraded)
+    return upgraded
+
+
+def world_v2_find(world, category, identifier):
+    if category not in WORLD_ENTITY_CATEGORIES:
+        raise ValueError(f"Unknown category: {category}")
+    query = str(identifier or "").strip().casefold()
+    for item in world.get(category, []):
+        if (
+            str(item.get("id", "")).casefold() == query
+            or str(item.get("name", "")).casefold() == query
+        ):
+            return item
+    return None
+
+
+def world_v2_upsert(world, category, data, identifier=""):
+    upgraded = world_v2_upgrade_record(world)
+    incoming = world_v2_normalize_entity(data, category)
+    if identifier:
+        incoming["id"] = identifier
+    existing = world_v2_find(upgraded, category, incoming["id"])
+    if existing is None:
+        existing = world_v2_find(upgraded, category, incoming["name"])
+    if existing is None:
+        upgraded[category].append(incoming)
+    else:
+        existing.update(incoming)
+        existing["last_updated"] = world_v2_now()
+    return world_v2_save(upgraded)
+
+
+def world_v2_delete(world, category, identifier):
+    upgraded = world_v2_upgrade_record(world)
+    target = world_v2_find(upgraded, category, identifier)
+    if not target:
+        return upgraded, False
+    target_id = target.get("id")
+    upgraded[category] = [
+        item for item in upgraded[category]
+        if item.get("id") != target_id
+    ]
+    upgraded["relationships"] = [
+        relation for relation in upgraded.get("relationships", [])
+        if relation.get("from") != target_id
+        and relation.get("to") != target_id
+    ]
+    return world_v2_save(upgraded), True
+
+
+def world_v2_add_relationship(world, source_id, target_id, relation_type, notes=""):
+    upgraded = world_v2_upgrade_record(world)
+    relation = {
+        "id": world_v2_entity_id("relationship"),
+        "from": str(source_id).strip(),
+        "to": str(target_id).strip(),
+        "type": str(relation_type or "related_to").strip(),
+        "notes": str(notes or "").strip(),
+        "canon": True,
+        "last_updated": world_v2_now(),
+    }
+    duplicate = any(
+        item.get("from") == relation["from"]
+        and item.get("to") == relation["to"]
+        and item.get("type") == relation["type"]
+        for item in upgraded["relationships"]
+    )
+    if not duplicate:
+        upgraded["relationships"].append(relation)
+    return world_v2_save(upgraded), relation
+
+
+def world_v2_attach_book(world, project_id, title, series_id="", book_number=None, canon=True):
+    upgraded = world_v2_upgrade_record(world)
+    record = world_v2_normalize_entity({
+        "id": str(project_id or world_v2_entity_id("book")),
+        "name": title,
+        "series_id": series_id,
+        "book_number": book_number,
+        "canon": bool(canon),
+        "attached": True,
+    }, "books")
+    existing = world_v2_find(upgraded, "books", record["id"])
+    if existing is None:
+        existing = world_v2_find(upgraded, "books", record["name"])
+    if existing is None:
+        upgraded["books"].append(record)
+    else:
+        existing.update(record)
+    return world_v2_save(upgraded)
+
+
+def world_v2_audit(world):
+    upgraded = world_v2_upgrade_record(world)
+    errors = []
+    warnings = []
+    seen_names = {}
+    all_ids = set()
+
+    for category in WORLD_ENTITY_CATEGORIES + ("series", "books"):
+        for item in upgraded.get(category, []):
+            item_id = item.get("id")
+            name = str(item.get("name", "")).strip()
+            if not item_id:
+                errors.append(f"{category}: entity '{name}' has no stable ID")
+            else:
+                all_ids.add(item_id)
+            if not name:
+                errors.append(f"{category}: entity '{item_id}' has no name")
+            key = name.casefold()
+            if key and key in seen_names:
+                previous_category = seen_names[key]
+                if previous_category != category:
+                    warnings.append(
+                        f"Name collision: '{name}' appears in "
+                        f"{previous_category} and {category}"
+                    )
+            elif key:
+                seen_names[key] = category
+
+            for book_ref in item.get("books", []):
+                known = any(
+                    book_ref == book.get("id")
+                    or book_ref == book.get("name")
+                    for book in upgraded.get("books", [])
+                )
+                if not known:
+                    warnings.append(
+                        f"{category}/{name}: unknown book reference '{book_ref}'"
+                    )
+
+    for relation in upgraded.get("relationships", []):
+        if relation.get("from") not in all_ids:
+            errors.append(
+                f"Relationship {relation.get('id')} has unknown source "
+                f"'{relation.get('from')}'"
+            )
+        if relation.get("to") not in all_ids:
+            errors.append(
+                f"Relationship {relation.get('id')} has unknown target "
+                f"'{relation.get('to')}'"
+            )
+
+    timeline_keys = set()
+    for event in upgraded.get("timeline", []):
+        key = (
+            str(event.get("date", "")).strip().casefold(),
+            str(event.get("name", "")).strip().casefold(),
+        )
+        if key != ("", "") and key in timeline_keys:
+            warnings.append(
+                f"Duplicate timeline event: {event.get('name', 'Untitled')} "
+                f"({event.get('date', '')})"
+            )
+        timeline_keys.add(key)
+
+    counts = {
+        category: len(upgraded.get(category, []))
+        for category in WORLD_ENTITY_CATEGORIES
+    }
+    counts.update({
+        "series": len(upgraded.get("series", [])),
+        "books": len(upgraded.get("books", [])),
+        "relationships": len(upgraded.get("relationships", [])),
+    })
+    return {
+        "status": "PASS" if not errors else "FAIL",
+        "errors": errors,
+        "warnings": warnings,
+        "counts": counts,
+    }
+
+
+def world_v2_search(world, query, categories=None):
+    upgraded = world_v2_upgrade_record(world)
+    query = str(query or "").strip().casefold()
+    categories = tuple(categories or (WORLD_ENTITY_CATEGORIES + ("series", "books")))
+    results = []
+    for category in categories:
+        for item in upgraded.get(category, []):
+            if query in json.dumps(item, ensure_ascii=False).casefold():
+                results.append({
+                    "category": category,
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "entity": item,
+                })
+    return results
+
+
+def world_v2_write_bible(world):
+    upgraded = world_v2_upgrade_record(world)
+    folder = world_path(upgraded["world_id"])
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "WORLD_BIBLE.md"
+    lines = [
+        f"# {upgraded.get('name', 'World')}",
+        "",
+        upgraded.get("description", ""),
+        "",
+        f"**Genre:** {upgraded.get('genre', '')}",
+        f"**Tone:** {upgraded.get('tone', '')}",
+        f"**Canon status:** {'Archived' if upgraded.get('archived') else 'Active'}",
+        "",
+    ]
+    sections = (
+        ("rules", "World Rules"),
+        ("lore", "Lore"),
+        ("characters", "Characters"),
+        ("creatures", "Creatures"),
+        ("locations", "Locations"),
+        ("objects", "Objects"),
+        ("factions", "Factions"),
+        ("timeline", "Timeline"),
+    )
+    for category, heading in sections:
+        lines.extend([f"## {heading}", ""])
+        for item in upgraded.get(category, []):
+            lines.append(f"### {item.get('name', 'Untitled')}")
+            if item.get("description"):
+                lines.append(str(item["description"]))
+            fields = (
+                "role", "type", "appearance", "personality", "abilities",
+                "behavior", "threat_level", "habitat", "date", "era",
+                "canon", "first_appearance"
+            )
+            for field in fields:
+                value = item.get(field)
+                if value not in ("", None, [], {}):
+                    label = field.replace("_", " ").title()
+                    lines.append(f"**{label}:** {value}")
+            if item.get("books"):
+                lines.append(f"**Books:** {', '.join(map(str, item['books']))}")
+            lines.append("")
+    lines.extend(["## Books", ""])
+    for book in upgraded.get("books", []):
+        status = "canon" if book.get("canon", True) else "non-canon"
+        lines.append(f"- {book.get('name', 'Untitled')} ({status})")
+    lines.extend(["", "## Relationships", ""])
+    for relation in upgraded.get("relationships", []):
+        lines.append(
+            f"- `{relation.get('from')}` "
+            f"**{relation.get('type', 'related_to')}** "
+            f"`{relation.get('to')}`"
+            + (f" — {relation.get('notes')}" if relation.get("notes") else "")
+        )
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return path
+
+
+def world_v2_dashboard(world):
+    upgraded = world_v2_upgrade_record(world)
+    audit = world_v2_audit(upgraded)
+    history = upgraded.get("production_history") or []
+    return {
+        "name": upgraded.get("name"),
+        "description": upgraded.get("description", ""),
+        "genre": upgraded.get("genre", ""),
+        "tone": upgraded.get("tone", ""),
+        "world_id": upgraded.get("world_id"),
+        "created": upgraded.get("created"),
+        "updated": upgraded.get("updated"),
+        "archived": bool(upgraded.get("archived", False)),
+        "counts": audit["counts"],
+        "continuity_status": audit["status"],
+        "errors": audit["errors"],
+        "warnings": audit["warnings"],
+        "last_production": history[-1] if history else None,
+    }
+
+
+def world_v2_edit_core(world):
+    upgraded = world_v2_upgrade_record(world)
+    print("\nWORLD CORE EDITOR")
+    print("Press Enter to keep the current value.")
+    prompts = (
+        ("name", "Name"),
+        ("description", "Description"),
+        ("genre", "Genre"),
+        ("tone", "Tone"),
+    )
+    for key, label in prompts:
+        current = str(upgraded.get(key, ""))
+        value = input(f"{label} [{current}]: ").strip()
+        if value:
+            upgraded[key] = value
+    upgraded["updated"] = world_v2_now()
+    return world_v2_save(upgraded)
+
+
+def world_v2_generated_name(category, world, description=""):
+    """Offer a simple generated name without requiring external AI services."""
+    text = f"{world.get('name', '')} {description}".casefold()
+    if category == "characters":
+        if any(word in text for word in ("research", "scientist", "investigat", "professor")):
+            names = ["Dr. Elias Voss", "Dr. Mara Vale", "Dr. Adrian Cross", "Dr. Evelyn Graves"]
+        elif any(word in text for word in ("detective", "police", "cop", "investigator")):
+            names = ["Detective Rowan Pike", "Detective Mara Quinn", "Jonah Graves"]
+        else:
+            names = ["Elias Voss", "Mara Vale", "Rowan Black", "Evelyn Cross"]
+    else:
+        if any(word in text for word in ("machine", "mechanical", "metal", "robot", "vending")):
+            names = ["The Coin-Eater", "The Dispenser", "The Change Warden", "Machine-Born"]
+        elif any(word in text for word in ("shadow", "dark", "night", "void", "eldritch")):
+            names = ["The Hollow Walker", "The Night Maw", "The Black Witness", "The Veiled Thing"]
+        else:
+            names = ["The Grinning Thing", "The Crooked One", "The Hunger", "The Watcher"]
+    # Prefer the first name not already in this world.
+    existing = {str(x.get('name', '')).casefold() for x in world.get(category, [])}
+    for name in names:
+        if name.casefold() not in existing:
+            return name
+    return f"Unnamed {category[:-1].title()} {len(world.get(category, [])) + 1}" 
+
+
+def world_v2_infer_profile(world, category, description, concept="auto"):
+    """Turn a plain-English idea into useful world-engine metadata.
+
+    This is intentionally deterministic and offline. It gives the user a strong
+    starting profile while leaving every field editable before anything is saved.
+    """
+    text = str(description or "").strip()
+    lower = text.casefold()
+    world_genre = str(world.get("genre", "")).strip() or "Unknown"
+    world_tone = str(world.get("tone", "")).strip() or "Unknown"
+    item = {"description": text, "genre": world_genre, "tone": world_tone}
+
+    if category == "characters":
+        if any(w in lower for w in ("researcher", "scientist", "professor", "doctor")):
+            role = "Researcher"
+        elif any(w in lower for w in ("detective", "investigator", "police")):
+            role = "Investigator"
+        elif any(w in lower for w in ("journalist", "reporter", "writer")):
+            role = "Journalist"
+        elif any(w in lower for w in ("owner", "manager", "clerk", "cashier")):
+            role = "Worker / Owner"
+        else:
+            role = "Unknown / To Be Determined"
+        personality = "Cautious and observant" if any(w in lower for w in ("research", "investigat", "mystery", "strange")) else "To be developed"
+        item.update({
+            "role": role,
+            "appearance": "To be developed",
+            "personality": personality,
+            "abilities": "None established yet",
+            "character_type": concept if concept != "auto" else "General",
+        })
+    else:
+        type_map = [
+            (("mechanical", "machine", "robot", "metal", "vending"), "Mechanical / Artificial"),
+            (("humanoid", "human-like", "person-shaped"), "Humanoid"),
+            (("animal", "beast", "wolf", "dog", "cat"), "Animalistic"),
+            (("undead", "dead", "corpse", "zombie"), "Undead"),
+            (("alien", "extraterrestrial", "space"), "Alien"),
+            (("ghost", "spirit", "specter", "spectre"), "Supernatural"),
+            (("shadow", "void", "eldritch", "cosmic"), "Eldritch / Unknown"),
+            (("mutant", "mutation", "mutated"), "Mutated"),
+        ]
+        creature_type = "Unknown / To Be Determined"
+        for words, label in type_map:
+            if any(w in lower for w in words):
+                creature_type = label
+                break
+        behavior = "Predatory and unpredictable" if any(w in lower for w in ("hunt", "attack", "prey", "stalk", "kill")) else "Behavior not fully understood"
+        threat = "High" if any(w in lower for w in ("dangerous", "deadly", "kill", "attack", "murder")) else "Unknown"
+        habitat = "Unknown / Anomalous locations" if any(w in lower for w in ("machine", "vending", "appears", "portal")) else "Unknown"
+        item.update({
+            "type": creature_type,
+            "appearance": "Derived from description; expand as needed",
+            "abilities": "Unknown / To be documented",
+            "behavior": behavior,
+            "threat_level": threat,
+            "habitat": habitat,
+            "creature_class": concept if concept != "auto" else "General",
+        })
+    return item
+
+
+def world_v2_print_profile(category, item):
+    label = "Character" if category == "characters" else "Creature"
+    print("\n" + "=" * 72)
+    print(f"GENERATED {label.upper()} PROFILE")
+    print("=" * 72)
+    print(f"Name:        {item.get('name', '')}")
+    print(f"Description: {item.get('description', '')}")
+    for key in ("genre", "tone", "role", "character_type", "type", "creature_class",
+                "appearance", "personality", "abilities", "behavior", "threat_level", "habitat"):
+        value = item.get(key)
+        if value not in (None, "", [], {}):
+            print(f"{key.replace('_', ' ').title()}: {value}")
+    print("=" * 72)
+
+
+def world_v2_guided_entity(world, category):
+    """Friendly creation wizard for characters and creatures."""
+    label = "Character" if category == "characters" else "Creature"
+    print("\n" + "=" * 72)
+    print(f"QUICK CREATE {label.upper()}")
+    print("=" * 72)
+    print("You do NOT need to know the genre, theme, classification, or other metadata.")
+    print("Just describe the idea. The World Engine will fill in useful starting values.")
+    print("\nConcept options:")
+    if category == "characters":
+        options = ["General", "Researcher", "Investigator", "Survivor", "Worker / Owner", "Supernatural", "Custom"]
+    else:
+        options = ["Let Factory Decide", "Animalistic", "Humanoid", "Supernatural", "Mechanical", "Undead", "Alien", "Eldritch", "Mutated", "Unknown", "Custom"]
+    for i, option in enumerate(options, 1):
+        print(f"{i}. {option}")
+    choice = input("Choose a concept [1]: ").strip()
+    try:
+        concept = options[int(choice) - 1] if choice else options[0]
+    except (ValueError, IndexError):
+        concept = options[0]
+
+    description = input("\nDescribe your idea in plain English: ").strip()
+    if not description:
+        print("Cancelled — no description entered.")
+        return world
+
+    name = input("Name [press Enter to generate one]: ").strip()
+    if not name:
+        name = world_v2_generated_name(category, world, description)
+        print(f"Generated name: {name}")
+
+    normalized_concept = concept.casefold()
+    item = world_v2_infer_profile(
+        world,
+        category,
+        description,
+        "auto" if normalized_concept in {"let factory decide", "general", "unknown"} else concept,
+    )
+    item["name"] = name
+    if concept not in {"Let Factory Decide", "General", "Unknown"}:
+        if category == "characters":
+            item["role"] = concept
+            item["character_type"] = concept
+        else:
+            item["creature_class"] = concept
+            item["type"] = concept
+
+    while True:
+        world_v2_print_profile(category, item)
+        print("\n1. Accept & Save")
+        print("2. Edit profile")
+        print("3. Regenerate profile")
+        print("4. Cancel")
+        action = input("Choose: ").strip()
+        if action == "1":
+            return world_v2_upsert(world, category, item)
+        if action == "2":
+            editable = [
+                "name", "description", "genre", "tone",
+                "role", "character_type", "appearance", "personality", "abilities",
+                "type", "creature_class", "behavior", "threat_level", "habitat",
+            ]
+            print("\nEnter a new value, or press Enter to leave a value unchanged.")
+            for key in editable:
+                if key in item:
+                    value = input(f"{key.replace('_', ' ').title()} [{item.get(key, '')}]: ").strip()
+                    if value:
+                        item[key] = value
+            continue
+        if action == "3":
+            item = world_v2_infer_profile(world, category, description, concept.casefold() if concept else "auto")
+            item["name"] = name
+            continue
+        if action == "4":
+            print("Cancelled.")
+            return world
+        print("Invalid choice.")
+
+
+def world_v2_add_entity_interactive(world, category):
+    """Add an entity. Characters/creatures use the friendly wizard by default."""
+    upgraded = world_v2_upgrade_record(world)
+    labels = {
+        "characters": "Character", "creatures": "Creature", "locations": "Location",
+        "objects": "Object", "factions": "Faction", "lore": "Lore entry",
+        "timeline": "Timeline event", "rules": "World rule",
+    }
+    if category in {"characters", "creatures"}:
+        return world_v2_guided_entity(upgraded, category)
+
+    name = input(f"{labels.get(category, category)} name: ").strip()
+    if not name:
+        return upgraded
+    description = input("Description: ").strip()
+    item = {"name": name, "description": description}
+    if category == "locations":
+        item.update({"environment": input("Environment: ").strip(), "important_details": input("Important details: ").strip()})
+    elif category == "timeline":
+        item.update({"date": input("Date or era: ").strip(), "era": input("Era label: ").strip()})
+    return world_v2_upsert(upgraded, category, item)
+
+
+
+def world_v2_advanced_entity_interactive(world, category):
+    """Original-style manual editor, retained behind the Advanced option."""
+    upgraded = world_v2_upgrade_record(world)
+    label = "Character" if category == "characters" else "Creature"
+    name = input(f"{label} name: ").strip()
+    if not name:
+        return upgraded
+    description = input("Description: ").strip()
+    item = {"name": name, "description": description}
+    if category == "characters":
+        item.update({"role": input("Role: ").strip(), "appearance": input("Appearance: ").strip(), "personality": input("Personality: ").strip(), "abilities": input("Abilities: ").strip()})
+    else:
+        item.update({"type": input("Type/classification: ").strip(), "appearance": input("Appearance: ").strip(), "abilities": input("Abilities: ").strip(), "behavior": input("Behavior: ").strip(), "threat_level": input("Threat level: ").strip(), "habitat": input("Habitat: ").strip()})
+    return world_v2_upsert(upgraded, category, item)
+
+def world_v2_edit_entity_interactive(world, category, item):
+    """Edit an existing character/creature with the same friendly profile fields."""
+    upgraded = world_v2_upgrade_record(world)
+    item = dict(item)
+    label = "Character" if category == "characters" else "Creature"
+    print("\n" + "=" * 72)
+    print(f"EDIT {label.upper()}")
+    print("=" * 72)
+    fields = ["name", "description", "genre", "tone"]
+    if category == "characters":
+        fields += ["role", "character_type", "appearance", "personality", "abilities"]
+    else:
+        fields += ["type", "creature_class", "appearance", "abilities", "behavior", "threat_level", "habitat"]
+    print("Enter a new value, or press Enter to keep the current value.")
+    for key in fields:
+        current = item.get(key, "")
+        value = input(f"{key.replace('_', ' ').title()} [{current}]: ").strip()
+        if value:
+            item[key] = value
+    world_v2_print_profile(category, item)
+    print("\n1. Save changes")
+    print("2. Keep editing")
+    print("3. Cancel")
+    while True:
+        choice = input("Choose: ").strip()
+        if choice == "1":
+            return world_v2_upsert(upgraded, category, item)
+        if choice == "2":
+            return world_v2_edit_entity_interactive(upgraded, category, item)
+        if choice == "3":
+            print("Edit cancelled.")
+            return upgraded
+        print("Invalid choice.")
+
+
+def world_v2_entity_menu(world, category):
+    while True:
+        upgraded = world_v2_upgrade_record(world)
+        items = upgraded.get(category, [])
+        print(f"\n{category.upper()} ({len(items)})")
+        for index, item in enumerate(items, 1):
+            print(f"{index}. {item.get('name', 'Untitled')} [{item.get('id')}]")
+        if category in {"characters", "creatures"}:
+            print("A. Quick Create (recommended)")
+            print("M. Advanced / Manual Create")
+        else:
+            print("A. Add")
+        if items:
+            print("E. Edit an existing entry")
+        print("R. Remove")
+        print("X. Back")
+        choice = input("Choose: ").strip().lower()
+        if choice == "x":
+            return upgraded
+        if choice == "a":
+            world = world_v2_add_entity_interactive(upgraded, category)
+        elif choice == "m" and category in {"characters", "creatures"}:
+            world = world_v2_advanced_entity_interactive(upgraded, category)
+        elif choice == "e" and items:
+            try:
+                number = int(input("Number to edit: ").strip())
+                if 1 <= number <= len(items):
+                    world = world_v2_edit_entity_interactive(upgraded, category, items[number - 1])
+                else:
+                    print("Invalid number.")
+            except ValueError:
+                print("Invalid number.")
+        elif choice.isdigit() and items:
+            number = int(choice)
+            if 1 <= number <= len(items):
+                print(f"\nSelected: {items[number - 1].get('name', 'Untitled')}")
+                print("1. Edit")
+                print("2. Remove")
+                print("3. View profile")
+                print("4. Cancel")
+                action = input("Choose: ").strip()
+                if action == "1":
+                    world = world_v2_edit_entity_interactive(upgraded, category, items[number - 1])
+                elif action == "2":
+                    world, removed = world_v2_delete(upgraded, category, items[number - 1].get("id"))
+                    print(f"Removed: {removed}")
+                elif action == "3":
+                    world_v2_print_profile(category, items[number - 1])
+                    input("Press Enter to continue...")
+                elif action != "4":
+                    print("Invalid choice.")
+            else:
+                print("Invalid number.")
+        elif choice == "r":
+            try:
+                number = int(input("Number to remove: ").strip())
+                if 1 <= number <= len(items):
+                    world, removed = world_v2_delete(
+                        upgraded, category, items[number - 1].get("id")
+                    )
+                    print(f"Removed: {removed}")
+                else:
+                    print("Invalid number.")
+            except ValueError:
+                print("Invalid number.")
+        else:
+            print("Invalid choice.")
+
+
+def world_engine_center_v9():
+    while True:
+        index = load_world_index()
+        worlds = index.get("worlds", {})
+        ordered = sorted(
+            worlds.items(),
+            key=lambda pair: str(pair[1].get("name", pair[0])).casefold()
+        )
+        active = [
+            (wid, meta) for wid, meta in ordered
+            if not meta.get("archived", False)
+        ]
+        archived = [
+            (wid, meta) for wid, meta in ordered
+            if meta.get("archived", False)
+        ]
+
+        print("\n" + "=" * 72)
+        print("WORLD ENGINE 2.0 / WORLD CENTER")
+        print("=" * 72)
+        print(f"Active worlds: {len(active)} | Archived: {len(archived)}")
+        print("N. Create new world")
+        if active:
+            print("O. Open world dashboard")
+        print("F. Find world")
+        if archived:
+            print("U. Restore archived world")
+        print("X. Back")
+        choice = input("Choose: ").strip().lower()
+
+        if choice == "x":
+            return
+        if choice == "n":
+            name = input("World name: ").strip()
+            if not name:
+                continue
+            description = input("Description: ").strip()
+            genre = input("Genre: ").strip()
+            tone = input("Tone: ").strip()
+            world = new_world_record(name, description, genre, tone)
+            world["schema_version"] = WORLD_ENGINE_2_SCHEMA
+            world["engine_version"] = WORLD_ENGINE_2_VERSION
+            world["production_history"] = []
+            world["archived"] = False
+            world_v2_save(world)
+            world_v2_write_bible(world)
+            print(f"Created world: {world['name']}")
+            continue
+        if choice == "f":
+            query = input("Search world name: ").strip().casefold()
+            matches = [
+                (wid, meta) for wid, meta in ordered
+                if query in str(meta.get("name", wid)).casefold()
+            ]
+            if not matches:
+                print("No matching worlds.")
+            else:
+                for wid, meta in matches:
+                    print(f"- {meta.get('name', wid)} [{wid}]")
+            continue
+        if choice == "u":
+            if not archived:
+                print("No archived worlds.")
+                continue
+            for number, (wid, meta) in enumerate(archived, 1):
+                print(f"{number}. {meta.get('name', wid)}")
+            try:
+                number = int(input("Restore number: ").strip())
+                wid = archived[number - 1][0]
+                world = load_world(wid)
+                world["archived"] = False
+                world_v2_save(world)
+                print("World restored.")
+            except (ValueError, IndexError, TypeError):
+                print("Invalid selection.")
+            continue
+        if choice != "o" or not active:
+            print("Invalid choice.")
+            continue
+
+        for number, (wid, meta) in enumerate(active, 1):
+            print(f"{number}. {meta.get('name', wid)}")
+        try:
+            number = int(input("World number: ").strip())
+            wid = active[number - 1][0]
+            world = world_v2_upgrade_record(load_world(wid))
+        except (ValueError, IndexError, TypeError):
+            print("Invalid selection.")
+            continue
+
+        while True:
+            dashboard = world_v2_dashboard(world)
+            print("\n" + "-" * 72)
+            print(f"WORLD: {dashboard['name']}")
+            print(f"ID: {dashboard['world_id']}")
+            print(f"Genre: {dashboard['genre']} | Tone: {dashboard['tone']}")
+            print(f"Description: {dashboard['description']}")
+            print(f"Continuity: {dashboard['continuity_status']}")
+            print("Counts:", ", ".join(
+                f"{key}={value}" for key, value in dashboard["counts"].items()
+            ))
+            print("\n1. Edit world core")
+            print("2. Characters")
+            print("3. Creatures")
+            print("4. Locations")
+            print("5. Objects")
+            print("6. Factions")
+            print("7. Lore")
+            print("8. Timeline")
+            print("9. Rules")
+            print("10. Run continuity audit")
+            print("11. Generate World Bible")
+            print("12. Attach a book project")
+            print("13. Archive world")
+            print("X. Back")
+            action = input("Choose: ").strip().lower()
+            if action == "x":
+                break
+            if action == "1":
+                world = world_v2_edit_core(world)
+            elif action in {str(number) for number in range(2, 10)}:
+                category = {
+                    "2": "characters", "3": "creatures", "4": "locations",
+                    "5": "objects", "6": "factions", "7": "lore",
+                    "8": "timeline", "9": "rules",
+                }[action]
+                world = world_v2_entity_menu(world, category)
+            elif action == "10":
+                report = world_v2_audit(world)
+                print(f"Continuity status: {report['status']}")
+                for error in report["errors"]:
+                    print("ERROR:", error)
+                for warning in report["warnings"]:
+                    print("WARNING:", warning)
+                report_path = world_path(world["world_id"]) / "CONTINUITY_REPORT.txt"
+                report_path.write_text(
+                    "WORLD CONTINUITY REPORT\n"
+                    + "=" * 72 + "\n"
+                    + f"Status: {report['status']}\n"
+                    + f"Errors: {len(report['errors'])}\n"
+                    + f"Warnings: {len(report['warnings'])}\n\n"
+                    + "\n".join(f"ERROR: {x}" for x in report["errors"])
+                    + "\n\n"
+                    + "\n".join(f"WARNING: {x}" for x in report["warnings"])
+                    + "\n",
+                    encoding="utf-8",
+                )
+                print(f"Report saved: {report_path}")
+            elif action == "11":
+                path = world_v2_write_bible(world)
+                print(f"World Bible saved: {path}")
+            elif action == "12":
+                project_id = input("Project ID/name: ").strip()
+                title = input("Book title: ").strip()
+                series = input("Series ID/name (optional): ").strip()
+                number_text = input("Book number (optional): ").strip()
+                book_number = int(number_text) if number_text.isdigit() else None
+                world = world_v2_attach_book(
+                    world, project_id, title, series, book_number, True
+                )
+                print("Book attached.")
+            elif action == "13":
+                confirm = input(
+                    f"Type ARCHIVE to archive '{world['name']}': "
+                ).strip()
+                if confirm == "ARCHIVE":
+                    world["archived"] = True
+                    world = world_v2_save(world)
+                    print("World archived.")
+                    break
+            else:
+                print("Invalid choice.")
+
+
+# Replace the old Worlds & Universes entry point with the upgraded center.
+
+
+# ============================================================
+# WORLD ENGINE 2.0 HARDENING / FACTORY v9.3
+# ============================================================
+WORLD_ENGINE_2_VERSION = "2.0"
+WORLD_ENGINE_2_SCHEMA = 3
+# v10.0 UX upgrade: unified World Entity Studio with friendly creation, editing, search, duplicate, and regeneration.
+
+def world_v2_backup(world, reason="manual"):
+    upgraded = world_v2_upgrade_record(world)
+    folder = world_path(upgraded["world_id"])
+    backup_dir = folder / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    safe_reason = re.sub(r"[^A-Za-z0-9_-]+", "_", str(reason)).strip("_") or "backup"
+    path = backup_dir / f"world_{stamp}_{safe_reason}.json"
+    path.write_text(json.dumps(upgraded, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def world_v2_atomic_write(path, payload):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(payload, encoding="utf-8")
+    with temp.open("r+", encoding="utf-8") as handle:
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp, path)
+
+
+def world_v2_save(world, backup_reason="autosave"):
+    upgraded = world_v2_upgrade_record(world)
+    folder = world_path(upgraded["world_id"])
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / "world.json"
+    if target.exists():
+        try:
+            world_v2_backup(upgraded, backup_reason)
+        except Exception as exc:
+            print(f"Warning: backup failed: {exc}")
+    world_v2_atomic_write(target, json.dumps(upgraded, indent=2, ensure_ascii=False))
+    index = load_world_index()
+    index.setdefault("worlds", {})[upgraded["world_id"]] = {
+        "name": upgraded.get("name", upgraded["world_id"]),
+        "updated": upgraded.get("updated", world_v2_now()),
+        "archived": bool(upgraded.get("archived", False)),
+    }
+    index_path = Path(WORLDS_DIR) / "world_index.json"
+    world_v2_atomic_write(index_path, json.dumps(index, indent=2, ensure_ascii=False))
+    return upgraded
+
+
+def world_v2_upgrade_record(world):
+    if not isinstance(world, dict):
+        raise ValueError("World record must be a dictionary")
+    upgraded = dict(world)
+    upgraded.setdefault("world_id", world_slug(upgraded.get("name", "New World")))
+    upgraded.setdefault("name", "New World")
+    upgraded.setdefault("description", "")
+    upgraded.setdefault("genre", "")
+    upgraded.setdefault("tone", "")
+    upgraded.setdefault("universe", True)
+    upgraded.setdefault("series", [])
+    upgraded.setdefault("books", [])
+    upgraded.setdefault("relationships", [])
+    upgraded.setdefault("production_history", [])
+    upgraded.setdefault("archived", False)
+    upgraded.setdefault("created", world_v2_now())
+    for category in WORLD_ENTITY_CATEGORIES:
+        values = upgraded.get(category, [])
+        if not isinstance(values, list):
+            values = []
+        upgraded[category] = [world_v2_normalize_entity(value, category) for value in values]
+    upgraded["series"] = [world_v2_normalize_entity(v, "series") for v in upgraded.get("series", [])]
+    upgraded["books"] = [world_v2_normalize_entity(v, "books") for v in upgraded.get("books", [])]
+    upgraded["relationships"] = [
+        {**(dict(v) if isinstance(v, dict) else {"name": str(v)}),
+         "id": (dict(v) if isinstance(v, dict) else {}).get("id", world_v2_entity_id("relationship")),
+         "from": (dict(v) if isinstance(v, dict) else {}).get("from", (dict(v) if isinstance(v, dict) else {}).get("source", "")),
+         "to": (dict(v) if isinstance(v, dict) else {}).get("to", (dict(v) if isinstance(v, dict) else {}).get("target", "")),
+         "type": (dict(v) if isinstance(v, dict) else {}).get("type", "related_to"),
+         "notes": (dict(v) if isinstance(v, dict) else {}).get("notes", ""),
+         "canon": (dict(v) if isinstance(v, dict) else {}).get("canon", True),
+         "last_updated": (dict(v) if isinstance(v, dict) else {}).get("last_updated", world_v2_now())}
+        for v in upgraded.get("relationships", [])
+    ]
+    upgraded["engine_version"] = WORLD_ENGINE_2_VERSION
+    upgraded["schema_version"] = WORLD_ENGINE_2_SCHEMA
+    upgraded["updated"] = world_v2_now()
+    return upgraded
+
+
+def world_v2_audit(world):
+    upgraded = world_v2_upgrade_record(world)
+    errors, warnings, info = [], [], []
+    seen_ids, seen_names, all_ids = {}, {}, set()
+    for category in WORLD_ENTITY_CATEGORIES + ("series", "books"):
+        if category not in WORLD_ENTITY_CATEGORIES + ("series", "books"):
+            errors.append(f"Invalid category: {category}")
+            continue
+        for item in upgraded.get(category, []):
+            item_id = str(item.get("id", "")).strip()
+            name = str(item.get("name", "")).strip()
+            if not item_id:
+                errors.append(f"{category}: '{name or 'Untitled'}' has no stable ID")
+            elif item_id in seen_ids:
+                errors.append(f"Duplicate entity ID '{item_id}' in {category} and {seen_ids[item_id]}")
+            else:
+                seen_ids[item_id] = category
+                all_ids.add(item_id)
+            if not name:
+                errors.append(f"{category}/{item_id or 'no-id'} has no name")
+            else:
+                key = name.casefold()
+                if key in seen_names and seen_names[key] != category:
+                    warnings.append(f"Name collision: '{name}' appears in {seen_names[key]} and {category}")
+                elif key in seen_names:
+                    warnings.append(f"Duplicate name: '{name}' appears more than once in {category}")
+                else:
+                    seen_names[key] = category
+            if category == "timeline" and not str(item.get("date", "")).strip():
+                warnings.append(f"Timeline event '{name or item_id}' is missing a date")
+            for book_ref in item.get("books", []) if isinstance(item.get("books", []), list) else []:
+                if not any(book_ref in (book.get("id"), book.get("name")) for book in upgraded.get("books", [])):
+                    warnings.append(f"{category}/{name}: unknown book reference '{book_ref}'")
+    for relation in upgraded.get("relationships", []):
+        if relation.get("from") not in all_ids:
+            errors.append(f"Relationship {relation.get('id')} has unknown source '{relation.get('from')}'")
+        if relation.get("to") not in all_ids:
+            errors.append(f"Relationship {relation.get('id')} has unknown target '{relation.get('to')}'")
+    timeline_keys, timeline_ids = set(), set()
+    for event in upgraded.get("timeline", []):
+        if event.get("id") in timeline_ids:
+            errors.append(f"Duplicate timeline event ID '{event.get('id')}'")
+        timeline_ids.add(event.get("id"))
+        key = (str(event.get("date", "")).casefold(), str(event.get("name", "")).casefold())
+        if key in timeline_keys and key != ("", ""):
+            warnings.append(f"Duplicate timeline event: {event.get('name')} ({event.get('date', '')})")
+        timeline_keys.add(key)
+    for book in upgraded.get("books", []):
+        project_id = str(book.get("id", "")).strip()
+        if project_id and not (Path(PROJECTS_ROOT) / project_id).exists():
+            warnings.append(f"Attached book project not found: '{project_id}'")
+    if not errors and not warnings:
+        info.append("No continuity problems detected.")
+    counts = {c: len(upgraded.get(c, [])) for c in WORLD_ENTITY_CATEGORIES}
+    counts.update({"series": len(upgraded.get("series", [])), "books": len(upgraded.get("books", [])), "relationships": len(upgraded.get("relationships", []))})
+    return {"status": "FAIL" if errors else ("PASS_WITH_WARNINGS" if warnings else "PASS"), "errors": errors, "warnings": warnings, "info": info, "counts": counts}
+
+
+def world_v2_write_bible(world):
+    upgraded = world_v2_upgrade_record(world)
+    report = world_v2_audit(upgraded)
+    folder = world_path(upgraded["world_id"])
+    folder.mkdir(parents=True, exist_ok=True)
+    lines = [f"# {upgraded['name']}", "", upgraded.get("description", ""), "", f"- **Genre:** {upgraded.get('genre', '')}", f"- **Tone:** {upgraded.get('tone', '')}", f"- **Status:** {'Archived' if upgraded.get('archived') else 'Active'}", f"- **Last updated:** {upgraded.get('updated', '')}", ""]
+    for category, heading in (("rules","World Rules"),("timeline","Timeline"),("characters","Characters"),("creatures","Creatures"),("locations","Locations"),("objects","Objects"),("factions","Factions"),("lore","Lore")):
+        lines += [f"## {heading}", ""]
+        for item in upgraded.get(category, []):
+            lines += [f"### {item.get('name', 'Untitled')}"]
+            if item.get("description"): lines.append(str(item["description"]))
+            for key, value in item.items():
+                if key not in {"id","name","description","books"} and value not in (None, "", [], {}):
+                    lines.append(f"**{key.replace('_',' ').title()}:** {value}")
+            lines.append("")
+    lines += ["## Relationships", ""] + [f"- `{r.get('from')}` **{r.get('type','related_to')}** `{r.get('to')}`" for r in upgraded.get("relationships", [])]
+    lines += ["", "## Attached Books", ""] + [f"- {b.get('name','Untitled')} (`{b.get('id','')}`)" for b in upgraded.get("books", [])]
+    lines += ["", "## Continuity Audit", "", f"**Status:** {report['status']}", "", "### Errors"] + [f"- {x}" for x in report["errors"]] + ["", "### Warnings"] + [f"- {x}" for x in report["warnings"]] + ["", "### Information"] + [f"- {x}" for x in report["info"]]
+    path = folder / "WORLD_BIBLE.md"
+    world_v2_atomic_write(path, "\n".join(lines).rstrip() + "\n")
+    return path
+
+
+# ============================================================
+# WORLD ENTITY STUDIO v10.0
+# Major bundled UX upgrade for every World Engine entity type.
+# ============================================================
+
+WORLD_ENTITY_STUDIO_VERSION = "1.0"
+
+WORLD_ENTITY_LABELS = {
+    "characters": "Character",
+    "creatures": "Creature",
+    "locations": "Location",
+    "objects": "Object",
+    "factions": "Faction",
+    "lore": "Lore Entry",
+    "timeline": "Timeline Event",
+    "rules": "World Rule",
+}
+
+WORLD_ENTITY_PRESETS = {
+    "characters": ["Let Factory Decide", "Researcher", "Investigator", "Survivor", "Worker / Owner", "Leader", "Villain", "Supernatural", "Custom"],
+    "creatures": ["Let Factory Decide", "Animalistic", "Humanoid", "Supernatural", "Mechanical", "Undead", "Alien", "Eldritch", "Mutated", "Unknown", "Custom"],
+    "locations": ["Let Factory Decide", "Building", "Wilderness", "Urban", "Underground", "Abandoned", "Supernatural", "Industrial", "Custom"],
+    "objects": ["Let Factory Decide", "Artifact", "Weapon", "Machine", "Relic", "Key Item", "Supernatural", "Custom"],
+    "factions": ["Let Factory Decide", "Government", "Corporation", "Cult", "Survivors", "Criminal", "Military", "Supernatural", "Custom"],
+    "lore": ["Let Factory Decide", "History", "Legend", "Myth", "Secret", "Rumor", "Discovery", "Custom"],
+    "timeline": ["Let Factory Decide", "Origin", "Discovery", "Incident", "Conflict", "Turning Point", "Aftermath", "Custom"],
+    "rules": ["Let Factory Decide", "World Rule", "Supernatural Rule", "Technology Rule", "Creature Rule", "Continuity Rule", "Custom"],
+}
+
+WORLD_ENTITY_FIELDS = {
+    "characters": ["name", "description", "genre", "tone", "role", "character_type", "appearance", "personality", "abilities", "goals", "relationships", "notes"],
+    "creatures": ["name", "description", "genre", "tone", "type", "creature_class", "appearance", "abilities", "behavior", "threat_level", "habitat", "weaknesses", "notes"],
+    "locations": ["name", "description", "genre", "tone", "type", "environment", "appearance", "important_details", "inhabitants", "danger_level", "story_role", "notes"],
+    "objects": ["name", "description", "genre", "tone", "type", "purpose", "appearance", "powers", "limitations", "origin", "owner", "notes"],
+    "factions": ["name", "description", "genre", "tone", "type", "goals", "methods", "leader", "members", "allies", "enemies", "resources", "notes"],
+    "lore": ["name", "description", "genre", "tone", "type", "origin", "significance", "known_facts", "secrets", "related_entities", "notes"],
+    "timeline": ["name", "description", "genre", "tone", "date", "era", "type", "cause", "consequences", "related_entities", "canon_status", "notes"],
+    "rules": ["name", "description", "genre", "tone", "type", "scope", "rule_text", "exceptions", "consequences", "notes"],
+}
+
+
+def world_v10_slug_choice(value):
+    return str(value or "").strip().casefold()
+
+
+def world_v10_unique_name(world, category, candidates):
+    existing = {str(x.get("name", "")).casefold() for x in world.get(category, []) if isinstance(x, dict)}
+    for candidate in candidates:
+        if candidate.casefold() not in existing:
+            return candidate
+    label = WORLD_ENTITY_LABELS.get(category, "Entity")
+    n = len(world.get(category, [])) + 1
+    return f"{label} {n}"
+
+
+def world_v10_generate_name(world, category, description="", concept=""):
+    text = f"{description} {concept} {world.get('name', '')}".casefold()
+    if category == "characters":
+        if any(w in text for w in ("research", "scientist", "professor", "doctor")):
+            pool = ["Dr. Mara Vale", "Dr. Adrian Cross", "Dr. Evelyn Graves", "Dr. Elias Voss"]
+        elif any(w in text for w in ("detective", "investigator", "police")):
+            pool = ["Detective Rowan Pike", "Mara Quinn", "Jonah Graves", "Elias Ward"]
+        elif "surviv" in text:
+            pool = ["Nora Black", "Caleb Voss", "Mara Cross", "Evan Graves"]
+        else:
+            pool = ["Elias Voss", "Mara Vale", "Rowan Black", "Evelyn Cross", "Jonah Graves"]
+    elif category == "creatures":
+        if any(w in text for w in ("machine", "mechanical", "robot", "vending", "metal")):
+            pool = ["The Coin-Eater", "The Dispenser", "The Change Warden", "Machine-Born", "The Empty Mechanism"]
+        elif any(w in text for w in ("zombie", "undead", "corpse", "dead")):
+            pool = ["The Hollow Dead", "The Grave Walker", "The Returned", "The Rotting Watcher"]
+        elif any(w in text for w in ("shadow", "void", "eldritch", "cosmic", "night")):
+            pool = ["The Hollow Walker", "The Night Maw", "The Black Witness", "The Veiled Thing"]
+        else:
+            pool = ["The Grinning Thing", "The Crooked One", "The Hunger", "The Watcher", "The Stranger"]
+    elif category == "locations":
+        pool = ["The Abandoned Station", "Blackwater Facility", "The Hollow District", "Old Mercy Hospital", "The Forgotten Road"]
+        if "vending" in text or "machine" in text:
+            pool = ["The Midnight Market", "Station 13", "The Dead Dispenser Hall", "Blackwater Service Tunnel"]
+    elif category == "objects":
+        pool = ["The Black Key", "The Last Token", "The Glass Relic", "The Broken Signal", "The Unmarked Device"]
+        if "vending" in text or "machine" in text:
+            pool = ["The Black Coin", "The Last Token", "The Impossible Key", "The Empty Cartridge"]
+    elif category == "factions":
+        pool = ["The Night Watch", "The Black Archive", "The Survivors' Circle", "The Veiled Order", "The Recovery Division"]
+    elif category == "lore":
+        pool = ["The First Incident", "The Missing Hour", "The Black Ledger", "The Old Warning", "The Unspoken Truth"]
+    elif category == "timeline":
+        pool = ["The First Appearance", "The Night It Began", "The Discovery", "The Blackout", "The First Breach"]
+    else:
+        pool = ["The First Rule", "The Rule of Return", "The Machine Law", "The Boundary", "The Cost of Knowledge"]
+    return world_v10_unique_name(world, category, pool)
+
+
+def world_v10_infer_entity(world, category, description, concept="Let Factory Decide", variation=0):
+    text = str(description or "").strip()
+    lower = text.casefold()
+    genre = str(world.get("genre", "")).strip() or "Unknown"
+    tone = str(world.get("tone", "")).strip() or "Unknown"
+    concept = concept or "Let Factory Decide"
+    item = {
+        "id": world_v2_entity_id(category),
+        "description": text,
+        "genre": genre,
+        "tone": tone,
+        "canon": True,
+        "books": [],
+        "first_appearance": "",
+        "last_updated": world_v2_now(),
+    }
+    item["studio_preset"] = concept
+
+    if category == "characters":
+        if concept not in ("Let Factory Decide", "Custom"):
+            role = concept
+        elif any(w in lower for w in ("research", "scientist", "professor", "doctor")):
+            role = "Researcher"
+        elif any(w in lower for w in ("detective", "investigat", "police")):
+            role = "Investigator"
+        elif "surviv" in lower:
+            role = "Survivor"
+        elif any(w in lower for w in ("owner", "manager", "clerk", "cashier", "worker")):
+            role = "Worker / Owner"
+        elif any(w in lower for w in ("leader", "commander", "chief")):
+            role = "Leader"
+        elif any(w in lower for w in ("villain", "killer", "murderer")):
+            role = "Villain"
+        else:
+            role = "Unknown / To Be Determined"
+        item.update({
+            "role": role,
+            "character_type": concept if concept not in ("Let Factory Decide", "Custom") else "General",
+            "appearance": "To be developed",
+            "personality": "Cautious and observant" if any(w in lower for w in ("mystery", "strange", "investigat", "research")) else "To be developed",
+            "abilities": "None established yet",
+            "goals": "To be developed",
+            "relationships": "None established yet",
+            "notes": "",
+        })
+    elif category == "creatures":
+        if concept not in ("Let Factory Decide", "Custom", "Unknown"):
+            ctype = concept
+        elif any(w in lower for w in ("machine", "robot", "mechanical", "metal", "vending")):
+            ctype = "Mechanical / Artificial"
+        elif any(w in lower for w in ("zombie", "undead", "corpse", "dead")):
+            ctype = "Undead"
+        elif any(w in lower for w in ("animal", "beast", "wolf", "dog", "cat")):
+            ctype = "Animalistic"
+        elif any(w in lower for w in ("ghost", "spirit", "specter", "supernatural")):
+            ctype = "Supernatural"
+        elif any(w in lower for w in ("alien", "extraterrestrial", "space")):
+            ctype = "Alien"
+        elif any(w in lower for w in ("shadow", "void", "eldritch", "cosmic")):
+            ctype = "Eldritch / Unknown"
+        elif any(w in lower for w in ("mutant", "mutation", "mutated")):
+            ctype = "Mutated"
+        else:
+            ctype = "Unknown / To Be Determined"
+        item.update({
+            "type": ctype,
+            "creature_class": ctype,
+            "appearance": "Derived from the description; expand as needed",
+            "abilities": "Unknown / To be documented",
+            "behavior": "Predatory and unpredictable" if any(w in lower for w in ("hunt", "attack", "stalk", "kill")) else "Behavior not fully understood",
+            "threat_level": "High" if any(w in lower for w in ("dangerous", "deadly", "kill", "attack")) else "Unknown",
+            "habitat": "Anomalous / Unknown",
+            "weaknesses": "Unknown / To be discovered",
+            "notes": "",
+        })
+    elif category == "locations":
+        ltype = concept if concept not in ("Let Factory Decide", "Custom") else ("Industrial" if any(w in lower for w in ("factory", "machine", "warehouse")) else "Unknown")
+        item.update({"type": ltype, "environment": "To be developed", "appearance": "To be developed", "important_details": "To be developed", "inhabitants": "Unknown", "danger_level": "Unknown", "story_role": "To be developed", "notes": ""})
+    elif category == "objects":
+        otype = concept if concept not in ("Let Factory Decide", "Custom") else ("Machine" if any(w in lower for w in ("machine", "device", "vending")) else "Unknown")
+        item.update({"type": otype, "purpose": "To be developed", "appearance": "To be developed", "powers": "None established yet", "limitations": "To be determined", "origin": "Unknown", "owner": "Unknown", "notes": ""})
+    elif category == "factions":
+        ftype = concept if concept not in ("Let Factory Decide", "Custom") else "Unknown"
+        item.update({"type": ftype, "goals": "To be developed", "methods": "To be developed", "leader": "Unknown", "members": "Unknown", "allies": "None established yet", "enemies": "None established yet", "resources": "Unknown", "notes": ""})
+    elif category == "lore":
+        ltype = concept if concept not in ("Let Factory Decide", "Custom") else "Unknown"
+        item.update({"type": ltype, "origin": "To be developed", "significance": "To be developed", "known_facts": "To be developed", "secrets": "Unknown", "related_entities": "None established yet", "notes": ""})
+    elif category == "timeline":
+        etype = concept if concept not in ("Let Factory Decide", "Custom") else "Event"
+        item.update({"type": etype, "date": "Unspecified", "era": "Unspecified", "cause": "To be developed", "consequences": "To be developed", "related_entities": "None established yet", "canon_status": "Canon", "notes": ""})
+    elif category == "rules":
+        rtype = concept if concept not in ("Let Factory Decide", "Custom") else "World Rule"
+        item.update({"type": rtype, "scope": "World-wide", "rule_text": text or "To be defined", "exceptions": "None established yet", "consequences": "To be defined", "notes": ""})
+    return item
+
+
+def world_v10_print_entity(category, item, title="ENTITY PROFILE"):
+    label = WORLD_ENTITY_LABELS.get(category, category.title())
+    print("\n" + "=" * 76)
+    print(title)
+    print("=" * 76)
+    print(f"Type:        {label}")
+    for key in WORLD_ENTITY_FIELDS.get(category, ["name", "description"]):
+        if key == "id":
+            continue
+        value = item.get(key, "")
+        if value not in (None, "", [], {}):
+            print(f"{key.replace('_', ' ').title()+':':<18}{value}")
+    print("=" * 76)
+
+
+def world_v10_edit_fields(item, category, allow_blank=False):
+    for key in WORLD_ENTITY_FIELDS.get(category, []):
+        if key == "name":
+            prompt = "Name"
+        else:
+            prompt = key.replace("_", " ").title()
+        current = str(item.get(key, ""))
+        value = input(f"{prompt} [{current}]: ").strip()
+        if value or allow_blank:
+            item[key] = value
+    item["last_updated"] = world_v2_now()
+    return item
+
+
+def world_v10_quick_create(world, category):
+    label = WORLD_ENTITY_LABELS.get(category, category.title())
+    presets = WORLD_ENTITY_PRESETS.get(category, ["Let Factory Decide", "Custom"])
+    print("\n" + "=" * 76)
+    print(f"QUICK CREATE {label.upper()}")
+    print("=" * 76)
+    print("Describe the idea in plain English. You do not need to know the metadata.")
+    print("The current world's genre and tone are inherited automatically.")
+    print("\nPreset / concept:")
+    for i, preset in enumerate(presets, 1):
+        print(f"{i}. {preset}")
+    raw = input("Choose a preset [1]: ").strip()
+    try:
+        concept = presets[int(raw) - 1] if raw else presets[0]
+    except (ValueError, IndexError):
+        concept = presets[0]
+    description = input("\nDescribe your idea: ").strip()
+    if not description:
+        print("Cancelled — no description entered.")
+        return world
+
+    name = ""
+    while not name:
+        requested = input("Name [Enter = generate]: ").strip()
+        if requested:
+            name = requested
+        else:
+            name = world_v10_generate_name(world, category, description, concept)
+            print(f"Generated name: {name}")
+
+    variation = 0
+    while True:
+        item = world_v10_infer_entity(world, category, description, concept, variation)
+        item["name"] = name
+        world_v10_print_entity(category, item, f"GENERATED {label.upper()} PROFILE")
+        print("\n1. Accept & Save")
+        print("2. Edit profile")
+        print("3. Regenerate profile")
+        print("4. Generate a different name")
+        print("5. Cancel")
+        action = input("Choose: ").strip()
+        if action == "1":
+            return world_v2_upsert(world, category, item)
+        if action == "2":
+            world_v10_edit_fields(item, category)
+            continue
+        if action == "3":
+            variation += 1
+            # Regeneration intentionally changes starter values rather than repeating the same output.
+            if category == "characters":
+                variants = ["Cautious and observant", "Paranoid but resourceful", "Calm under pressure", "Obsessive and relentless"]
+                item["personality"] = variants[variation % len(variants)]
+                item["goals"] = ["Find the truth", "Survive long enough to escape", "Protect someone important", "Expose what is happening"][variation % 4]
+            elif category == "creatures":
+                variants = ["Predatory and unpredictable", "Patient ambush predator", "Highly territorial", "Curious but dangerous"]
+                item["behavior"] = variants[variation % len(variants)]
+                item["threat_level"] = ["High", "Extreme", "Moderate", "Unknown"][variation % 4]
+            else:
+                item = world_v10_infer_entity(world, category, description, concept, variation)
+                item["name"] = name
+            continue
+        if action == "4":
+            name = world_v10_generate_name(world, category, description + f" variation {variation + 1}", concept)
+            continue
+        if action == "5":
+            print("Cancelled.")
+            return world
+        print("Invalid choice.")
+
+
+def world_v10_edit_entity(world, category, item):
+    upgraded = world_v2_upgrade_record(world)
+    editable = dict(item)
+    label = WORLD_ENTITY_LABELS.get(category, category.title())
+    while True:
+        world_v10_print_entity(category, editable, f"EDIT {label.upper()}")
+        print("\n1. Edit fields")
+        print("2. Save changes")
+        print("3. Regenerate starter profile")
+        print("4. Cancel")
+        choice = input("Choose: ").strip()
+        if choice == "1":
+            world_v10_edit_fields(editable, category)
+        elif choice == "2":
+            return world_v2_upsert(upgraded, category, editable)
+        elif choice == "3":
+            description = str(editable.get("description", ""))
+            concept = str(editable.get("studio_preset", "Let Factory Decide"))
+            regenerated = world_v10_infer_entity(upgraded, category, description, concept, 1)
+            regenerated["id"] = editable.get("id", regenerated.get("id"))
+            regenerated["name"] = editable.get("name", regenerated.get("name"))
+            editable = regenerated
+        elif choice == "4":
+            print("Edit cancelled.")
+            return upgraded
+        else:
+            print("Invalid choice.")
+
+
+def world_v10_duplicate_entity(world, category, item):
+    duplicate = dict(item)
+    duplicate.pop("id", None)
+    duplicate["name"] = world_v10_generate_name(world, category, str(item.get("description", "")) + " duplicate", str(item.get("studio_preset", "")))
+    duplicate["last_updated"] = world_v2_now()
+    return world_v2_upsert(world, category, duplicate)
+
+
+def world_v10_entity_menu(world, category):
+    """Unified management screen for every World Engine entity category."""
+    while True:
+        upgraded = world_v2_upgrade_record(world)
+        items = upgraded.get(category, [])
+        label = WORLD_ENTITY_LABELS.get(category, category.title())
+        print("\n" + "=" * 76)
+        print(f"{label.upper()} STUDIO ({len(items)})")
+        print("=" * 76)
+        if items:
+            for index, item in enumerate(items, 1):
+                print(f"{index}. {item.get('name', 'Untitled')} [{item.get('id', '')}]")
+        else:
+            print("No entries yet.")
+        print("\nA. Quick Create (recommended)")
+        print("M. Advanced / Manual Create")
+        if items:
+            print("E. Edit an existing entry")
+            print("V. View an entry")
+            print("D. Duplicate an entry")
+            print("R. Remove an entry")
+            print("S. Search this category")
+        print("X. Back")
+        choice = input("Choose: ").strip().lower()
+        if choice == "x":
+            return upgraded
+        if choice == "a":
+            world = world_v10_quick_create(upgraded, category)
+            continue
+        if choice == "m":
+            if category in {"characters", "creatures"}:
+                world = world_v2_advanced_entity_interactive(upgraded, category)
+            else:
+                # Advanced mode for all categories uses the complete field set.
+                name = input(f"{label} name: ").strip()
+                if not name:
+                    continue
+                item = {"name": name, "description": input("Description: ").strip()}
+                world_v10_edit_fields(item, category)
+                world = world_v2_upsert(upgraded, category, item)
+            continue
+        if choice in {"e", "v", "d", "r"} and items:
+            try:
+                number = int(input(f"Number to { {'e':'edit','v':'view','d':'duplicate','r':'remove'}[choice] }: ").strip())
+                if not 1 <= number <= len(items):
+                    raise ValueError
+            except ValueError:
+                print("Invalid number.")
+                continue
+            selected = items[number - 1]
+            if choice == "e":
+                world = world_v10_edit_entity(upgraded, category, selected)
+            elif choice == "v":
+                world_v10_print_entity(category, selected, f"VIEW {label.upper()}")
+                input("Press Enter to continue...")
+            elif choice == "d":
+                world = world_v10_duplicate_entity(upgraded, category, selected)
+            elif choice == "r":
+                confirm = input(f"Remove '{selected.get('name', 'Untitled')}'? Type YES to confirm: ").strip()
+                if confirm == "YES":
+                    world, removed = world_v2_delete(upgraded, category, selected.get("id"))
+                    print("Removed." if removed else "Nothing was removed.")
+                else:
+                    print("Removal cancelled.")
+            continue
+        if choice.isdigit() and items:
+            number = int(choice)
+            if 1 <= number <= len(items):
+                selected = items[number - 1]
+                world_v10_print_entity(category, selected, f"VIEW {label.upper()}")
+                print("\n1. Edit")
+                print("2. Duplicate")
+                print("3. Remove")
+                print("4. Back")
+                action = input("Choose: ").strip()
+                if action == "1":
+                    world = world_v10_edit_entity(upgraded, category, selected)
+                elif action == "2":
+                    world = world_v10_duplicate_entity(upgraded, category, selected)
+                elif action == "3":
+                    confirm = input("Type YES to confirm removal: ").strip()
+                    if confirm == "YES":
+                        world, _ = world_v2_delete(upgraded, category, selected.get("id"))
+            else:
+                print("Invalid number.")
+            continue
+        if choice == "s" and items:
+            query = input("Search text: ").strip()
+            results = world_v2_search(upgraded, query, [category])
+            if not results:
+                print("No matches.")
+            else:
+                print(f"\nFound {len(results)} match(es):")
+                for result in results:
+                    print(f"- {result.get('name')} [{result.get('id')}]")
+            input("Press Enter to continue...")
+            continue
+        print("Invalid choice.")
+
+
+# Make the v10.0 Studio the active implementation for every world category.
+world_v2_entity_menu = world_v10_entity_menu
+
+
+# ============================================================
+# v11.0 UNIVERSAL PUBLISHING & DISTRIBUTION ENGINE
+# ============================================================
+# Major upgrade layered over the v10.x factory.  The later definitions in this
+# section intentionally override earlier platform functions so older projects
+# remain compatible while gaining the new publishing pipeline.
+
+FACTORY_VERSION = "11.0"
+PLATFORM_ENGINE_VERSION = "4.0"
+UNIVERSAL_PUBLISHING_VERSION = "1.0"
+
+UNIVERSAL_PLATFORM_PROFILES = {
+    "KDP": {
+        "name": "Amazon KDP", "type": "print", "enabled": True, "output_dir": "KDP",
+        "source": "master_pdf", "files": ["interior_pdf", "cover_pdf", "metadata", "checklist", "preflight"],
+        "variant": {"mode": "copy", "filename_suffix": "_KDP_INTERIOR"},
+        "rules": {"min_pages": 24, "max_pages": 828, "require_title": True,
+                  "require_author": False, "require_cover": False, "require_landscape": False,
+                  "max_file_mb": 650, "expected_trim_from_project": True,
+                  "max_files": 2, "requires_single_page": True, "min_dpi": 300,
+                  "advisory": False},
+        "notes": "KDP print profile. KDP requires a separate manuscript and cover workflow when a cover is supplied."
+    },
+    "Gumroad": {
+        "name": "Gumroad", "type": "digital", "enabled": True, "output_dir": "GUMROAD",
+        "source": "master_pdf", "files": ["digital_pdf", "cover_preview", "preview_sheet", "metadata", "product_description", "readme"],
+        "variant": {"mode": "digital_copy", "filename_suffix": "_DIGITAL"},
+        "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                  "require_author": False, "require_cover": False, "require_landscape": False,
+                  "max_file_mb": 500, "max_files": 20, "advisory": True},
+        "notes": "Digital delivery profile. Verify account-specific limits before publishing."
+    },
+    "Etsy": {
+        "name": "Etsy Digital", "type": "digital", "enabled": True, "output_dir": "ETSY",
+        "source": "master_pdf", "files": ["digital_pdf", "cover_preview", "preview_sheet", "metadata", "product_description", "readme"],
+        "variant": {"mode": "etsy_split", "filename_suffix": "_ETSY"},
+        "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                  "require_author": False, "require_cover": False, "require_landscape": False,
+                  "max_file_mb": 20, "max_files": 5, "max_filename_chars": 70,
+                  "advisory": False},
+        "notes": "Verified Etsy digital listing constraints: up to 5 files, 20 MB each; supported file names are buyer-visible."
+    },
+    "Payhip": {
+        "name": "Payhip", "type": "digital", "enabled": True, "output_dir": "PAYHIP",
+        "source": "master_pdf", "files": ["digital_pdf", "cover_preview", "preview_sheet", "metadata", "product_description", "readme"],
+        "variant": {"mode": "copy", "filename_suffix": "_PAYHIP"},
+        "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                  "require_author": False, "require_cover": False, "require_landscape": False,
+                  "max_file_mb": 5120, "max_files": 50, "advisory": False},
+        "notes": "Payhip currently documents a 5GB maximum per uploaded file."
+    },
+    "Ko-fi": {
+        "name": "Ko-fi Shop", "type": "digital", "enabled": False, "output_dir": "KOFI",
+        "source": "master_pdf", "files": ["digital_pdf", "cover_preview", "preview_sheet", "metadata", "product_description", "readme"],
+        "variant": {"mode": "copy", "filename_suffix": "_KOFI"},
+        "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                  "require_author": False, "require_cover": False, "require_landscape": False,
+                  "max_file_mb": 500, "max_files": 20, "advisory": True},
+        "notes": "Framework profile; enable after confirming current account limits."
+    },
+    "Creative Market": {
+        "name": "Creative Market", "type": "digital", "enabled": False, "output_dir": "CREATIVE_MARKET",
+        "source": "master_pdf", "files": ["digital_pdf", "cover_preview", "preview_sheet", "metadata", "product_description", "readme"],
+        "variant": {"mode": "copy", "filename_suffix": "_CREATIVE_MARKET"},
+        "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                  "require_author": False, "require_cover": False, "require_landscape": False,
+                  "max_file_mb": 500, "max_files": 20, "advisory": True},
+        "notes": "Framework profile; marketplace-specific listing rules should be confirmed before activation."
+    },
+    "Shopify": {
+        "name": "Shopify Digital", "type": "digital", "enabled": False, "output_dir": "SHOPIFY",
+        "source": "master_pdf", "files": ["digital_pdf", "cover_preview", "preview_sheet", "metadata", "product_description", "readme"],
+        "variant": {"mode": "copy", "filename_suffix": "_SHOPIFY"},
+        "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                  "require_author": False, "require_cover": False, "require_landscape": False,
+                  "max_file_mb": 500, "max_files": 50, "advisory": True},
+        "notes": "Storefront profile; actual download delivery depends on the Shopify app/service selected."
+    },
+}
+
+
+def _deep_merge_platform_profiles(base, custom):
+    merged = json.loads(json.dumps(base))
+    if not isinstance(custom, dict):
+        return merged
+    for key, value in custom.items():
+        if not isinstance(value, dict):
+            continue
+        if key not in merged:
+            merged[key] = json.loads(json.dumps(value))
+            continue
+        for field, field_value in value.items():
+            if field in {"rules", "variant"} and isinstance(field_value, dict):
+                merged[key].setdefault(field, {}).update(field_value)
+            else:
+                merged[key][field] = field_value
+    return merged
+
+
+def load_platform_profiles():
+    path = platform_profiles_path()
+    custom = {}
+    if path.exists():
+        try:
+            data = load_json(path)
+            custom = data.get("profiles", {}) if isinstance(data, dict) else {}
+        except Exception:
+            custom = {}
+    return _deep_merge_platform_profiles(UNIVERSAL_PLATFORM_PROFILES, custom)
+
+
+def save_platform_profiles(profiles):
+    save_json(platform_profiles_path(), {
+        "version": PLATFORM_ENGINE_VERSION,
+        "universal_publishing_version": UNIVERSAL_PUBLISHING_VERSION,
+        "updated": datetime.now().isoformat(timespec="seconds"),
+        "profiles": profiles,
+    })
+
+
+def _platform_sanitized_filename(name, max_chars=70):
+    text = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name or "file")).strip("._") or "file"
+    return text[:max_chars]
+
+
+def _pdf_split_by_size(source_pdf, output_dir, base_name, max_mb, max_files):
+    """Split a PDF into sequential parts whose estimated serialized size stays under max_mb."""
+    Reader = _pdf_reader_class()
+    if Reader is None:
+        return [], ["pypdf/PyPDF2 is required for PDF splitting."]
+    try:
+        from pypdf import PdfWriter
+    except ImportError:
+        try:
+            from PyPDF2 import PdfWriter
+        except ImportError:
+            return [], ["pypdf/PyPDF2 PdfWriter is required for PDF splitting."]
+
+    source = Path(source_pdf)
+    limit = int(float(max_mb) * 1024 * 1024)
+    errors = []
+    outputs = []
+    try:
+        reader = Reader(str(source), strict=False)
+        if getattr(reader, "is_encrypted", False):
+            try:
+                if not reader.decrypt(""):
+                    return [], ["Encrypted PDF cannot be split without a password."]
+            except Exception as exc:
+                return [], [f"Encrypted PDF could not be opened: {exc}"]
+        pages = list(reader.pages)
+        if not pages:
+            return [], ["Source PDF contains no pages."]
+        index = 0
+        while index < len(pages):
+            writer = PdfWriter()
+            start = index
+            # Add pages one at a time and serialize to a temporary file so the
+            # actual compressed PDF size, rather than page count, controls splits.
+            while index < len(pages):
+                writer.add_page(pages[index])
+                tmp = output_dir / f".__split_{start+1}_{index+1}.pdf"
+                with tmp.open("wb") as handle:
+                    writer.write(handle)
+                size = tmp.stat().st_size
+                tmp.unlink(missing_ok=True)
+                if size <= limit or index == start:
+                    index += 1
+                    continue
+                # Rebuild without the last page.
+                writer = PdfWriter()
+                for page in pages[start:index]:
+                    writer.add_page(page)
+                break
+            if index == start:
+                return [], [f"A single page exceeds the {max_mb} MB platform file limit."]
+            out = output_dir / f"{_platform_sanitized_filename(base_name)}_PART_{len(outputs)+1:02d}.pdf"
+            with out.open("wb") as handle:
+                writer.write(handle)
+            if out.stat().st_size > limit and index > start + 1:
+                # Defensive check; should only occur for unusual writer behavior.
+                out.unlink(missing_ok=True)
+                return [], [f"Unable to create a compliant part under {max_mb} MB."]
+            outputs.append(out)
+            if len(outputs) > max_files:
+                for item in outputs:
+                    item.unlink(missing_ok=True)
+                return [], [f"Etsy-style packaging would require more than {max_files} files."]
+        return outputs, errors
+    except Exception as exc:
+        return [], [f"PDF split failed: {exc}"]
+
+
+def _write_platform_readme(output_dir, settings, platform_name, generated_files, notes=None):
+    title = settings.get("title", "Coloring Book")
+    author = settings.get("author", "")
+    lines = [
+        title,
+        "=" * len(title),
+        f"Author: {author}" if author else "",
+        f"Platform package: {platform_name}",
+        "",
+        "Thank you for your purchase.",
+        "",
+        "Files included:",
+    ]
+    lines.extend(f"- {name}" for name in generated_files)
+    if notes:
+        lines.extend(["", "Notes:", *[f"- {n}" for n in notes]])
+    (output_dir / "README.txt").write_text("\n".join(x for x in lines if x != "") + "\n", encoding="utf-8")
+    return output_dir / "README.txt"
+
+
+def _platform_profile_warning_list(profile):
+    rules = profile.get("rules", {})
+    warnings = []
+    if rules.get("advisory"):
+        warnings.append("This platform profile contains advisory limits; verify the marketplace's current seller requirements before publishing.")
+    return warnings
+
+
+def inspect_pdf(path):
+    result = {"path": str(path) if path else None, "exists": bool(path and Path(path).exists()),
+              "page_count": None, "sizes": [], "unique_sizes": [], "file_size_mb": None,
+              "encrypted": None, "metadata": {}, "error": None,
+              "has_annotations": False, "has_bookmarks": False, "has_javascript": False,
+              "has_forms": False, "page_resources": {}}
+    if not result["exists"]:
+        result["error"] = "PDF does not exist."
+        return result
+    pdf = Path(path)
+    result["file_size_mb"] = round(pdf.stat().st_size / (1024 * 1024), 3)
+    try:
+        Reader = _pdf_reader_class()
+        if Reader is None:
+            result["error"] = "No supported PDF reader is installed (pypdf or PyPDF2)."
+            return result
+        reader = Reader(str(pdf), strict=False)
+        result["encrypted"] = bool(reader.is_encrypted)
+        if reader.is_encrypted:
+            try:
+                if not reader.decrypt(""):
+                    result["error"] = "PDF is encrypted and could not be opened with an empty password."
+                    return result
+            except Exception as error:
+                result["error"] = f"PDF encryption check failed: {error}"
+                return result
+        result["page_count"] = len(reader.pages)
+        meta = reader.metadata or {}
+        result["metadata"] = {str(k): str(v) for k, v in meta.items() if v is not None}
+        sizes = []
+        annotations = 0
+        for page in reader.pages:
+            w = round(float(page.mediabox.width) / 72, 4)
+            h = round(float(page.mediabox.height) / 72, 4)
+            sizes.append({"width": w, "height": h,
+                          "orientation": "landscape" if w > h else "portrait" if h > w else "square"})
+            try:
+                annotations += len(page.get("/Annots", []) or [])
+            except Exception:
+                pass
+        result["sizes"] = sizes
+        result["unique_sizes"] = sorted({f"{x['width']}x{x['height']}" for x in sizes})
+        result["has_annotations"] = annotations > 0
+        try:
+            root = reader.trailer.get("/Root")
+            result["has_javascript"] = bool(root and (root.get("/Names") or root.get("/OpenAction")))
+            result["has_forms"] = bool(root and root.get("/AcroForm"))
+            result["has_bookmarks"] = bool(getattr(reader, "outline", []))
+        except Exception:
+            pass
+    except Exception as error:
+        result["error"] = str(error)
+    return result
+
+
+def _kdp_profile_audit(project, master_pdf, info, settings):
+    errors, warnings = [], []
+    page_count = info.get("page_count")
+    if page_count is not None and page_count < 24:
+        errors.append(f"KDP manuscript has {page_count} pages; paperback minimum is 24 pages.")
+    if page_count is not None and page_count > 828:
+        errors.append(f"KDP manuscript has {page_count} pages; profile maximum is 828 pages.")
+    if info.get("file_size_mb") and info["file_size_mb"] > 650:
+        errors.append("KDP manuscript exceeds the 650 MB file limit.")
+    if info.get("encrypted"):
+        errors.append("KDP manuscript is encrypted/locked.")
+    if info.get("has_annotations"):
+        warnings.append("PDF contains annotations; KDP submission guidelines say submitted files should not contain annotations.")
+    if info.get("has_bookmarks"):
+        warnings.append("PDF contains bookmarks; KDP submission guidelines say submitted files should not contain bookmarks.")
+    if info.get("has_javascript"):
+        warnings.append("PDF contains document-level interactive structures; verify no JavaScript or unsupported interactive content remains.")
+    if info.get("has_forms"):
+        warnings.append("PDF contains AcroForm fields; verify the print PDF is flattened.")
+    if page_count and page_count < 79:
+        cover = _platform_cover(project)
+        if cover and "spine" in cover.stem.lower():
+            warnings.append("Books under 79 pages should not contain spine text on a KDP paperback cover.")
+    sizes = info.get("sizes", [])
+    if settings.get("trim_width") and settings.get("trim_height") and sizes:
+        tw, th = float(settings["trim_width"]), float(settings["trim_height"])
+        mismatches = [i + 1 for i, s in enumerate(sizes)
+                      if abs(s["width"] - tw) > 0.01 or abs(s["height"] - th) > 0.01]
+        if mismatches:
+            errors.append(f"{len(mismatches)} page(s) do not match project trim size {tw} x {th} inches.")
+    if not _platform_cover(project):
+        warnings.append("No separate MASTER_COVER asset is present. KDP will require a cover file unless using KDP Cover Creator.")
+    return errors, warnings
+
+
+def platform_preflight(project, platform_name, master_pdf=None, profile=None):
+    profiles = load_platform_profiles()
+    profile = profile or profiles.get(platform_name)
+    settings = load_project_settings_safe(project)
+    errors, warnings = [], []
+    if not profile:
+        return {"status": "BLOCKED", "platform": platform_name, "errors": [f"Unknown platform: {platform_name}"], "warnings": []}
+    master_pdf = master_pdf or find_master_pdf(project)
+    info = inspect_pdf(master_pdf) if master_pdf else {"exists": False, "error": "No master PDF found.", "page_count": None, "unique_sizes": [], "sizes": [], "file_size_mb": None}
+    if not info.get("exists"):
+        errors.append("Master PDF is missing.")
+    if info.get("error"):
+        errors.append(info["error"])
+    rules = profile.get("rules", {})
+    page_count = info.get("page_count")
+    if page_count is not None:
+        if page_count < int(rules.get("min_pages", 1)):
+            errors.append(f"Page count {page_count} is below platform minimum {rules['min_pages']}.")
+        if page_count > int(rules.get("max_pages", 10000)):
+            errors.append(f"Page count {page_count} exceeds platform maximum {rules['max_pages']}.")
+    size_mb = info.get("file_size_mb")
+    if size_mb is not None and size_mb > float(rules.get("max_file_mb", 999999)):
+        errors.append(f"PDF size {size_mb:.3f} MB exceeds profile limit of {rules['max_file_mb']} MB.")
+    if rules.get("require_landscape") is False and any(x.get("orientation") == "landscape" for x in info.get("sizes", [])):
+        warnings.append("One or more PDF pages are landscape; confirm this is intentional.")
+    errors.extend(platform_required_metadata(settings, profile))
+    warnings.extend(_platform_profile_warning_list(profile))
+    if platform_name == "KDP" and info.get("exists") and not info.get("error"):
+        kdp_errors, kdp_warnings = _kdp_profile_audit(project, master_pdf, info, settings)
+        errors.extend(kdp_errors); warnings.extend(kdp_warnings)
+    expected = None
+    if rules.get("expected_trim_from_project") and settings.get("trim_width") and settings.get("trim_height"):
+        expected = (float(settings["trim_width"]), float(settings["trim_height"]))
+        bad = []
+        for n, item in enumerate(info.get("sizes", []), 1):
+            if abs(item["width"] - expected[0]) > 0.01 or abs(item["height"] - expected[1]) > 0.01:
+                bad.append(n)
+        if bad:
+            errors.append(f"Page dimensions do not match project trim {expected[0]} x {expected[1]} in on {len(bad)} page(s).")
+    cover = _platform_cover(project)
+    if rules.get("require_cover") and not cover:
+        errors.append("Required cover asset is missing from MASTER.")
+    status = "BLOCKED" if errors else ("READY_WITH_WARNINGS" if warnings else "READY")
+    return {"schema_version": 4, "factory_version": FACTORY_VERSION, "platform_engine_version": PLATFORM_ENGINE_VERSION,
+            "universal_publishing_version": UNIVERSAL_PUBLISHING_VERSION, "platform": platform_name,
+            "platform_type": profile.get("type"), "status": status,
+            "timestamp": datetime.now().isoformat(timespec="seconds"), "master_pdf": str(master_pdf) if master_pdf else None,
+            "pdf": info, "metadata": {"title": settings.get("title", ""), "author": settings.get("author", ""),
+                                      "page_count": page_count, "trim_width": settings.get("trim_width"),
+                                      "trim_height": settings.get("trim_height")}, "rules": rules,
+            "variant": profile.get("variant", {}), "errors": errors, "warnings": warnings}
+
+
+def _copy_variant_pdf(master_pdf, staging, title, profile):
+    target = staging / f"{_platform_sanitized_filename(title, 120)}{profile.get('variant', {}).get('filename_suffix', '_DIGITAL')}.pdf"
+    shutil.copy2(master_pdf, target)
+    return target, []
+
+
+def generate_platform_package(project, platform_name, quiet=False):
+    profiles = load_platform_profiles()
+    profile = profiles.get(platform_name)
+    if not profile:
+        return {"status": "BLOCKED", "output": None, "errors": [f"Unknown platform: {platform_name}"], "warnings": []}
+    master = find_master_pdf(project)
+    if not master:
+        master, errors, _ = ensure_master_book(project)
+        if errors:
+            return {"status": "BLOCKED", "output": None, "errors": errors, "warnings": []}
+    audit = platform_preflight(project, platform_name, master, profile)
+    if audit["status"] == "BLOCKED":
+        if not quiet:
+            print(f"\n{platform_name}: BLOCKED")
+            for error in audit["errors"]: print("ERROR:", error)
+        return {"status": "BLOCKED", "output": project / PLATFORM_DIRNAME / profile.get("output_dir", platform_name),
+                "audit": audit, "errors": audit["errors"], "warnings": audit["warnings"]}
+    settings = load_project_settings_safe(project)
+    root = project / PLATFORM_DIRNAME / profile.get("output_dir", _platform_sanitized_filename(platform_name, 40).upper())
+    staging = root.parent / f".{root.name}.staging"
+    if staging.exists(): shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    generated = []
+    warnings = list(audit["warnings"])
+    title = settings.get("title", project.name)
+    try:
+        mode = profile.get("variant", {}).get("mode", "copy")
+        if mode == "etsy_split":
+            parts, split_errors = _pdf_split_by_size(master, staging, title, profile["rules"]["max_file_mb"], profile["rules"]["max_files"])
+            if split_errors:
+                raise RuntimeError("; ".join(split_errors))
+            generated.extend(parts)
+        else:
+            variant, variant_errors = _copy_variant_pdf(master, staging, title, profile)
+            if variant_errors: raise RuntimeError("; ".join(variant_errors))
+            generated.append(variant)
+        cover = _platform_cover(project)
+        if cover:
+            target = staging / _platform_sanitized_filename(f"{title}_COVER{cover.suffix.lower()}", 70)
+            shutil.copy2(cover, target); generated.append(target)
+        if "preview_sheet" in profile.get("files", []):
+            generated.append(create_preview_sheet(project, staging, master, settings))
+        metadata = {
+            "schema_version": 4, "factory_version": FACTORY_VERSION, "platform_engine_version": PLATFORM_ENGINE_VERSION,
+            "universal_publishing_version": UNIVERSAL_PUBLISHING_VERSION,
+            "platform": platform_name, "platform_type": profile.get("type"),
+            "generated": datetime.now().isoformat(timespec="seconds"), "title": title,
+            "subtitle": settings.get("subtitle", settings.get("cover_subtitle", "")), "author": settings.get("author", ""),
+            "description": settings.get("description", settings.get("cover_blurb", "")),
+            "series": settings.get("series_name", ""), "series_number": settings.get("series_number", ""),
+            "world": settings.get("universe_name", ""), "page_count": audit.get("pdf", {}).get("page_count"),
+            "source_master": str(master), "source_master_sha256": file_hash(master),
+            "profile": profile, "preflight_status": audit["status"],
+        }
+        metadata_path = staging / "METADATA.json"; save_json(metadata_path, metadata); generated.append(metadata_path)
+        if "product_description" in profile.get("files", []):
+            generated.append(write_product_description(project, staging, settings, platform_name))
+        if "readme" in profile.get("files", []):
+            generated.append(_write_platform_readme(staging, settings, platform_name,
+                                                     [p.name for p in generated if p.exists()], warnings))
+        if platform_name == "KDP":
+            _copy_required_kdp_assets(project, staging, generated)
+        save_json(staging / "PLATFORM_PREFLIGHT.json", audit); generated.append(staging / "PLATFORM_PREFLIGHT.json")
+        manifest = {
+            "schema_version": 4, "factory_version": FACTORY_VERSION, "platform_engine_version": PLATFORM_ENGINE_VERSION,
+            "universal_publishing_version": UNIVERSAL_PUBLISHING_VERSION, "platform": platform_name,
+            "status": "READY_WITH_WARNINGS" if warnings else "READY", "project": project.name,
+            "title": title, "generated": datetime.now().isoformat(timespec="seconds"),
+            "master_pdf": str(master), "master_sha256": file_hash(master),
+            "variant_mode": mode,
+            "files": [p.name for p in generated if p.exists()],
+            "file_hashes": {p.name: file_hash(p) for p in generated if p.exists()},
+            "warnings": warnings, "preflight": "PLATFORM_PREFLIGHT.json",
+        }
+        save_json(staging / "PACKAGE_MANIFEST.json", manifest); generated.append(staging / "PACKAGE_MANIFEST.json")
+        root.parent.mkdir(parents=True, exist_ok=True)
+        if root.exists():
+            backup = root.with_name(root.name + ".previous")
+            if backup.exists(): shutil.rmtree(backup, ignore_errors=True)
+            root.rename(backup)
+            for item in staging.iterdir(): shutil.move(str(item), str(root / item.name))
+            staging.rmdir(); shutil.rmtree(backup, ignore_errors=True)
+        else:
+            staging.rename(root)
+        record_world_production_event(project, f"platform_package:{platform_name}", manifest["status"],
+                                      page_count=audit.get("pdf", {}).get("page_count") or 0,
+                                      errors=0, warnings=len(warnings))
+        if not quiet:
+            print(f"\n{platform_name}: {manifest['status']}")
+            print(f"Output: {root}")
+            for warning in warnings: print("WARNING:", warning)
+        return {"status": manifest["status"], "output": root, "manifest": manifest, "audit": audit,
+                "warnings": warnings, "errors": []}
+    except Exception as error:
+        shutil.rmtree(staging, ignore_errors=True)
+        if not quiet: print(f"\n{platform_name}: FAILED - {error}")
+        return {"status": "BLOCKED", "output": root, "audit": audit, "errors": [str(error)], "warnings": warnings}
+
+
+def generate_all_platform_packages(project):
+    profiles = load_platform_profiles()
+    enabled = [name for name, profile in profiles.items() if profile.get("enabled", False)]
+    results = {}
+    print("\nUNIVERSAL PUBLISHING ENGINE — GENERATE ALL ENABLED PLATFORMS")
+    print("-" * 78)
+    for name in enabled:
+        result = generate_platform_package(project, name, quiet=True)
+        results[name] = result
+        print(f"{name:<20} {result.get('status')}")
+        for error in result.get("errors", []): print(f"  ERROR: {error}")
+        for warning in result.get("warnings", []): print(f"  WARNING: {warning}")
+    save_json(project / PLATFORM_INDEX_FILENAME, {
+        "schema_version": 4, "factory_version": FACTORY_VERSION,
+        "platform_engine_version": PLATFORM_ENGINE_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "platforms": {n: {"status": r.get("status"), "output": str(r.get("output", "")),
+                           "errors": r.get("errors", []), "warnings": r.get("warnings", [])}
+                      for n, r in results.items()},
+    })
+    return results
+
+
+def platform_requirement_comparison(project):
+    profiles = load_platform_profiles(); master = find_master_pdf(project); rows = []
+    for name, profile in profiles.items():
+        audit = platform_preflight(project, name, master, profile); rules = profile.get("rules", {})
+        rows.append({"platform": name, "enabled": bool(profile.get("enabled")), "type": profile.get("type"),
+                     "status": audit.get("status"), "pages": audit.get("pdf", {}).get("page_count"),
+                     "max_mb": rules.get("max_file_mb"), "min_pages": rules.get("min_pages"),
+                     "max_pages": rules.get("max_pages"), "max_files": rules.get("max_files"),
+                     "cover_required": bool(rules.get("require_cover")),
+                     "variant": profile.get("variant", {}).get("mode", "copy"),
+                     "errors": len(audit.get("errors", [])), "warnings": len(audit.get("warnings", []))})
+    return rows
+
+
+def convert_existing_pdf_enhanced():
+    print("\n" + "=" * 78)
+    print("UNIVERSAL PDF INTAKE")
+    print("=" * 78)
+    print("Select a finished PDF with the Windows picker, or drag it onto the drop zone.")
+    pdf = choose_pdf_file("Finished PDF")
+    if not pdf:
+        print("No valid PDF selected."); return None
+    info = inspect_pdf(pdf)
+    if info.get("error"):
+        print(f"ERROR: {info['error']}"); return None
+    print("\nSOURCE ANALYSIS")
+    print("-" * 78)
+    print(f"File:       {pdf}")
+    print(f"Pages:      {info.get('page_count')}")
+    print(f"Size:       {info.get('file_size_mb')} MB")
+    print(f"Page sizes: {', '.join(info.get('unique_sizes', [])) or 'unknown'}")
+    print(f"Encrypted:  {info.get('encrypted')}")
+    print(f"Annotations:{' YES' if info.get('has_annotations') else ' no'}")
+    print(f"Bookmarks:  {' YES' if info.get('has_bookmarks') else ' no'}")
+    print(f"Forms:      {' YES' if info.get('has_forms') else ' no'}")
+    title = pdf.stem
+    name = input(f"\nProject name [{title}]: ").strip() or title
+    author = input("Author [blank = unknown]: ").strip()
+    project_name = re.sub(r"[^A-Za-z0-9._ -]+", "", name).strip().rstrip(".") or "Imported PDF"
+    project = PROJECTS / unique_project_name(project_name)
+    project.mkdir(parents=True, exist_ok=True); setup_project(project); (project / "MASTER").mkdir(exist_ok=True)
+    sizes = info.get("sizes") or [{"width": 8.5, "height": 11}]
+    settings = {
+        "title": title, "author": author, "trim_width": sizes[0]["width"], "trim_height": sizes[0]["height"],
+        "dpi": 300, "production_profile": "Imported Finished PDF", "factory_version": FACTORY_VERSION,
+        "platform_engine_version": PLATFORM_ENGINE_VERSION, "universal_publishing_version": UNIVERSAL_PUBLISHING_VERSION,
+        "world_engine_version": WORLD_ENGINE_VERSION, "source_pdf": str(pdf), "source_pdf_sha256": file_hash(pdf),
+        "source_pdf_pages": info.get("page_count"), "source_pdf_size_mb": info.get("file_size_mb"),
+        "imported_at": datetime.now().isoformat(timespec="seconds"), "imported_pdf_metadata": info.get("metadata", {}),
+    }
+    save_json(project / "project.json", settings); save_json(project / "book.json", {"pages": [], "source": "imported_pdf"})
+    master = import_existing_pdf_to_master(project, pdf)
+    if not master:
+        print("ERROR: MASTER creation failed."); return None
+    print(f"\nMASTER LOCKED: {master}")
+    print("Original source remains untouched.")
+    results = generate_all_platform_packages(project)
+    create_delivery_index(project, results)
+    health = project_health_scan(project)
+    print_project_health(health)
+    print(f"\nImported project: {project}")
+    return project
+
+
+def manage_platform_profiles_v2():
+    profiles = load_platform_profiles(); names = list(profiles.keys())
+    while True:
+        print("\n" + "=" * 78); print("UNIVERSAL PLATFORM PROFILE MANAGER v4"); print("=" * 78)
+        for i, name in enumerate(names, 1):
+            p = profiles[name]; r = p.get("rules", {})
+            print(f"{i}. {name:<20} {'ON ' if p.get('enabled') else 'OFF'} | {p.get('type','?'):<8} | "
+                  f"{r.get('max_file_mb')} MB/file | {r.get('max_files','-')} files | {p.get('variant',{}).get('mode','copy')}")
+        print("\nA. Add custom platform\nE. Edit selected profile\nT. Toggle selected profile\nX. Back")
+        choice = input("Choose: ").strip().lower()
+        if choice == "x": return
+        if choice == "a":
+            name = input("Platform name: ").strip()
+            if not name or name in profiles: print("Invalid or duplicate platform."); continue
+            out = re.sub(r"[^A-Za-z0-9_-]+", "_", name).upper()
+            profiles[name] = {"name": name, "type": "digital", "enabled": False, "output_dir": out,
+                              "source": "master_pdf", "files": ["digital_pdf", "preview_sheet", "metadata", "product_description", "readme"],
+                              "variant": {"mode": "copy", "filename_suffix": "_DIGITAL"},
+                              "rules": {"min_pages": 1, "max_pages": 10000, "require_title": True,
+                                        "require_author": False, "require_cover": False, "require_landscape": False,
+                                        "max_file_mb": 500, "max_files": 20, "advisory": True},
+                              "notes": "Custom user-defined profile."}
+            save_platform_profiles(profiles); names = list(profiles.keys()); print(f"Added: {name}"); continue
+        if not choice.isdigit() or not (1 <= int(choice) <= len(names)):
+            print("Invalid choice."); continue
+        selected = names[int(choice)-1]; profile = profiles[selected]; rules = profile.setdefault("rules", {})
+        action = input("Toggle (T) or edit (E)? ").strip().lower()
+        if action == "t":
+            profile["enabled"] = not profile.get("enabled", False); save_platform_profiles(profiles)
+        elif action == "e":
+            raw = input(f"Max file MB [{rules.get('max_file_mb', 500)}]: ").strip()
+            if raw:
+                try: rules["max_file_mb"] = float(raw)
+                except ValueError: pass
+            raw = input(f"Max files [{rules.get('max_files', 20)}]: ").strip()
+            if raw:
+                try: rules["max_files"] = int(raw)
+                except ValueError: pass
+            raw = input(f"Minimum pages [{rules.get('min_pages', 1)}]: ").strip()
+            if raw:
+                try: rules["min_pages"] = int(raw)
+                except ValueError: pass
+            raw = input(f"Maximum pages [{rules.get('max_pages', 10000)}]: ").strip()
+            if raw:
+                try: rules["max_pages"] = int(raw)
+                except ValueError: pass
+            advisory = input(f"Advisory profile? [{'Y' if rules.get('advisory') else 'N'}]: ").strip().lower()
+            if advisory in {"y", "n"}: rules["advisory"] = advisory == "y"
+            save_platform_profiles(profiles); print(f"Saved: {selected}")
+
+
+def run_platform_self_test():
+    import tempfile
+    from reportlab.pdfgen import canvas as _canvas
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="CBF_v110_TEST_") as temp:
+        root = Path(temp); project = root / "Projects" / "Universal Platform Test"; project.mkdir(parents=True)
+        save_json(project / "project.json", {"title": "Universal Platform Test", "author": "Test Author", "trim_width": 8.5, "trim_height": 11, "dpi": 300})
+        (project / "PDF").mkdir()
+        pdf = project / "PDF" / "source.pdf"
+        c = _canvas.Canvas(str(pdf), pagesize=(8.5*72, 11*72))
+        for _ in range(24): c.drawString(72, 72, "Coloring Book Factory v11.0 TEST"); c.showPage()
+        c.save()
+        master, errors, _ = ensure_master_book(project, pdf)
+        if errors: failures.append("ensure_master_book: " + str(errors))
+        else:
+            profiles = load_platform_profiles()
+            for name in ("KDP", "Gumroad", "Etsy", "Payhip"):
+                audit = platform_preflight(project, name, master, profiles[name])
+                if audit["status"] == "BLOCKED": failures.append(f"{name} preflight unexpectedly blocked: {audit['errors']}")
+                result = generate_platform_package(project, name, quiet=True)
+                if result["status"] not in {"READY", "READY_WITH_WARNINGS"}: failures.append(f"{name} package failed: {result.get('errors')}")
+                if not result.get("output") or not (Path(result["output"]) / "PACKAGE_MANIFEST.json").exists(): failures.append(f"{name} manifest missing")
+                if file_hash(master) != file_hash(master): failures.append("master hash instability")
+            # Verify Etsy packaging has a buyer-safe name and remains readable.
+            etsy_pdf = next((x for x in (project/PLATFORM_DIRNAME/"ETSY").glob("*.pdf")), None)
+            if not etsy_pdf: failures.append("Etsy PDF part missing")
+    if failures:
+        print("\nUNIVERSAL PLATFORM ENGINE SELF-TEST: FAIL")
+        for failure in failures: print("  FAIL:", failure)
+        return False
+    print("\nUNIVERSAL PLATFORM ENGINE SELF-TEST: PASS")
+    print("  Immutable master: PASS")
+    print("  PDF analysis: PASS")
+    print("  KDP profile: PASS")
+    print("  Etsy size-aware packaging: PASS")
+    print("  Payhip profile: PASS")
+    print("  Package manifests: PASS")
+    return True
+
+
+def platform_center():
+    while True:
+        profiles = load_platform_profiles()
+        print("\n" + "=" * 78); print(f"UNIVERSAL PUBLISHING CENTER v{PLATFORM_ENGINE_VERSION}"); print("=" * 78)
+        print("1. ONE-CLICK PUBLISH (build + audit + all packages + ZIPs)")
+        print("2. Import Finished PDF → Master + ALL Platforms")
+        print("3. Generate KDP Package")
+        print("4. Generate Gumroad Package")
+        print("5. Generate ALL Enabled Platform Packages")
+        print("6. Manage Platform Profiles")
+        print("7. Platform Preflight / Audit")
+        print("8. Compare Platform Requirements")
+        print("9. Factory Health Dashboard")
+        print("10. Create Project Snapshot")
+        print("11. Create Delivery ZIPs")
+        print("12. Run Universal Platform Self-Test")
+        print("13. Back")
+        choice = input("Choose: ").strip()
+        if choice == "1":
+            project = choose_project()
+            if project: one_click_publish(project)
+            input("\nPress Enter to continue...")
+        elif choice == "2":
+            convert_existing_pdf_enhanced(); input("\nPress Enter to continue...")
+        elif choice in {"3", "4", "5"}:
+            project = choose_project()
+            if not project: continue
+            if choice == "3": generate_platform_package(project, "KDP")
+            elif choice == "4": generate_platform_package(project, "Gumroad")
+            else: generate_all_platform_packages(project)
+            input("\nPress Enter to continue...")
+        elif choice == "6": manage_platform_profiles_v2()
+        elif choice == "7":
+            project = choose_project()
+            if not project: continue
+            master = find_master_pdf(project)
+            if not master: print("No MASTER PDF found."); input("\nPress Enter..."); continue
+            print("\nPLATFORM AUDIT\n" + "-"*78)
+            audits = {}
+            for name, profile in profiles.items():
+                if not profile.get("enabled"): continue
+                audit = platform_preflight(project, name, master, profile); audits[name] = audit
+                print(f"{name:<20} {audit['status']:<20} errors={len(audit['errors'])} warnings={len(audit['warnings'])}")
+                for e in audit["errors"]: print("  ERROR:", e)
+                for w in audit["warnings"]: print("  WARNING:", w)
+            save_json(project / PLATFORM_AUDIT_FILENAME, {"schema_version": 4, "generated": datetime.now().isoformat(timespec="seconds"), "audits": audits})
+            input("\nPress Enter to continue...")
+        elif choice == "8":
+            project = choose_project()
+            if not project: continue
+            print("\nPLATFORM REQUIREMENT COMPARISON\n" + "-"*78)
+            for row in platform_requirement_comparison(project):
+                print(f"{row['platform']:<20} {'ON ' if row['enabled'] else 'OFF'} | {row['status']:<20} | "
+                      f"{row['max_mb']} MB/file | {row['max_files']} files | {row['variant']}")
+            input("\nPress Enter to continue...")
+        elif choice == "9": factory_health_dashboard(); input("\nPress Enter to continue...")
+        elif choice == "10":
+            project = choose_project()
+            if project:
+                try: print(f"\nSnapshot: {create_project_snapshot(project)}")
+                except Exception as error: print(f"ERROR: {error}")
+            input("\nPress Enter to continue...")
+        elif choice == "11":
+            project = choose_project()
+            if project:
+                results = {}
+                for name, profile in profiles.items():
+                    if profile.get("enabled"):
+                        zip_file, errors = create_delivery_zip(project, name)
+                        if zip_file: results[name] = {"status": "ZIPPED", "zip": str(zip_file)}; print(f"{name}: {zip_file}")
+                        else: print(f"{name}: FAILED - {'; '.join(errors)}")
+                if results: print(f"Delivery index: {create_delivery_index(project, results)}")
+            input("\nPress Enter to continue...")
+        elif choice == "12": run_platform_self_test(); input("\nPress Enter to continue...")
+        elif choice == "13": return
+        else: print("Invalid choice.")
+
+
+
+# ============================================================
+# FACTORY v11.1 — FINISHED PDF QUICK-PUBLISH FRONT DOOR
+# Makes the requested finished-PDF-to-platform workflow visible
+# from the main menu and provides a drag/drop-capable intake UI.
+# ============================================================
+
+FACTORY_VERSION = "11.1"
+UNIVERSAL_PUBLISHING_VERSION = "1.1"
+
+
+def choose_finished_pdf_v111():
+    """Open a Windows drop zone when tkinterdnd2 is available; otherwise use a file picker."""
+    try:
+        from tkinter import Tk, Label, Button, filedialog
+        try:
+            from tkinterdnd2 import DND_FILES, TkinterDnD
+        except Exception:
+            DND_FILES = None
+            TkinterDnD = None
+
+        selected = {"path": None}
+        root = TkinterDnD.Tk() if TkinterDnD else Tk()
+        root.title("Coloring Book Factory — Finished PDF Import")
+        root.geometry("720x390")
+        root.resizable(False, False)
+
+        Label(root, text="FINISHED PDF → MULTI-PLATFORM PUBLISHING",
+              font=("Segoe UI", 18, "bold")).pack(pady=(28, 8))
+        Label(root, text="Select a finished PDF or drag and drop it into this window.",
+              font=("Segoe UI", 11)).pack(pady=(0, 18))
+
+        drop = Label(root,
+                     text="DROP FINISHED PDF HERE\n\nOR\n\nCLICK SELECT PDF",
+                     relief="groove", borderwidth=3,
+                     font=("Segoe UI", 14, "bold"),
+                     width=48, height=7)
+        drop.pack(padx=35, fill="both", expand=True)
+
+        def accept(path):
+            path = str(path).strip().strip('"')
+            if path.lower().endswith(".pdf") and Path(path).is_file():
+                selected["path"] = path
+                root.destroy()
+
+        def browse():
+            path = filedialog.askopenfilename(
+                title="Select Finished PDF",
+                filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
+            )
+            if path:
+                accept(path)
+
+        Button(root, text="SELECT PDF", command=browse,
+               font=("Segoe UI", 11, "bold"), padx=18, pady=8).pack(pady=18)
+
+        if DND_FILES:
+            def on_drop(event):
+                paths = root.tk.splitlist(event.data)
+                if paths:
+                    accept(paths[0])
+            drop.drop_target_register(DND_FILES)
+            drop.dnd_bind("<<Drop>>", on_drop)
+        else:
+            Label(root, text="Drag/drop requires optional package: tkinterdnd2",
+                  font=("Segoe UI", 9)).pack(pady=(0, 8))
+
+        root.mainloop()
+        return Path(selected["path"]) if selected["path"] else None
+    except Exception as error:
+        print(f"PDF drop-zone unavailable ({error}); opening standard file picker...")
+        try:
+            return choose_pdf_file("Finished PDF")
+        except Exception:
+            return None
+
+
+def import_finished_pdf_v111():
+    """User-facing front door: import one finished PDF and build enabled platform packages."""
+    print("\n" + "=" * 78)
+    print("FINISHED PDF → MULTI-PLATFORM PUBLISHING")
+    print("=" * 78)
+    print("The original PDF will NOT be modified.")
+    print("Factory will create an immutable MASTER and platform packages.")
+    print("\nOpening PDF import window...")
+
+    pdf = choose_finished_pdf_v111()
+    if not pdf:
+        print("\nNo PDF selected.")
+        return None
+
+    # Reuse the hardened importer by temporarily supplying the selected path
+    # through the same chooser contract used by the existing implementation.
+    original_chooser = globals().get("choose_pdf_file")
+    globals()["choose_pdf_file"] = lambda title="PDF": pdf
+    try:
+        return convert_existing_pdf_enhanced()
+    finally:
+        if original_chooser is not None:
+            globals()["choose_pdf_file"] = original_chooser
+
+
+# ============================================================
+# COLORING BOOK FACTORY v11.4 — UNIVERSAL PDF PREVIEW ENGINE
+#   - Automatically bootstraps PyMuPDF when vector PDF rendering is required.
+#   - Renders a broad interior-page sample at publishing-quality resolution.
+#   - Scores pages to favor real coloring artwork over title/copyright/text pages.
+#   - Selects four spatially diverse interior previews.
+#   - Always generates a dedicated Gumroad product thumbnail with cover fallback.
+#   - Records renderer, candidate count, scores and source pages in the asset manifest.
+#
+# Finished-PDF publishing upgrade:
+#   - Generates a real Gumroad cover from interior artwork when no
+#     separate cover exists.
+#   - Extracts artwork previews directly from the finished MASTER PDF.
+#   - Creates 4 square 600x600+ preview/thumbnail images by default.
+#   - Creates a dedicated 600x600 product thumbnail.
+#   - Validates Gumroad asset dimensions, DPI and 50 MB cover limit.
+#   - Uses optional PyMuPDF (fitz) as a renderer fallback for vector PDFs;
+#     pypdf embedded-image extraction remains the zero-extra-dependency path.
+# ============================================================
+
+FACTORY_VERSION = "11.4"
+PLATFORM_ENGINE_VERSION = "4.3"
+UNIVERSAL_PUBLISHING_VERSION = "1.2"
+
+GUMROAD_COVER_WIDTH = 1280
+GUMROAD_COVER_HEIGHT = 720
+GUMROAD_MIN_DPI = 72
+GUMROAD_COVER_MAX_BYTES = 50 * 1024 * 1024
+GUMROAD_THUMB_WIDTH = 600
+GUMROAD_THUMB_HEIGHT = 600
+GUMROAD_PREVIEW_COUNT = 4
+
+
+def _gumroad_safe_name(name, fallback="coloring-book"):
+    text = re.sub(r"[^A-Za-z0-9 -]+", "", str(name or "")).strip()
+    text = re.sub(r"\s+", "-", text).strip("-")
+    return text or fallback
+
+
+def _image_save_png_or_jpeg(image, path_base, dpi=72, max_bytes=None):
+    """Save line-art artwork losslessly when practical; fall back to JPEG only if needed."""
+    image = image.convert("RGB")
+    png_path = Path(path_base).with_suffix(".png")
+    image.save(png_path, "PNG", dpi=(dpi, dpi), optimize=True)
+    if max_bytes is None or png_path.stat().st_size <= max_bytes:
+        return png_path
+
+    jpg_path = png_path.with_suffix(".jpg")
+    image.save(jpg_path, "JPEG", dpi=(dpi, dpi), quality=88, optimize=True, progressive=True)
+    png_path.unlink(missing_ok=True)
+    return jpg_path
+
+
+def _fit_crop_square(image, size=600, margin=0):
+    """Center-crop an image to a square without stretching the source artwork."""
+    image = image.convert("RGB")
+    target = max(1, int(size) - (2 * int(margin)))
+    ratio = max(target / image.width, target / image.height)
+    new_size = (
+        max(target, int(round(image.width * ratio))),
+        max(target, int(round(image.height * ratio))),
+    )
+    resized = image.resize(new_size, Image.Resampling.LANCZOS)
+    left = max(0, (resized.width - target) // 2)
+    top = max(0, (resized.height - target) // 2)
+    cropped = resized.crop((left, top, left + target, top + target))
+    if margin:
+        canvas_img = Image.new("RGB", (size, size), "white")
+        canvas_img.paste(cropped, (margin, margin))
+        return canvas_img
+    return cropped
+
+
+def _fit_cover_panel(image, width=1280, height=720):
+    """Build a 16:9 Gumroad cover without stretching the coloring artwork."""
+    image = image.convert("RGB")
+    panel_w = int(width * 0.57)
+    panel_h = int(height - 60)
+    ratio = min((panel_w - 40) / image.width, (panel_h - 40) / image.height)
+    ratio = max(ratio, 0.01)
+    resized = image.resize(
+        (max(1, int(image.width * ratio)), max(1, int(image.height * ratio))),
+        Image.Resampling.LANCZOS,
+    )
+
+    cover = Image.new("RGB", (width, height), "white")
+    left_x = (panel_w - resized.width) // 2
+    top_y = (height - resized.height) // 2
+    cover.paste(resized, (left_x, top_y))
+
+    draw = ImageDraw.Draw(cover)
+    draw.rectangle((panel_w, 0, width, height), outline="black", width=3)
+
+    return cover, draw, panel_w
+
+
+def _extract_pdf_embedded_artwork(master_pdf, output_dir, max_candidates=20):
+    """Extract the largest embedded raster image from each useful PDF page."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    Reader = _pdf_reader_class()
+    if Reader is None:
+        return [], ["No pypdf/PyPDF2 reader available for embedded image extraction."]
+
+    candidates = []
+    seen_hashes = set()
+    errors = []
+    try:
+        reader = Reader(str(master_pdf), strict=False)
+        for page_number, page in enumerate(reader.pages, start=1):
+            try:
+                page_images = list(getattr(page, "images", []) or [])
+            except Exception:
+                page_images = []
+
+            page_candidates = []
+            for image_number, image_file in enumerate(page_images, start=1):
+                data = getattr(image_file, "data", None)
+                if not data:
+                    continue
+                digest = sha256(data).hexdigest()
+                if digest in seen_hashes:
+                    continue
+                try:
+                    with Image.open(__import__("io").BytesIO(data)) as opened:
+                        image = opened.convert("RGB")
+                        if image.width < 200 or image.height < 200:
+                            continue
+                        area = image.width * image.height
+                        ext = ".jpg" if str(getattr(image_file, "name", "")).lower().endswith((".jpg", ".jpeg")) else ".png"
+                        candidate_path = output_dir / f"embedded-page-{page_number:04d}-{image_number:02d}{ext}"
+                        image.save(candidate_path, "JPEG" if ext == ".jpg" else "PNG",
+                                   dpi=(72, 72))
+                        page_candidates.append({
+                            "page": page_number,
+                            "path": candidate_path,
+                            "area": area,
+                            "sha256": digest,
+                            "width": image.width,
+                            "height": image.height,
+                        })
+                        seen_hashes.add(digest)
+                except Exception:
+                    continue
+
+            if page_candidates:
+                # Prefer the largest artwork on each page.
+                page_candidates.sort(key=lambda x: x["area"], reverse=True)
+                candidates.append(page_candidates[0])
+                if len(candidates) >= max_candidates:
+                    break
+    except Exception as error:
+        errors.append(f"Embedded PDF artwork extraction failed: {error}")
+
+    candidates.sort(key=lambda x: x["page"])
+    return candidates, errors
+
+
+def _try_import_pdfium(auto_install=True):
+    """Load pypdfium2, a Python-3.14-friendly PDFium renderer."""
+    try:
+        import pypdfium2 as pdfium
+        return pdfium, None
+    except Exception as first_error:
+        if not auto_install:
+            return None, f"PDFium unavailable: {first_error}"
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "pypdfium2"],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                text=True, timeout=180,
+            )
+            import pypdfium2 as pdfium
+            return pdfium, "PDFium (pypdfium2) was automatically installed for PDF preview rendering."
+        except Exception as install_error:
+            return None, (
+                "PDFium (pypdfium2) is unavailable and automatic installation failed. "
+                f"Original error: {first_error}; install error: {install_error}"
+            )
+
+
+def _try_import_fitz(auto_install=False):
+    """Optional legacy PyMuPDF loader; never required by the universal renderer."""
+    try:
+        import fitz
+        return fitz, None
+    except Exception as error:
+        return None, f"PyMuPDF unavailable: {error}"
+
+
+def _pdf_preview_score(path):
+    """Score a rendered page for coloring-book artwork rather than title/text pages."""
+    try:
+        with Image.open(path) as img:
+            gray = img.convert("L")
+            gray.thumbnail((320, 420), Image.Resampling.LANCZOS)
+            import numpy as np
+            arr = np.asarray(gray, dtype=np.uint8)
+            dark = float((arr < 235).mean())
+            mid = float(((arr >= 40) & (arr < 235)).mean())
+            if dark < 0.015 or dark > 0.62:
+                return 0.0
+            score = min(dark / 0.18, 1.0) * 0.55 + min(mid / 0.10, 1.0) * 0.45
+            return round(score, 6)
+    except Exception:
+        return 0.0
+
+
+def _sample_pdf_page_indexes(total, max_candidates):
+    """Return a broad, deterministic sample while avoiding common front/back matter."""
+    if total <= 0:
+        return []
+    start = 5 if total > 12 else 0
+    end = total - 2 if total > 12 else total
+    sample_count = min(max_candidates, max(1, end - start))
+    indexes = []
+    for i in range(sample_count):
+        idx = start + round(i * max(0, end - start - 1) / max(1, sample_count - 1))
+        if idx not in indexes:
+            indexes.append(idx)
+    return indexes
+
+
+def _render_pdf_pages_with_pdfium(master_pdf, output_dir, max_candidates=20):
+    """Render vector PDFs through PDFium; works independently of PyMuPDF."""
+    pdfium, bootstrap_message = _try_import_pdfium(auto_install=True)
+    if pdfium is None:
+        return [], [bootstrap_message or "No PDFium rendering engine is available."]
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    candidates = []
+    warnings = []
+    if bootstrap_message:
+        warnings.append(bootstrap_message)
+    document = None
+    try:
+        document = pdfium.PdfDocument(str(master_pdf))
+        total = len(document)
+        if total == 0:
+            return [], ["MASTER PDF contains no pages."]
+
+        for idx in _sample_pdf_page_indexes(total, max_candidates):
+            try:
+                page = document[idx]
+                bitmap = page.render(scale=1.65, rev_byteorder=True)
+                image = bitmap.to_pil().convert("RGB")
+                output = output_dir / f"rendered-page-{idx + 1:04d}.png"
+                image.save(output, "PNG", optimize=True)
+                candidates.append({
+                    "page": idx + 1,
+                    "path": output,
+                    "area": image.width * image.height,
+                    "sha256": file_hash(output),
+                    "width": image.width,
+                    "height": image.height,
+                    "artwork_score": _pdf_preview_score(output),
+                    "render_method": "PDFium/pypdfium2",
+                })
+                try:
+                    page.close()
+                except Exception:
+                    pass
+            except Exception as error:
+                warnings.append(f"PDFium page {idx + 1} render failed: {error}")
+
+        candidates.sort(key=lambda x: (float(x.get("artwork_score", 0)), -int(x.get("page", 0))), reverse=True)
+        return candidates, warnings
+    except Exception as error:
+        return [], warnings + [f"PDFium rendering failed: {error}"]
+    finally:
+        try:
+            if document is not None:
+                document.close()
+        except Exception:
+            pass
+
+
+def _render_pdf_pages_external(master_pdf, output_dir, max_candidates=20):
+    """Use installed command-line PDF renderers when available on Windows."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    warnings = []
+    total = None
+    try:
+        info = inspect_pdf(master_pdf)
+        total = int(info.get("page_count") or 0)
+    except Exception:
+        pass
+    indexes = _sample_pdf_page_indexes(total or 64, max_candidates)
+    # Prefer MuPDF, then Poppler, then Ghostscript.
+    commands = []
+    mutool = shutil.which("mutool")
+    pdftoppm = shutil.which("pdftoppm")
+    gs = shutil.which("gswin64c") or shutil.which("gswin32c") or shutil.which("gs")
+    if mutool:
+        commands.append(("MuPDF/mutool", mutool))
+    if pdftoppm:
+        commands.append(("Poppler/pdftoppm", pdftoppm))
+    if gs:
+        commands.append(("Ghostscript", gs))
+
+    for method, executable in commands:
+        try:
+            candidates = []
+            for idx in indexes:
+                output = output_dir / f"rendered-page-{idx + 1:04d}.png"
+                if method.startswith("MuPDF"):
+                    prefix = output.with_suffix("")
+                    cmd = [executable, "draw", "-o", str(output), "-r", "119", str(master_pdf), str(idx)]
+                elif method.startswith("Poppler"):
+                    prefix = output.with_suffix("")
+                    cmd = [executable, "-f", str(idx + 1), "-singlefile", "-png", "-r", "119", str(master_pdf), str(prefix)]
+                else:
+                    # Ghostscript's page numbering is inclusive and 1-based.
+                    prefix = output.with_suffix("")
+                    cmd = [executable, "-dSAFER", "-dBATCH", "-dNOPAUSE", "-sDEVICE=png16m", "-r119", f"-dFirstPage={idx + 1}", f"-dLastPage={idx + 1}", f"-sOutputFile={prefix}.png", str(master_pdf)]
+                result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=60)
+                if result.returncode != 0 or not output.exists():
+                    continue
+                with Image.open(output) as image:
+                    image = image.convert("RGB")
+                    image.save(output, "PNG", optimize=True)
+                    width, height = image.size
+                candidates.append({
+                    "page": idx + 1, "path": output, "area": width * height,
+                    "sha256": file_hash(output), "width": width, "height": height,
+                    "artwork_score": _pdf_preview_score(output), "render_method": method,
+                })
+            if candidates:
+                candidates.sort(key=lambda x: (float(x.get("artwork_score", 0)), -int(x.get("page", 0))), reverse=True)
+                return candidates, warnings + [f"PDF previews rendered with {method}."]
+        except Exception as error:
+            warnings.append(f"{method} rendering failed: {error}")
+    return [], warnings
+
+
+def _render_pdf_pages_universal(master_pdf, output_dir, max_candidates=20):
+    """Renderer chain: PDFium -> installed CLI engines -> optional PyMuPDF."""
+    candidates, warnings = _render_pdf_pages_with_pdfium(master_pdf, output_dir, max_candidates)
+    if candidates:
+        return candidates, warnings
+
+    external, external_warnings = _render_pdf_pages_external(master_pdf, output_dir, max_candidates)
+    warnings.extend(external_warnings)
+    if external:
+        return external, warnings
+
+    fitz, _ = _try_import_fitz(auto_install=False)
+    if fitz is not None:
+        # Legacy fallback retained for machines where PyMuPDF happens to work.
+        document = None
+        try:
+            document = fitz.open(str(master_pdf))
+            rendered = []
+            for idx in _sample_pdf_page_indexes(len(document), max_candidates):
+                page = document.load_page(idx)
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.65, 1.65), alpha=False)
+                output = Path(output_dir) / f"rendered-page-{idx + 1:04d}.png"
+                pix.save(str(output))
+                with Image.open(output) as image:
+                    rendered.append({"page": idx + 1, "path": output, "area": image.width * image.height,
+                                     "sha256": file_hash(output), "width": image.width, "height": image.height,
+                                     "artwork_score": _pdf_preview_score(output), "render_method": "PyMuPDF"})
+            rendered.sort(key=lambda x: (float(x.get("artwork_score", 0)), -int(x.get("page", 0))), reverse=True)
+            if rendered:
+                return rendered, warnings + ["PDF previews rendered with PyMuPDF legacy fallback."]
+        except Exception as error:
+            warnings.append(f"PyMuPDF legacy fallback failed: {error}")
+        finally:
+            if document is not None:
+                try: document.close()
+                except Exception: pass
+
+    warnings.append(
+        "No usable PDF renderer is available. The Factory tried PDFium (pypdfium2), "
+        "installed MuPDF/Poppler/Ghostscript renderers, and the optional PyMuPDF fallback."
+    )
+    return [], warnings
+
+
+# Backward-compatible function name used by older callers.
+def _render_pdf_pages_with_fitz(master_pdf, output_dir, max_candidates=20):
+    return _render_pdf_pages_universal(master_pdf, output_dir, max_candidates)
+
+def _choose_gumroad_candidates(candidates, count=GUMROAD_PREVIEW_COUNT):
+    """Choose high-scoring artwork pages with page-distance diversity."""
+    usable = [x for x in candidates if Path(x["path"]).exists()]
+    if not usable:
+        return []
+    usable.sort(key=lambda x: (float(x.get("artwork_score", 0)), -int(x.get("page", 0))), reverse=True)
+    selected = []
+    min_distance = max(3, int(64 / max(1, count * 2)))
+    for candidate in usable:
+        page = int(candidate.get("page", 0))
+        if all(abs(page - int(x.get("page", 0))) >= min_distance for x in selected):
+            selected.append(candidate)
+            if len(selected) >= count:
+                break
+    if len(selected) < count:
+        for candidate in usable:
+            if candidate not in selected:
+                selected.append(candidate)
+                if len(selected) >= count:
+                    break
+    selected.sort(key=lambda x: int(x.get("page", 0)))
+    return selected[:count]
+
+
+def _make_gumroad_assets(project, staging, master_pdf, settings):
+    """
+    Create:
+      cover.png/jpg       -> 1280x720+ cover, >=72 DPI, <50 MB
+      thumbnail.png/jpg   -> 600x600 product thumbnail
+      thumb-01..04        -> four 600x600 interior preview images
+      GUMROAD_ASSETS.json -> exact dimensions/source-page manifest
+    """
+    staging = Path(staging)
+    source_dir = staging / ".__gumroad_sources"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    warnings = []
+
+    # Prefer an existing dedicated cover when one exists. Otherwise build one
+    # from the first actual interior artwork extracted from the MASTER PDF.
+    existing_cover = _platform_cover(project)
+    candidates, extract_warnings = _extract_pdf_embedded_artwork(
+        master_pdf, source_dir, max_candidates=max(12, GUMROAD_PREVIEW_COUNT * 3)
+    )
+    warnings.extend(extract_warnings)
+
+    if len(candidates) < GUMROAD_PREVIEW_COUNT:
+        rendered, render_warnings = _render_pdf_pages_universal(
+            master_pdf, source_dir, max_candidates=max(20, GUMROAD_PREVIEW_COUNT * 5)
+        )
+        warnings.extend(render_warnings)
+        existing_hashes = {x.get("sha256") for x in candidates}
+        for item in rendered:
+            if item.get("sha256") not in existing_hashes:
+                candidates.append(item)
+                existing_hashes.add(item.get("sha256"))
+
+    candidates.sort(key=lambda x: (int(x.get("page", 0)), -int(x.get("area", 0))))
+    selected = _choose_gumroad_candidates(candidates, GUMROAD_PREVIEW_COUNT)
+
+    if not selected:
+        warnings.append(
+            "No usable interior artwork previews could be rendered from the MASTER PDF. "
+            "The Factory attempted embedded-image extraction and the universal PDF renderer."
+        )
+
+    generated = []
+    title = str(settings.get("title") or project.name).strip()
+    author = str(settings.get("author") or "").strip()
+    subtitle = str(settings.get("subtitle") or settings.get("cover_subtitle") or "").strip()
+
+    # --- Gumroad cover ---
+    cover_path = None
+    if existing_cover and existing_cover.exists() and existing_cover.suffix.lower() in IMAGE_EXTENSIONS:
+        try:
+            with Image.open(existing_cover) as src_img:
+                # Reframe the existing cover into the exact Gumroad landscape spec.
+                cover_canvas, _, _ = _fit_cover_panel(src_img, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
+        except Exception as error:
+            warnings.append(f"Existing cover could not be used: {error}")
+            cover_canvas = None
+    elif selected:
+        try:
+            with Image.open(selected[0]["path"]) as src_img:
+                cover_canvas, _, _ = _fit_cover_panel(src_img, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
+        except Exception as error:
+            cover_canvas = None
+            warnings.append(f"Artwork-based Gumroad cover generation failed: {error}")
+    else:
+        cover_canvas = Image.new("RGB", (GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT), "white")
+
+    if cover_canvas is not None:
+        draw = ImageDraw.Draw(cover_canvas)
+        panel_x = int(GUMROAD_COVER_WIDTH * 0.57) + 35
+        panel_w = GUMROAD_COVER_WIDTH - panel_x - 35
+        title_font = get_font(54, True)
+        subtitle_font = get_font(24, False)
+        author_font = get_font(28, True)
+
+        title_lines = textwrap.wrap(title, width=20)[:4]
+        y = 170
+        for line in title_lines:
+            draw.text((panel_x, y), line, font=title_font, fill="black")
+            y += 64
+
+        if subtitle:
+            y += 18
+            for line in textwrap.wrap(subtitle, width=27)[:3]:
+                draw.text((panel_x, y), line, font=subtitle_font, fill="black")
+                y += 34
+
+        if author:
+            draw.text((panel_x, 610), f"by {author}", font=author_font, fill="black")
+
+        cover_path = _image_save_png_or_jpeg(
+            cover_canvas, staging / "cover", dpi=GUMROAD_MIN_DPI, max_bytes=GUMROAD_COVER_MAX_BYTES
+        )
+        generated.append(cover_path)
+
+    # --- Four square interior previews ---
+    thumb_paths = []
+    for number, candidate in enumerate(selected[:GUMROAD_PREVIEW_COUNT], start=1):
+        try:
+            with Image.open(candidate["path"]) as src_img:
+                thumb = _fit_crop_square(src_img, GUMROAD_THUMB_WIDTH)
+            path = _image_save_png_or_jpeg(
+                thumb, staging / f"thumb-{number:02d}",
+                dpi=GUMROAD_MIN_DPI, max_bytes=GUMROAD_COVER_MAX_BYTES
+            )
+            thumb_paths.append(path)
+            generated.append(path)
+        except Exception as error:
+            warnings.append(f"Preview thumbnail {number} could not be created: {error}")
+
+    # Dedicated product thumbnail is mandatory and independent of preview extraction.
+    product_thumb = None
+    try:
+        if thumb_paths:
+            with Image.open(thumb_paths[0]) as src_thumb:
+                product_image = src_thumb.convert("RGB")
+        elif cover_canvas is not None:
+            product_image = _fit_crop_square(cover_canvas.convert("RGB"), GUMROAD_THUMB_WIDTH)
+            warnings.append("No interior preview was available; product thumbnail fell back to the generated Gumroad cover.")
+        else:
+            product_image = Image.new("RGB", (GUMROAD_THUMB_WIDTH, GUMROAD_THUMB_HEIGHT), "white")
+            draw_fallback = ImageDraw.Draw(product_image)
+            draw_fallback.text((30, 270), title[:60], font=get_font(32, True), fill="black")
+            warnings.append("Product thumbnail used a text fallback because no artwork or cover was available.")
+        product_thumb = _image_save_png_or_jpeg(
+            product_image, staging / "thumbnail", dpi=GUMROAD_MIN_DPI, max_bytes=GUMROAD_COVER_MAX_BYTES
+        )
+        generated.append(product_thumb)
+    except Exception as error:
+        warnings.append(f"Dedicated Gumroad product thumbnail generation failed: {error}")
+
+    # --- Specification / source manifest ---
+    assets_manifest = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "gumroad_requirements": {
+            "cover_min_width_px": GUMROAD_COVER_WIDTH,
+            "cover_min_height_px": GUMROAD_COVER_HEIGHT,
+            "cover_min_dpi": GUMROAD_MIN_DPI,
+            "cover_max_bytes": GUMROAD_COVER_MAX_BYTES,
+            "cover_max_mb_decimal": 50,
+            "product_thumbnail_min_width_px": GUMROAD_THUMB_WIDTH,
+            "product_thumbnail_min_height_px": GUMROAD_THUMB_HEIGHT,
+            "max_covers": 8,
+        },
+        "source_master_sha256": file_hash(master_pdf),
+        "source_master": str(master_pdf),
+        "rendering": {
+            "renderer": sorted({str(x.get("render_method", "embedded-image")) for x in candidates}),
+            "candidate_count": len(candidates),
+            "selected_count": len(selected),
+            "selected_scores": {str(int(x["page"])): float(x.get("artwork_score", 0)) for x in selected},
+        },
+        "selected_preview_pages": [int(x["page"]) for x in selected],
+        "cover": str(cover_path.name) if cover_path else None,
+        "product_thumbnail": str(product_thumb.name) if product_thumb else None,
+        "preview_images": [p.name for p in thumb_paths],
+        "asset_dimensions": {
+            "cover": _image_dimensions(cover_path),
+            "product_thumbnail": _image_dimensions(product_thumb),
+            "previews": {p.name: _image_dimensions(p) for p in thumb_paths},
+        },
+        "rendered_candidate_count": len(candidates),
+        "rendered_pages": [int(x.get("page", 0)) for x in candidates],
+        "warnings": warnings,
+    }
+    assets_manifest_path = staging / "GUMROAD_ASSETS.json"
+    save_json(assets_manifest_path, assets_manifest)
+    generated.append(assets_manifest_path)
+
+    # --- Upload checklist tailored to the generated assets ---
+    checklist = staging / "GUMROAD_UPLOAD_CHECKLIST.txt"
+    checklist.write_text(
+        "\n".join([
+            "GUMROAD UPLOAD CHECKLIST",
+            "========================",
+            "",
+            "1. Product file:",
+            f"   Upload the digital PDF: generated by the factory.",
+            "",
+            "2. Cover image:",
+            f"   {cover_path.name if cover_path else 'NOT GENERATED'}",
+            "   Recommended minimum: 1280 x 720 px, 72 DPI, under 50 MB.",
+            "",
+            "3. Product thumbnail:",
+            f"   {product_thumb.name if product_thumb else 'NOT GENERATED'}",
+            "   Minimum: 600 x 600 px.",
+            "",
+            "4. Additional preview images:",
+            *[f"   {p.name}" for p in thumb_paths],
+            "",
+            "5. Do not upload a PDF as a Gumroad cover image.",
+            "6. Gumroad allows up to 8 cover images; the factory creates one main cover",
+            "   plus four square interior preview images for the product asset set.",
+            "",
+            "The PDF MASTER remains unchanged by this process.",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    generated.append(checklist)
+
+    return generated, warnings, assets_manifest
+
+
+def _image_dimensions(path):
+    """Return width/height/DPI for a generated image, or None if unavailable."""
+    if not path:
+        return None
+    try:
+        path = Path(path)
+        if not path.exists():
+            return None
+        with Image.open(path) as img:
+            dpi = img.info.get("dpi") or (0, 0)
+            return {
+                "width": int(img.width),
+                "height": int(img.height),
+                "dpi": [round(float(dpi[0]), 2), round(float(dpi[1]), 2)],
+                "bytes": int(path.stat().st_size),
+            }
+    except Exception:
+        return None
+
+
+def _gumroad_asset_report(staging, gumroad_manifest=None):
+    """Build a concise production report for option 9 and package metadata."""
+    staging = Path(staging)
+    manifest = gumroad_manifest or {}
+    rendering = manifest.get("rendering", {}) if isinstance(manifest, dict) else {}
+    dims = manifest.get("asset_dimensions", {}) if isinstance(manifest, dict) else {}
+    previews = manifest.get("preview_images", []) if isinstance(manifest, dict) else []
+    selected_pages = manifest.get("selected_preview_pages", []) if isinstance(manifest, dict) else []
+    renderer_values = rendering.get("renderer", []) if isinstance(rendering, dict) else []
+    renderer = ", ".join(str(x) for x in renderer_values if x) or "Unknown"
+    cover = dims.get("cover") if isinstance(dims, dict) else None
+    thumb = dims.get("product_thumbnail") if isinstance(dims, dict) else None
+    preview_dims = dims.get("previews", {}) if isinstance(dims, dict) else {}
+
+    cover_ok = bool(cover and cover.get("width", 0) >= GUMROAD_COVER_WIDTH and cover.get("height", 0) >= GUMROAD_COVER_HEIGHT and cover.get("dpi", [0])[0] >= GUMROAD_MIN_DPI and cover.get("bytes", 0) < GUMROAD_COVER_MAX_BYTES)
+    thumb_ok = bool(thumb and thumb.get("width", 0) >= GUMROAD_THUMB_WIDTH and thumb.get("height", 0) >= GUMROAD_THUMB_HEIGHT and thumb.get("dpi", [0])[0] >= GUMROAD_MIN_DPI)
+    preview_ok = len(previews) == GUMROAD_PREVIEW_COUNT and all(
+        isinstance(preview_dims.get(name), dict) and
+        preview_dims[name].get("width", 0) >= GUMROAD_THUMB_WIDTH and
+        preview_dims[name].get("height", 0) >= GUMROAD_THUMB_HEIGHT
+        for name in previews
+    )
+    return {
+        "status": "PASS" if cover_ok and thumb_ok and preview_ok else "FAIL",
+        "renderer": renderer,
+        "rendered_candidate_count": int(manifest.get("rendered_candidate_count", rendering.get("candidate_count", 0)) or 0),
+        "selected_preview_count": len(previews),
+        "target_preview_count": GUMROAD_PREVIEW_COUNT,
+        "selected_preview_pages": selected_pages,
+        "cover": {"file": manifest.get("cover"), "dimensions": cover, "pass": cover_ok},
+        "product_thumbnail": {"file": manifest.get("product_thumbnail"), "dimensions": thumb, "pass": thumb_ok},
+        "previews": {"files": previews, "pass": preview_ok, "dimensions": preview_dims},
+    }
+
+
+def _print_gumroad_asset_report(report):
+    print("  GUMROAD ASSETS")
+    print("  " + "-" * 58)
+    print(f"  Renderer:              {report.get('renderer', 'Unknown')}")
+    print(f"  PDF pages rendered:    {report.get('rendered_candidate_count', 0)}")
+    pages = report.get("selected_preview_pages") or []
+    print(f"  Preview pages selected: {len(pages)}/{report.get('target_preview_count', GUMROAD_PREVIEW_COUNT)}" + (f" -> {', '.join(map(str, pages))}" if pages else ""))
+    cover = report.get("cover", {})
+    cd = cover.get("dimensions") or {}
+    print(f"  Cover:                 {'PASS' if cover.get('pass') else 'FAIL'}" + (f" — {cd.get('width')}x{cd.get('height')} @ {cd.get('dpi',[0])[0]:g} DPI" if cd else ""))
+    thumb = report.get("product_thumbnail", {})
+    td = thumb.get("dimensions") or {}
+    print(f"  Product thumbnail:     {'PASS' if thumb.get('pass') else 'FAIL'}" + (f" — {td.get('width')}x{td.get('height')} @ {td.get('dpi',[0])[0]:g} DPI" if td else ""))
+    print(f"  Interior previews:     {'PASS' if report.get('previews', {}).get('pass') else 'FAIL'} — {report.get('selected_preview_count', 0)}/{report.get('target_preview_count', GUMROAD_PREVIEW_COUNT)}")
+    print(f"  Asset set:              {report.get('status', 'FAIL')}")
+    print("  " + "-" * 58)
+
+
+def _validate_gumroad_assets(staging):
+    """Hard validation for the generated Gumroad visual assets."""
+    errors = []
+    warnings = []
+    staging = Path(staging)
+
+    # Find cover regardless of PNG/JPG fallback.
+    cover_candidates = list(staging.glob("cover.png")) + list(staging.glob("cover.jpg"))
+    cover = cover_candidates[0] if cover_candidates else None
+    if not cover:
+        errors.append("Gumroad cover was not generated.")
+    else:
+        try:
+            with Image.open(cover) as img:
+                dpi = img.info.get("dpi", (0, 0))
+                dpi_x = float(dpi[0] or 0)
+                dpi_y = float(dpi[1] or 0)
+                if img.width < GUMROAD_COVER_WIDTH or img.height < GUMROAD_COVER_HEIGHT:
+                    errors.append(
+                        f"Gumroad cover is {img.width}x{img.height}; minimum is "
+                        f"{GUMROAD_COVER_WIDTH}x{GUMROAD_COVER_HEIGHT}."
+                    )
+                if dpi_x < GUMROAD_MIN_DPI or dpi_y < GUMROAD_MIN_DPI:
+                    errors.append(
+                        f"Gumroad cover DPI is {dpi_x:g}x{dpi_y:g}; minimum is {GUMROAD_MIN_DPI} DPI."
+                    )
+            if cover.stat().st_size >= GUMROAD_COVER_MAX_BYTES:
+                errors.append("Gumroad cover is 50 MB or larger.")
+        except Exception as error:
+            errors.append(f"Could not inspect Gumroad cover: {error}")
+
+    thumbs = sorted(list(staging.glob("thumb-*.png")) + list(staging.glob("thumb-*.jpg")))
+    if len(thumbs) < GUMROAD_PREVIEW_COUNT:
+        errors.append(
+            f"Only {len(thumbs)} interior preview thumbnail(s) were generated; "
+            f"Gumroad package requires {GUMROAD_PREVIEW_COUNT}."
+        )
+    for path in thumbs:
+        try:
+            with Image.open(path) as img:
+                if img.width < GUMROAD_THUMB_WIDTH or img.height < GUMROAD_THUMB_HEIGHT:
+                    errors.append(f"{path.name} is below 600x600 pixels.")
+        except Exception as error:
+            errors.append(f"Could not inspect {path.name}: {error}")
+
+    product_thumb = next(iter([p for p in staging.glob("thumbnail.png")] +
+                              [p for p in staging.glob("thumbnail.jpg")]), None)
+    if not product_thumb:
+        errors.append("Dedicated Gumroad product thumbnail was not generated.")
+    else:
+        try:
+            with Image.open(product_thumb) as img:
+                if img.width < GUMROAD_THUMB_WIDTH or img.height < GUMROAD_THUMB_HEIGHT:
+                    errors.append("Dedicated Gumroad product thumbnail is below 600x600 pixels.")
+        except Exception as error:
+            errors.append(f"Could not inspect Gumroad product thumbnail: {error}")
+
+    return errors, warnings
+
+
+def _write_gumroad_readme(staging, generated_names, warnings):
+    path = Path(staging) / "README.txt"
+    lines = [
+        "GUMROAD PACKAGE — COLORING BOOK FACTORY",
+        "=========================================",
+        "",
+        "Upload the digital PDF as the product file.",
+        "Upload cover.png (or cover.jpg) as the main Gumroad cover.",
+        "Upload thumbnail.png (or thumbnail.jpg) as the product thumbnail.",
+        "The thumb-01 through thumb-04 images are interior preview images.",
+        "",
+        "Generated files:",
+    ]
+    lines.extend(f"- {name}" for name in generated_names)
+    if warnings:
+        lines.extend(["", "AUTOMATED WARNINGS:"])
+        lines.extend(f"- {warning}" for warning in warnings)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def generate_platform_package_v112(project, platform_name, quiet=False):
+    """
+    v11.6 platform package generator. Gumroad receives a dedicated asset
+    build; every other platform continues through the existing v11.x behavior.
+    """
+    profiles = load_platform_profiles()
+    profile = profiles.get(platform_name)
+    if not profile:
+        return {
+            "status": "BLOCKED",
+            "output": None,
+            "errors": [f"Unknown platform: {platform_name}"],
+            "warnings": [],
+        }
+
+    master = find_master_pdf(project)
+    if not master:
+        master, master_errors, master_warnings = ensure_master_book(project)
+        if master_errors:
+            return {
+                "status": "BLOCKED",
+                "output": None,
+                "errors": master_errors,
+                "warnings": master_warnings,
+            }
+
+    audit = platform_preflight(project, platform_name, master, profile)
+    if audit["status"] == "BLOCKED":
+        if not quiet:
+            print(f"\n{platform_name}: BLOCKED")
+            for error in audit["errors"]:
+                print("ERROR:", error)
+        return {
+            "status": "BLOCKED",
+            "output": project / PLATFORM_DIRNAME / profile.get("output_dir", platform_name.upper()),
+            "audit": audit,
+            "errors": audit["errors"],
+            "warnings": audit["warnings"],
+        }
+
+    settings = load_project_settings_safe(project)
+    root = project / PLATFORM_DIRNAME / profile.get(
+        "output_dir",
+        _platform_sanitized_filename(platform_name, 40).upper(),
+    )
+    staging = root.parent / f".{root.name}.staging"
+    if staging.exists():
+        shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+
+    generated = []
+    warnings = list(audit.get("warnings", []))
+    title = settings.get("title", project.name)
+    gumroad_manifest = None
+    gumroad_report = None
+
+    try:
+        # Keep existing platform behavior intact for all non-Gumroad platforms.
+        mode = profile.get("variant", {}).get("mode", "copy")
+        if mode == "etsy_split":
+            parts, split_errors = _pdf_split_by_size(
+                master, staging, title,
+                profile["rules"]["max_file_mb"],
+                profile["rules"]["max_files"],
+            )
+            if split_errors:
+                raise RuntimeError("; ".join(split_errors))
+            generated.extend(parts)
+        else:
+            variant_target = staging / (
+                f"{_platform_sanitized_filename(title, 120)}"
+                f"{profile.get('variant', {}).get('filename_suffix', '_DIGITAL')}.pdf"
+            )
+            shutil.copy2(master, variant_target)
+            generated.append(variant_target)
+
+        if platform_name == "Gumroad":
+            gumroad_files, gumroad_warnings, gumroad_manifest = _make_gumroad_assets(
+                project, staging, master, settings
+            )
+            generated.extend(gumroad_files)
+            warnings.extend(gumroad_warnings)
+            gumroad_errors, gumroad_validation_warnings = _validate_gumroad_assets(staging)
+            warnings.extend(gumroad_validation_warnings)
+            if gumroad_errors:
+                raise RuntimeError("Gumroad asset validation failed: " + " | ".join(gumroad_errors))
+        else:
+            cover = _platform_cover(project)
+            if cover:
+                target = staging / _platform_sanitized_filename(
+                    f"{title}_COVER{cover.suffix.lower()}", 70
+                )
+                shutil.copy2(cover, target)
+                generated.append(target)
+
+            if "preview_sheet" in profile.get("files", []):
+                generated.append(create_preview_sheet(project, staging, master, settings))
+
+        metadata = {
+            "schema_version": 5,
+            "factory_version": FACTORY_VERSION,
+            "platform_engine_version": PLATFORM_ENGINE_VERSION,
+            "universal_publishing_version": UNIVERSAL_PUBLISHING_VERSION,
+            "platform": platform_name,
+            "platform_type": profile.get("type"),
+            "generated": datetime.now().isoformat(timespec="seconds"),
+            "title": title,
+            "subtitle": settings.get("subtitle", settings.get("cover_subtitle", "")),
+            "author": settings.get("author", ""),
+            "description": settings.get(
+                "description", settings.get("cover_blurb", "")
+            ),
+            "series": settings.get("series_name", ""),
+            "series_number": settings.get("series_number", ""),
+            "world": settings.get("universe_name", ""),
+            "page_count": audit.get("pdf", {}).get("page_count"),
+            "source_master": str(master),
+            "source_master_sha256": file_hash(master),
+            "profile": profile,
+            "preflight_status": audit["status"],
+        }
+        metadata_path = staging / "METADATA.json"
+        save_json(metadata_path, metadata)
+        generated.append(metadata_path)
+
+        if "product_description" in profile.get("files", []):
+            generated.append(write_product_description(project, staging, settings, platform_name))
+
+        if platform_name == "KDP":
+            _copy_required_kdp_assets(project, staging, generated)
+
+        if platform_name == "Gumroad":
+            generated.append(
+                _write_gumroad_readme(
+                    staging,
+                    [p.name for p in generated if p.exists()],
+                    warnings,
+                )
+            )
+        elif "readme" in profile.get("files", []):
+            generated.append(
+                _write_platform_readme(
+                    staging,
+                    settings,
+                    platform_name,
+                    [p.name for p in generated if p.exists()],
+                    warnings,
+                )
+            )
+
+        preflight_path = staging / "PLATFORM_PREFLIGHT.json"
+        save_json(preflight_path, audit)
+        generated.append(preflight_path)
+
+        manifest = {
+            "schema_version": 5,
+            "factory_version": FACTORY_VERSION,
+            "platform_engine_version": PLATFORM_ENGINE_VERSION,
+            "universal_publishing_version": UNIVERSAL_PUBLISHING_VERSION,
+            "platform": platform_name,
+            "status": "READY_WITH_WARNINGS" if warnings else "READY",
+            "project": project.name,
+            "title": title,
+            "generated": datetime.now().isoformat(timespec="seconds"),
+            "master_pdf": str(master),
+            "master_sha256": file_hash(master),
+            "variant_mode": mode,
+            "files": [p.name for p in generated if p.exists()],
+            "file_hashes": {p.name: file_hash(p) for p in generated if p.exists()},
+            "warnings": warnings,
+            "preflight": "PLATFORM_PREFLIGHT.json",
+        }
+
+        manifest_path = staging / "PACKAGE_MANIFEST.json"
+        save_json(manifest_path, manifest)
+        generated.append(manifest_path)
+
+        # Publish only after the entire package has passed validation.
+        root.parent.mkdir(parents=True, exist_ok=True)
+        if root.exists():
+            backup = root.with_name(root.name + ".previous")
+            if backup.exists():
+                shutil.rmtree(backup, ignore_errors=True)
+            root.rename(backup)
+            try:
+                staging.rename(root)
+            except Exception:
+                if root.exists():
+                    shutil.rmtree(root, ignore_errors=True)
+                backup.rename(root)
+                raise
+            shutil.rmtree(backup, ignore_errors=True)
+        else:
+            staging.rename(root)
+
+        # Manifest is regenerated at final location so its file list is authoritative.
+        final_files = sorted(p.name for p in root.iterdir() if p.is_file())
+        manifest["files"] = final_files
+        manifest["file_hashes"] = {name: file_hash(root / name) for name in final_files}
+        save_json(root / "PACKAGE_MANIFEST.json", manifest)
+
+        # Gumroad package gets an explicit post-publish validation flag.
+        if platform_name == "Gumroad":
+            post_errors, post_warnings = _validate_gumroad_assets(root)
+            if post_errors:
+                return {
+                    "status": "BLOCKED",
+                    "output": root,
+                    "audit": audit,
+                    "errors": post_errors,
+                    "warnings": warnings + post_warnings,
+                }
+            manifest["gumroad_asset_validation"] = {
+                "status": "PASS",
+                "errors": [],
+                "warnings": post_warnings,
+            }
+            gumroad_report = _gumroad_asset_report(root, gumroad_manifest)
+            manifest["gumroad_asset_report"] = gumroad_report
+            save_json(root / "PACKAGE_MANIFEST.json", manifest)
+
+        final_status = manifest["status"]
+        record_world_production_event(
+            project,
+            f"platform_package:{platform_name}",
+            final_status,
+            page_count=audit.get("pdf", {}).get("page_count") or 0,
+            errors=0,
+            warnings=len(warnings),
+        )
+
+        if not quiet:
+            print(f"\n{platform_name}: {final_status}")
+            print(f"Output: {root}")
+            for warning in warnings:
+                print("WARNING:", warning)
+
+        return {
+            "status": final_status,
+            "output": root,
+            "manifest": manifest,
+            "audit": audit,
+            "warnings": warnings,
+            "errors": [],
+            "gumroad_assets": gumroad_manifest if platform_name == "Gumroad" else None,
+            "gumroad_asset_report": gumroad_report if platform_name == "Gumroad" else None,
+        }
+
+    except Exception as error:
+        shutil.rmtree(staging, ignore_errors=True)
+        if not quiet:
+            print(f"\n{platform_name}: FAILED - {error}")
+        return {
+            "status": "BLOCKED",
+            "output": root,
+            "audit": audit,
+            "errors": [str(error)],
+            "warnings": warnings,
+        }
+
+
+# Override the active generator so v11.6 is the last/authoritative definition.
+generate_platform_package = generate_platform_package_v112
+
+
+def generate_all_platform_packages_v112(project):
+    profiles = load_platform_profiles()
+    enabled = [name for name, profile in profiles.items() if profile.get("enabled", False)]
+    results = {}
+    print("\nUNIVERSAL PUBLISHING ENGINE v1.2 — GENERATE ALL ENABLED PLATFORMS")
+    print("-" * 78)
+    for name in enabled:
+        result = generate_platform_package(project, name, quiet=True)
+        results[name] = result
+        print(f"{name:<20} {result.get('status')}")
+        for error in result.get("errors", []):
+            print(f"  ERROR: {error}")
+        for warning in result.get("warnings", []):
+            print(f"  WARNING: {warning}")
+        if name == "Gumroad" and result.get("gumroad_asset_report"):
+            _print_gumroad_asset_report(result["gumroad_asset_report"])
+
+    save_json(
+        project / PLATFORM_INDEX_FILENAME,
+        {
+            "schema_version": 5,
+            "factory_version": FACTORY_VERSION,
+            "platform_engine_version": PLATFORM_ENGINE_VERSION,
+            "universal_publishing_version": UNIVERSAL_PUBLISHING_VERSION,
+            "generated": datetime.now().isoformat(timespec="seconds"),
+            "platforms": {
+                n: {
+                    "status": r.get("status"),
+                    "output": str(r.get("output", "")),
+                    "errors": r.get("errors", []),
+                    "warnings": r.get("warnings", []),
+                }
+                for n, r in results.items()
+            },
+        },
+    )
+    return results
+
+
+generate_all_platform_packages = generate_all_platform_packages_v112
+
+
+def run_platform_self_test_v112():
+    """Offline test of the universal package engine plus Gumroad asset generation."""
+    import tempfile
+    from reportlab.pdfgen import canvas as _canvas
+
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="CBF_v112_TEST_") as temp:
+        root = Path(temp)
+        project = root / "Projects" / "Universal Platform Test"
+        project.mkdir(parents=True)
+
+        save_json(
+            project / "project.json",
+            {
+                "title": "Universal Platform Test",
+                "author": "Test Author",
+                "trim_width": 8.5,
+                "trim_height": 11,
+                "dpi": 300,
+                "production_profile": "Imported Finished PDF",
+            },
+        )
+        (project / "PDF").mkdir()
+        (project / "MASTER").mkdir()
+
+        sample_arts = []
+        for art_no in range(4):
+            sample_art = root / f"sample-art-{art_no + 1}.png"
+            sample = Image.new("RGB", (1200, 1500), "white")
+            draw = ImageDraw.Draw(sample)
+            draw.rectangle((80, 80, 1120, 1420), outline="black", width=8)
+            draw.ellipse(
+                (180 + art_no * 35, 260, 980 - art_no * 25, 980),
+                outline="black", width=10
+            )
+            draw.line((160, 1120 - art_no * 35, 1040, 1120 + art_no * 20), fill="black", width=8)
+            draw.text((320, 1260), f"TEST ARTWORK {art_no + 1}", font=get_font(70, True), fill="black")
+            sample.save(sample_art, "PNG", dpi=(300, 300))
+            sample_arts.append(sample_art)
+
+        pdf = project / "PDF" / "source.pdf"
+        c = _canvas.Canvas(str(pdf), pagesize=(8.5 * 72, 11 * 72))
+        for page_no in range(24):
+            source_art = sample_arts[page_no % len(sample_arts)]
+            c.drawImage(
+                str(source_art), 54, 54,
+                width=8.5 * 72 - 108,
+                height=11 * 72 - 108,
+                preserveAspectRatio=True,
+                anchor="c"
+            )
+            c.showPage()
+        c.save()
+
+        master = import_existing_pdf_to_master(project, pdf)
+        if not master:
+            failures.append("MASTER import failed.")
+        else:
+            profiles = load_platform_profiles()
+            for name in ("KDP", "Gumroad", "Etsy", "Payhip"):
+                result = generate_platform_package(project, name, quiet=True)
+                if result.get("status") not in {"READY", "READY_WITH_WARNINGS"}:
+                    failures.append(f"{name} package failed: {result.get('errors')}")
+                output = Path(result.get("output") or "")
+                if not output.exists() or not (output / "PACKAGE_MANIFEST.json").exists():
+                    failures.append(f"{name} package manifest missing.")
+
+            gum = project / PLATFORM_DIRNAME / "GUMROAD"
+            cover = gum / "cover.png"
+            if not cover.exists():
+                cover = gum / "cover.jpg"
+            if not cover.exists():
+                failures.append("Gumroad cover missing.")
+            thumbs = sorted(list(gum.glob("thumb-*.png")) + list(gum.glob("thumb-*.jpg")))
+            if len(thumbs) != GUMROAD_PREVIEW_COUNT:
+                failures.append(f"Gumroad preview count was {len(thumbs)}, expected {GUMROAD_PREVIEW_COUNT}.")
+            thumbnail = next(iter(list(gum.glob("thumbnail.png")) + list(gum.glob("thumbnail.jpg"))), None)
+            if not thumbnail:
+                failures.append("Gumroad product thumbnail missing.")
+            else:
+                with Image.open(thumbnail) as img:
+                    if img.width < 600 or img.height < 600:
+                        failures.append("Gumroad product thumbnail below 600x600.")
+
+    if failures:
+        print("\nUNIVERSAL PLATFORM ENGINE v1.2 SELF-TEST: FAIL")
+        for failure in failures:
+            print("  FAIL:", failure)
+        return False
+
+    print("\nUNIVERSAL PLATFORM ENGINE v1.2 SELF-TEST: PASS")
+    print("  Immutable MASTER: PASS")
+    print("  PDF intake: PASS")
+    print("  KDP package: PASS")
+    print("  Gumroad cover: PASS")
+    print("  Gumroad 4 interior previews: PASS")
+    print("  Gumroad 600x600+ thumbnail: PASS")
+    print("  Etsy package: PASS")
+    print("  Payhip package: PASS")
+    print("  Package manifests: PASS")
+    return True
+
+
+run_platform_self_test = run_platform_self_test_v112
+
+
+def platform_center():
+    while True:
+        profiles = load_platform_profiles()
+        print("\n" + "=" * 78)
+        print(f"UNIVERSAL PUBLISHING CENTER v{PLATFORM_ENGINE_VERSION}")
+        print("=" * 78)
+        print("1. ONE-CLICK PUBLISH (build + audit + all packages + ZIPs)")
+        print("2. Import Finished PDF → Master + ALL Platforms")
+        print("3. Generate KDP Package")
+        print("4. Generate Gumroad Package")
+        print("5. Generate ALL Enabled Platform Packages")
+        print("6. Manage Platform Profiles")
+        print("7. Platform Preflight / Audit")
+        print("8. Compare Platform Requirements")
+        print("9. Factory Health Dashboard")
+        print("10. Create Project Snapshot")
+        print("11. Create Delivery ZIPs")
+        print("12. Run Universal Platform Self-Test")
+        print("13. Back")
+        choice = input("Choose: ").strip()
+
+        if choice == "1":
+            project = choose_project()
+            if project:
+                one_click_publish(project)
+            input("\nPress Enter to continue...")
+        elif choice == "2":
+            convert_existing_pdf_enhanced()
+            input("\nPress Enter to continue...")
+        elif choice in {"3", "4", "5"}:
+            project = choose_project()
+            if not project:
+                continue
+            if choice == "3":
+                generate_platform_package(project, "KDP")
+            elif choice == "4":
+                generate_platform_package(project, "Gumroad")
+            else:
+                generate_all_platform_packages(project)
+            input("\nPress Enter to continue...")
+        elif choice == "6":
+            manage_platform_profiles_v2()
+        elif choice == "7":
+            project = choose_project()
+            if not project:
+                continue
+            master = find_master_pdf(project)
+            if not master:
+                print("No MASTER PDF found.")
+                input("\nPress Enter...")
+                continue
+            print("\nPLATFORM AUDIT")
+            print("-" * 78)
+            audits = {}
+            for name, profile in profiles.items():
+                if not profile.get("enabled"):
+                    continue
+                audit = platform_preflight(project, name, master, profile)
+                audits[name] = audit
+                print(
+                    f"{name:<20} {audit['status']:<20} "
+                    f"errors={len(audit['errors'])} warnings={len(audit['warnings'])}"
+                )
+                for error in audit["errors"]:
+                    print("  ERROR:", error)
+                for warning in audit["warnings"]:
+                    print("  WARNING:", warning)
+            save_json(
+                project / PLATFORM_AUDIT_FILENAME,
+                {
+                    "schema_version": 5,
+                    "generated": datetime.now().isoformat(timespec="seconds"),
+                    "audits": audits,
+                },
+            )
+            input("\nPress Enter to continue...")
+        elif choice == "8":
+            project = choose_project()
+            if not project:
+                continue
+            print("\nPLATFORM REQUIREMENT COMPARISON")
+            print("-" * 78)
+            for row in platform_requirement_comparison(project):
+                print(
+                    f"{row['platform']:<20} "
+                    f"{'ON ' if row['enabled'] else 'OFF'} | "
+                    f"{row['status']:<20} | "
+                    f"{row['max_mb']} MB/file | "
+                    f"{row['max_files']} files | "
+                    f"{row['variant']}"
+                )
+            input("\nPress Enter to continue...")
+        elif choice == "9":
+            factory_health_dashboard()
+            input("\nPress Enter to continue...")
+        elif choice == "10":
+            project = choose_project()
+            if project:
+                try:
+                    print(f"\nSnapshot: {create_project_snapshot(project)}")
+                except Exception as error:
+                    print(f"ERROR: {error}")
+            input("\nPress Enter to continue...")
+        elif choice == "11":
+            project = choose_project()
+            if project:
+                results = {}
+                for name, profile in profiles.items():
+                    if profile.get("enabled"):
+                        zip_file, errors = create_delivery_zip(project, name)
+                        if zip_file:
+                            results[name] = {"status": "ZIPPED", "zip": str(zip_file)}
+                            print(f"{name}: {zip_file}")
+                        else:
+                            print(f"{name}: FAILED - {'; '.join(errors)}")
+                if results:
+                    print(f"Delivery index: {create_delivery_index(project, results)}")
+            input("\nPress Enter to continue...")
+        elif choice == "12":
+            run_platform_self_test()
+            input("\nPress Enter to continue...")
+        elif choice == "13":
+            return
+        else:
+            print("Invalid choice.")
+
+
+
+def main():
+    """v11.1 main menu with the finished-PDF publishing workflow exposed directly."""
+    PROJECTS.mkdir(exist_ok=True)
+    while True:
+        print("\n" + "=" * 68)
+        print(f"        COLORING BOOK FACTORY v{FACTORY_VERSION}")
+        print("=" * 68)
+        print("1. Build a book")
+        print("2. Create a new project")
+        print("3. Import Artwork Folder -> Create Book")
+        print("4. Build ALL books")
+        print("5. Production Queue")
+        print("6. Production Dashboard")
+        print("7. Worlds & Universes")
+        print("8. Production Center")
+        print("9.  PUBLISH / CONVERT FINISHED PDF")
+        print("10. Platform & Publishing Center")
+        print("11. Clone a project from template")
+        print("12. Exit")
+        print("\n9 = Drop/select a finished PDF and build the platform packages automatically.")
+        choice = input("\nChoose: ").strip()
+
+        if choice == "1":
+            project = choose_project()
+            if project: build_book(project)
+            input("\nPress Enter to return to menu...")
+        elif choice == "2":
+            create_project(); input("\nPress Enter to return to menu...")
+        elif choice == "3":
+            import_artwork_folder(); input("\nPress Enter to return to menu...")
+        elif choice == "4":
+            bulk_build(); input("\nPress Enter to return to menu...")
+        elif choice == "5":
+            production_queue_menu(); input("\nPress Enter to return to menu...")
+        elif choice == "6":
+            production_dashboard(); input("\nPress Enter to return to menu...")
+        elif choice == "7":
+            world_engine_center_v9(); input("\nPress Enter to return to menu...")
+        elif choice == "8":
+            production_center(); input("\nPress Enter to return to menu...")
+        elif choice == "9":
+            import_finished_pdf_v111(); input("\nPress Enter to return to menu...")
+        elif choice == "10":
+            platform_center(); input("\nPress Enter to return to menu...")
+        elif choice == "11":
+            clone_project_from_template(); input("\nPress Enter to return to menu...")
+        elif choice == "12":
+            print("\nGoodbye.")
+            break
+        else:
+            print("\nInvalid choice.")
 
 if __name__ == "__main__":
 

@@ -1,0 +1,53 @@
+{
+    "schema_version": 5,
+    "factory_version": "11.4",
+    "platform_engine_version": "4.3",
+    "universal_publishing_version": "1.2",
+    "platform": "Gumroad",
+    "status": "READY_WITH_WARNINGS",
+    "project": "Nightmare Unicorns A Horror Coloring Adventure (4)",
+    "title": "NightmareUnicornsFinished",
+    "generated": "2026-09-15T05:44:05",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (4)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "variant_mode": "digital_copy",
+    "files": [
+        "GUMROAD_ASSETS.json",
+        "GUMROAD_UPLOAD_CHECKLIST.txt",
+        "METADATA.json",
+        "NightmareUnicornsFinished_DIGITAL.pdf",
+        "PACKAGE_MANIFEST.json",
+        "PLATFORM_PREFLIGHT.json",
+        "PRODUCT_DESCRIPTION.txt",
+        "README.txt",
+        "cover.png",
+        "thumbnail.png"
+    ],
+    "file_hashes": {
+        "GUMROAD_ASSETS.json": "29fad8e3c641cde44a188ee075baca5ecf0c5c3e9ed6c5489d3e59583510016e",
+        "GUMROAD_UPLOAD_CHECKLIST.txt": "bb79e99ce7b64cf060762cc8e4209986de0091e9f6f94c5da157ab750bb19fad",
+        "METADATA.json": "dbfec151a83d7570c51f0e9e5e1c5ba043a9f01fd6058659a6466efa778b6652",
+        "NightmareUnicornsFinished_DIGITAL.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PACKAGE_MANIFEST.json": "13e7554b29e50d17adc805f8654280f8eacd2a964152cf0a73cfb363a2106b5f",
+        "PLATFORM_PREFLIGHT.json": "dec60b26d18c8deba674df52c4fea35a1adaee1165817d75afce3e43b99a4bd9",
+        "PRODUCT_DESCRIPTION.txt": "3db0185f8f1a359eee1fa95f788c7aa585ccd9a5e4e010acd0af611a0e20a7cc",
+        "README.txt": "ce6f2e9fcb400f03d94bf3fa453c3a6bc9f872256284950b927404e2a9e2ede3",
+        "cover.png": "2c0c215d417d01cd3cb96c62c3f164af9c8e015b2facec053206d59184ab04b6",
+        "thumbnail.png": "01a7f8f223cb86b3966f855683edfe84ba32dff9a28b04eee1e2f0f8c085abcf"
+    },
+    "warnings": [
+        "This platform profile contains advisory limits; verify the marketplace's current seller requirements before publishing.",
+        "PyMuPDF is not installed and automatic installation failed. Original error: DLL load failed while importing _extra: The specified module could not be found.; install error: DLL load failed while importing _extra: The specified module could not be found.",
+        "No usable interior artwork previews could be rendered from the MASTER PDF. The Factory attempted embedded-image extraction and the universal PDF renderer.",
+        "No interior preview was available; product thumbnail fell back to the generated Gumroad cover.",
+        "Only 0 interior preview thumbnail(s) were generated; target is 4."
+    ],
+    "preflight": "PLATFORM_PREFLIGHT.json",
+    "gumroad_asset_validation": {
+        "status": "PASS",
+        "errors": [],
+        "warnings": [
+            "Only 0 interior preview thumbnail(s) were generated; target is 4."
+        ]
+    }
+}

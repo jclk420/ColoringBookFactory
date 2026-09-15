@@ -1,0 +1,30 @@
+{
+    "schema_version": 5,
+    "factory_version": "11.4",
+    "platform_engine_version": "4.3",
+    "universal_publishing_version": "1.2",
+    "platform": "KDP",
+    "status": "READY_WITH_WARNINGS",
+    "project": "NightmareUnicornsFinished (5)",
+    "title": "NightmareUnicornsFinished",
+    "generated": "2026-09-15T08:36:38",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (5)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "variant_mode": "copy",
+    "files": [
+        "METADATA.json",
+        "NightmareUnicornsFinished_KDP_INTERIOR.pdf",
+        "PACKAGE_MANIFEST.json",
+        "PLATFORM_PREFLIGHT.json"
+    ],
+    "file_hashes": {
+        "METADATA.json": "909dec6be80f345ce9c2eb0257baad26e95dba23dfcde7f845eb88a6cf920cec",
+        "NightmareUnicornsFinished_KDP_INTERIOR.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PACKAGE_MANIFEST.json": "344cdaad9c79704aea875db7edb08069acd7c98f4f5c8b57510bef21f35da4c3",
+        "PLATFORM_PREFLIGHT.json": "74d1dbe3e2137289a95eb2877c454949bd08cb8ec2af996676ad44f1d045cef8"
+    },
+    "warnings": [
+        "No separate MASTER_COVER asset is present. KDP will require a cover file unless using KDP Cover Creator."
+    ],
+    "preflight": "PLATFORM_PREFLIGHT.json"
+}

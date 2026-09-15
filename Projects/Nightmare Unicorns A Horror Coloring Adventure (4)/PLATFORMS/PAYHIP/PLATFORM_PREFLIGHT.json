@@ -1,0 +1,378 @@
+{
+    "schema_version": 4,
+    "factory_version": "11.4",
+    "platform_engine_version": "4.3",
+    "universal_publishing_version": "1.2",
+    "platform": "Payhip",
+    "platform_type": "digital",
+    "status": "READY",
+    "timestamp": "2026-09-15T05:44:05",
+    "master_pdf": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (4)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "pdf": {
+        "path": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (4)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+        "exists": true,
+        "page_count": 64,
+        "sizes": [
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            },
+            {
+                "width": 8.5,
+                "height": 11.0,
+                "orientation": "portrait"
+            }
+        ],
+        "unique_sizes": [
+            "8.5x11.0"
+        ],
+        "file_size_mb": 40.77,
+        "encrypted": false,
+        "metadata": {
+            "/CreationDate": "D:20260903221653Z",
+            "/ModDate": "D:20260903221658Z",
+            "/Producer": "Adobe PDF Library 18.0"
+        },
+        "error": null,
+        "has_annotations": false,
+        "has_bookmarks": false,
+        "has_javascript": false,
+        "has_forms": false,
+        "page_resources": {}
+    },
+    "metadata": {
+        "title": "NightmareUnicornsFinished",
+        "author": "JAC",
+        "page_count": 64,
+        "trim_width": 8.5,
+        "trim_height": 11.0
+    },
+    "rules": {
+        "min_pages": 1,
+        "max_pages": 10000,
+        "require_title": true,
+        "require_author": false,
+        "require_cover": false,
+        "require_landscape": false,
+        "max_file_mb": 5120,
+        "max_files": 50,
+        "advisory": false
+    },
+    "variant": {
+        "mode": "copy",
+        "filename_suffix": "_PAYHIP"
+    },
+    "errors": [],
+    "warnings": []
+}

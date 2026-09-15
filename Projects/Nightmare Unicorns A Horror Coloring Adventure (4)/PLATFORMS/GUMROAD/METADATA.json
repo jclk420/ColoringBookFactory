@@ -1,0 +1,50 @@
+{
+    "schema_version": 5,
+    "factory_version": "11.4",
+    "platform_engine_version": "4.3",
+    "universal_publishing_version": "1.2",
+    "platform": "Gumroad",
+    "platform_type": "digital",
+    "generated": "2026-09-15T05:44:05",
+    "title": "NightmareUnicornsFinished",
+    "subtitle": "",
+    "author": "JAC",
+    "description": "",
+    "series": "",
+    "series_number": "",
+    "world": "",
+    "page_count": 64,
+    "source_master": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (4)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "source_master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "profile": {
+        "name": "Gumroad",
+        "type": "digital",
+        "enabled": true,
+        "output_dir": "GUMROAD",
+        "source": "master_pdf",
+        "files": [
+            "digital_pdf",
+            "cover_preview",
+            "preview_sheet",
+            "metadata",
+            "product_description"
+        ],
+        "variant": {
+            "mode": "digital_copy",
+            "filename_suffix": "_DIGITAL"
+        },
+        "rules": {
+            "min_pages": 1,
+            "max_pages": 10000,
+            "require_title": true,
+            "require_author": false,
+            "require_cover": false,
+            "require_landscape": false,
+            "max_file_mb": 500,
+            "max_files": 20,
+            "advisory": true
+        },
+        "notes": "Digital delivery package; does not alter the master PDF."
+    },
+    "preflight_status": "READY_WITH_WARNINGS"
+}

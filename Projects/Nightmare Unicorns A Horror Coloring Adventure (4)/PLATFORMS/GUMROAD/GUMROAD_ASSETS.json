@@ -1,0 +1,31 @@
+{
+    "schema_version": 1,
+    "factory_version": "11.4",
+    "gumroad_requirements": {
+        "cover_min_width_px": 1280,
+        "cover_min_height_px": 720,
+        "cover_min_dpi": 72,
+        "cover_max_bytes": 52428800,
+        "cover_max_mb_decimal": 50,
+        "product_thumbnail_min_width_px": 600,
+        "product_thumbnail_min_height_px": 600,
+        "max_covers": 8
+    },
+    "source_master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "source_master": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (4)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "rendering": {
+        "renderer": [],
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_scores": {}
+    },
+    "selected_preview_pages": [],
+    "cover": "cover.png",
+    "product_thumbnail": "thumbnail.png",
+    "preview_images": [],
+    "warnings": [
+        "PyMuPDF is not installed and automatic installation failed. Original error: DLL load failed while importing _extra: The specified module could not be found.; install error: DLL load failed while importing _extra: The specified module could not be found.",
+        "No usable interior artwork previews could be rendered from the MASTER PDF. The Factory attempted embedded-image extraction and the universal PDF renderer.",
+        "No interior preview was available; product thumbnail fell back to the generated Gumroad cover."
+    ]
+}

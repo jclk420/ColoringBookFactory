@@ -1,0 +1,24 @@
+{
+    "schema_version": 1,
+    "factory_version": "11.3",
+    "gumroad_requirements": {
+        "cover_min_width_px": 1280,
+        "cover_min_height_px": 720,
+        "cover_min_dpi": 72,
+        "cover_max_bytes": 52428800,
+        "cover_max_mb_decimal": 50,
+        "product_thumbnail_min_width_px": 600,
+        "product_thumbnail_min_height_px": 600,
+        "max_covers": 8
+    },
+    "source_master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "source_master": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (3)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "selected_preview_pages": [],
+    "cover": "cover.png",
+    "product_thumbnail": "thumbnail.png",
+    "preview_images": [],
+    "warnings": [
+        "PyMuPDF is not installed; vector-only PDF rendering fallback unavailable.",
+        "No raster artwork could be extracted from the MASTER PDF. Install PyMuPDF (PyMuPDF package) for vector-PDF preview rendering, or provide a rasterized cover/artwork source."
+    ]
+}

@@ -1,0 +1,40 @@
+{
+    "schema_version": 5,
+    "factory_version": "11.3",
+    "platform_engine_version": "4.2",
+    "universal_publishing_version": "1.2",
+    "generated": "2026-09-15T05:39:13",
+    "platforms": {
+        "KDP": {
+            "status": "READY_WITH_WARNINGS",
+            "output": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (3)\\PLATFORMS\\KDP",
+            "errors": [],
+            "warnings": [
+                "No separate MASTER_COVER asset is present. KDP will require a cover file unless using KDP Cover Creator."
+            ]
+        },
+        "Gumroad": {
+            "status": "READY_WITH_WARNINGS",
+            "output": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (3)\\PLATFORMS\\GUMROAD",
+            "errors": [],
+            "warnings": [
+                "This platform profile contains advisory limits; verify the marketplace's current seller requirements before publishing.",
+                "PyMuPDF is not installed; vector-only PDF rendering fallback unavailable.",
+                "No raster artwork could be extracted from the MASTER PDF. Install PyMuPDF (PyMuPDF package) for vector-PDF preview rendering, or provide a rasterized cover/artwork source.",
+                "Only 0 interior preview thumbnail(s) were generated; target is 4."
+            ]
+        },
+        "Payhip": {
+            "status": "READY",
+            "output": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (3)\\PLATFORMS\\PAYHIP",
+            "errors": [],
+            "warnings": []
+        },
+        "Digital PDF": {
+            "status": "READY",
+            "output": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure (3)\\PLATFORMS\\DIGITAL",
+            "errors": [],
+            "warnings": []
+        }
+    }
+}

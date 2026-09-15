@@ -1,0 +1,38 @@
+{
+  "schema_version": 3,
+  "engine_version": "2.0",
+  "world_id": "Test World (2)",
+  "name": "Test World",
+  "description": "A researcher investigating strange vending machines",
+  "genre": "horror",
+  "tone": "Dark and mysterious",
+  "universe": true,
+  "series": [],
+  "rules": [],
+  "timeline": [],
+  "characters": [
+    {
+      "name": "Dr.Test",
+      "description": "Investigator investigating vending machines",
+      "role": "Investigator",
+      "appearance": "Coooky",
+      "personality": "weird",
+      "id": "character_05c3a5d1a260",
+      "canon": true,
+      "books": [],
+      "first_appearance": "",
+      "last_updated": "2026-09-11T01:08:47"
+    }
+  ],
+  "creatures": [],
+  "locations": [],
+  "objects": [],
+  "factions": [],
+  "lore": [],
+  "books": [],
+  "relationships": [],
+  "created": "2026-09-11T01:05:02",
+  "updated": "2026-09-11T01:37:32",
+  "production_history": [],
+  "archived": false
+}

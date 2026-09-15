@@ -1,0 +1,46 @@
+{
+    "schema_version": 1,
+    "factory_version": "11.4",
+    "gumroad_requirements": {
+        "cover_min_width_px": 1280,
+        "cover_min_height_px": 720,
+        "cover_min_dpi": 72,
+        "cover_max_bytes": 52428800,
+        "cover_max_mb_decimal": 50,
+        "product_thumbnail_min_width_px": 600,
+        "product_thumbnail_min_height_px": 600,
+        "max_covers": 8
+    },
+    "source_master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "source_master": "C:\\ColoringBookFactory\\Projects\\NightmareUnicornsFinished (4)\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "rendering": {
+        "renderer": [
+            "PDFium/pypdfium2"
+        ],
+        "candidate_count": 20,
+        "selected_count": 4,
+        "selected_scores": {
+            "6": 0.0,
+            "15": 0.0,
+            "24": 0.0,
+            "33": 0.0
+        }
+    },
+    "selected_preview_pages": [
+        6,
+        15,
+        24,
+        33
+    ],
+    "cover": "cover.png",
+    "product_thumbnail": "thumbnail.png",
+    "preview_images": [
+        "thumb-01.png",
+        "thumb-02.png",
+        "thumb-03.png",
+        "thumb-04.png"
+    ],
+    "warnings": [
+        "PDFium (pypdfium2) was automatically installed for PDF preview rendering."
+    ]
+}
