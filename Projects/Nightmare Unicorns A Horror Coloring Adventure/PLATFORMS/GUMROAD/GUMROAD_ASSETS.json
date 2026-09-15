@@ -1,6 +1,6 @@
 {
     "schema_version": 1,
-    "factory_version": "11.8",
+    "factory_version": "12.1",
     "gumroad_requirements": {
         "cover_min_width_px": 1280,
         "cover_min_height_px": 720,

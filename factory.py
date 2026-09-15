@@ -5619,7 +5619,7 @@ def production_release_center():
         print("=" * 78)
         print("1. ONE-CLICK PRODUCTION RELEASE (packages + ZIPs + audit + snapshot)")
         print("2. Audit Delivery Packages")
-        print("3. Rebuild Platform Packages")
+        print("3. Rebuild One Platform")
         print("4. Create Delivery ZIPs")
         print("5. Create Safety Snapshot")
         print("6. Open Project Delivery Folder")
@@ -5637,8 +5637,7 @@ def production_release_center():
         elif choice == "2":
             audit_delivery_packages(project)
         elif choice == "3":
-            generate_all_platform_packages(project)
-            print("\nPlatform packages rebuilt.")
+            v12_rebuild_one_platform(project)
         elif choice == "4":
             results = generate_all_platform_packages(project)
             idx = create_delivery_index(project, results)
@@ -8104,7 +8103,7 @@ def import_finished_pdf_v111():
 #     pypdf embedded-image extraction remains the zero-extra-dependency path.
 # ============================================================
 
-FACTORY_VERSION = "11.8"
+FACTORY_VERSION = "12.1"
 PLATFORM_ENGINE_VERSION = "4.6"
 UNIVERSAL_PUBLISHING_VERSION = "2.0"
 
@@ -9392,61 +9391,344 @@ def platform_center():
 
 
 
+
+def _v12_state_path():
+    return FACTORY / "factory_v12_state.json"
+
+
+def _v12_load_state():
+    path = _v12_state_path()
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            pass
+    return {}
+
+
+def _v12_save_state(data):
+    save_json(_v12_state_path(), data)
+
+
+def v12_recent_projects(limit=12):
+    rows = []
+    if PROJECTS.exists():
+        for item in PROJECTS.iterdir():
+            if not item.is_dir() or item.name.startswith("_"):
+                continue
+            try:
+                stamp = item.stat().st_mtime
+            except OSError:
+                continue
+            rows.append((stamp, item))
+    return [item for _, item in sorted(rows, reverse=True)[:limit]]
+
+
+def v12_project_summary(project):
+    master = find_master_pdf(project)
+    delivery = project / "DELIVERY"
+    reports = project / "REPORTS"
+    audit = project / "FINAL_DELIVERY_AUDIT.json"
+    if not audit.exists():
+        audit = reports / "FINAL_DELIVERY_AUDIT.json"
+    status = "NOT RELEASED"
+    if audit.exists():
+        try:
+            data = json.loads(audit.read_text(encoding="utf-8"))
+            status = data.get("final_status", data.get("status", "AUDITED"))
+        except Exception:
+            status = "AUDITED"
+    return {
+        "name": project.name,
+        "path": str(project),
+        "master": bool(master),
+        "delivery": delivery.exists(),
+        "reports": reports.exists(),
+        "status": status,
+        "modified": datetime.fromtimestamp(project.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+    }
+
+
+def v12_choose_recent_project():
+    projects = v12_recent_projects()
+    if not projects:
+        print("\nNo projects found.")
+        return None
+    print("\nRECENT PROJECTS")
+    print("-" * 78)
+    for i, project in enumerate(projects, 1):
+        info = v12_project_summary(project)
+        print(f"{i:>2}. {info['name'][:42]:<42} {info['status']:<16} {info['modified']}")
+    raw = input("\nSelect project number, or Enter to cancel: ").strip()
+    if not raw:
+        return None
+    try:
+        selected = projects[int(raw) - 1]
+        _v12_save_state({**_v12_load_state(), "active_project": str(selected)})
+        return selected
+    except (ValueError, IndexError):
+        print("Invalid selection.")
+        return None
+
+
+def v12_active_project():
+    state = _v12_load_state()
+    value = state.get("active_project")
+    if value:
+        project = Path(value)
+        if project.exists() and project.is_dir():
+            return project
+    return None
+
+
+def v12_set_active_project():
+    project = v12_choose_recent_project()
+    if project:
+        print(f"\nActive project set to: {project.name}")
+    return project
+
+
+def v12_open_folder(path):
+    path = Path(path)
+    if not path.exists():
+        print(f"\nFolder does not exist: {path}")
+        return False
+    try:
+        os.startfile(str(path))
+        print(f"\nOpened: {path}")
+        return True
+    except Exception as error:
+        print(f"\nCould not open folder: {error}")
+        print(path)
+        return False
+
+
+def _v12_audit_state(project):
+    """Return normalized final-audit status plus error/warning counts."""
+    report = Path(project) / "REPORTS" / "FINAL_DELIVERY_AUDIT.json"
+    if not report.exists():
+        report = Path(project) / "FINAL_DELIVERY_AUDIT.json"
+    if not report.exists():
+        return None
+    try:
+        data = json.loads(report.read_text(encoding="utf-8"))
+        platforms = data.get("platforms") or {}
+        total_errors = data.get("total_errors")
+        total_warnings = data.get("total_warnings")
+        if total_errors is None:
+            total_errors = sum(len(v.get("errors", [])) for v in platforms.values() if isinstance(v, dict))
+        if total_warnings is None:
+            total_warnings = sum(len(v.get("warnings", [])) for v in platforms.values() if isinstance(v, dict))
+        status = str(
+            data.get("final_status",
+            data.get("overall_status",
+            data.get("status", "")))
+        ).upper()
+        return {
+            "status": status,
+            "errors": int(total_errors or 0),
+            "warnings": int(total_warnings or 0),
+            "path": report,
+        }
+    except Exception:
+        return {"status": "UNKNOWN", "errors": 0, "warnings": 0, "path": report}
+
+
+def v12_next_action(project):
+    if not project:
+        return "Select or import a finished PDF to begin."
+    master = find_master_pdf(project)
+    if not master:
+        return "Import or select a finished PDF."
+    delivery = Path(project) / "DELIVERY"
+    audit = _v12_audit_state(project)
+    if not audit:
+        return "Run the Production Release Center or final delivery audit."
+    if audit["errors"] > 0:
+        return f"Fix {audit['errors']} final-audit error(s) before publishing."
+    if audit["warnings"] > 0:
+        return f"Review {audit['warnings']} final-audit warning(s) before publishing."
+    if audit["status"] in {"READY", "PASS", "PASSED"} and delivery.exists():
+        return "Production release is complete. Ready for marketplace upload."
+    if not delivery.exists():
+        return "Create delivery ZIPs and release packages."
+    return "Review the final delivery audit report."
+
+
+def v12_active_dashboard():
+    project = v12_active_project() or v12_choose_recent_project()
+    if not project:
+        return
+    info = v12_project_summary(project)
+    print("\nACTIVE PROJECT DASHBOARD")
+    print("=" * 78)
+    print(f"Project:       {info['name']}")
+    print(f"Location:      {info['path']}")
+    print(f"MASTER PDF:    {'PASS' if info['master'] else 'MISSING'}")
+    print(f"Delivery:      {'PRESENT' if info['delivery'] else 'MISSING'}")
+    print(f"Reports:       {'PRESENT' if info['reports'] else 'MISSING'}")
+    print(f"Release:       {info['status']}")
+    print(f"What's next:   {v12_next_action(project)}")
+    print("=" * 78)
+    print("1. Quick release this project")
+    print("2. Rebuild one platform")
+    print("3. Open Delivery")
+    print("4. Open Reports")
+    print("5. Create snapshot")
+    print("6. Return")
+    choice = input("\nChoose: ").strip()
+    if choice == "1":
+        production_release_center()
+    elif choice == "2":
+        v12_rebuild_one_platform(project)
+    elif choice == "3":
+        v12_open_folder(project / "DELIVERY")
+    elif choice == "4":
+        v12_open_folder(project / "REPORTS")
+    elif choice == "5":
+        try:
+            print(f"Snapshot: {create_project_snapshot(project)}")
+        except Exception as error:
+            print(f"ERROR: {error}")
+
+
+def v12_rebuild_one_platform(project=None):
+    project = project or v12_active_project() or choose_project()
+    if not project:
+        return
+    print("\nREBUILD ONE PLATFORM")
+    print("1. KDP\n2. Gumroad\n3. Payhip\n4. Digital PDF\n5. All platforms\n6. Cancel")
+    choice = input("\nChoose: ").strip()
+    names = {"1": "KDP", "2": "Gumroad", "3": "Payhip", "4": "Digital PDF"}
+    if choice in names:
+        generate_platform_package(project, names[choice])
+    elif choice == "5":
+        generate_all_platform_packages(project)
+
+
+def v12_quick_publish():
+    print("\nQUICK PUBLISH")
+    print("1. Select an existing project")
+    print("2. Import/select a finished PDF")
+    print("3. Use active project")
+    choice = input("\nChoose: ").strip()
+    if choice == "2":
+        import_finished_pdf_v111()
+        return
+    project = v12_active_project() if choice == "3" else v12_choose_recent_project()
+    if not project:
+        return
+    _v12_save_state({**_v12_load_state(), "active_project": str(project)})
+    production_release_center()
+
+
+def v12_recent_projects_menu():
+    project = v12_choose_recent_project()
+    if project:
+        v12_active_dashboard()
+
+
+def v12_cleanup_menu():
+    project = v12_active_project() or choose_project()
+    if not project:
+        return
+    print("\nSAFE CLEANUP")
+    print("This removes only temporary render/cache folders. MASTER, delivery, reports, and backups are protected.")
+    targets = [project / "_TEMP", project / "TEMP", project / "CACHE", project / "RENDER_CACHE"]
+    existing = [p for p in targets if p.exists()]
+    if not existing:
+        print("No approved temporary folders found.")
+        return
+    for target in existing:
+        print(f"  - {target}")
+    if input("\nType CLEAN to continue: ").strip().upper() != "CLEAN":
+        print("Cleanup cancelled.")
+        return
+    for target in existing:
+        try:
+            shutil.rmtree(target)
+            print(f"Removed: {target}")
+        except Exception as error:
+            print(f"Could not remove {target}: {error}")
+
+
 def main():
-    """v11.1 main menu with the finished-PDF publishing workflow exposed directly."""
+    """Coloring Book Factory v12.0 Production UX & Automation Center."""
     PROJECTS.mkdir(exist_ok=True)
     while True:
-        print("\n" + "=" * 68)
+        active = v12_active_project()
+        print("\n" + "=" * 78)
         print(f"        COLORING BOOK FACTORY v{FACTORY_VERSION}")
-        print("=" * 68)
-        print("1. Build a book")
-        print("2. Create a new project")
-        print("3. Import Artwork Folder -> Create Book")
-        print("4. Build ALL books")
-        print("5. Production Queue")
-        print("6. Production Dashboard")
-        print("7. Worlds & Universes")
-        print("8. Production Center")
-        print("9.  PUBLISH / CONVERT FINISHED PDF")
-        print("10. Platform & Publishing Center")
-        print("11. Clone a project from template")
-        print("12. PRODUCTION RELEASE CENTER")
-        print("13. Exit")
-        print("\n9 = Drop/select a finished PDF and build the platform packages automatically.")
-        choice = input("\nChoose: ").strip()
-
-        if choice == "1":
+        print("=" * 78)
+        print(f"Active project: {active.name if active else 'None selected'}")
+        print("1. QUICK PUBLISH FINISHED PDF")
+        print("2. Recent Projects")
+        print("3. Active Project Dashboard")
+        print("4. Build a book")
+        print("5. Create a new project")
+        print("6. Import Artwork Folder -> Create Book")
+        print("7. Build ALL books")
+        print("8. Production Queue")
+        print("9. Production Dashboard")
+        print("10. Worlds & Universes")
+        print("11. Production Center")
+        print("12. Platform & Publishing Center")
+        print("13. Clone a project from template")
+        print("14. PRODUCTION RELEASE CENTER")
+        print("15. Rebuild One Platform")
+        print("16. Safe Cleanup")
+        print("17. Factory Health / Self-Test")
+        print("18. Set Active Project")
+        print("19. Exit")
+        print("\nShortcuts: P=Quick Publish, R=Recent, A=Active, D=Delivery, H=Health, Q=Quit")
+        choice = input("\nChoose: ").strip().upper()
+        if choice == "P" or choice == "1":
+            v12_quick_publish()
+        elif choice == "R" or choice == "2":
+            v12_recent_projects_menu()
+        elif choice == "A" or choice == "3":
+            v12_active_dashboard()
+        elif choice == "4":
             project = choose_project()
             if project: build_book(project)
-            input("\nPress Enter to return to menu...")
-        elif choice == "2":
-            create_project(); input("\nPress Enter to return to menu...")
-        elif choice == "3":
-            import_artwork_folder(); input("\nPress Enter to return to menu...")
-        elif choice == "4":
-            bulk_build(); input("\nPress Enter to return to menu...")
         elif choice == "5":
-            production_queue_menu(); input("\nPress Enter to return to menu...")
+            create_project()
         elif choice == "6":
-            production_dashboard(); input("\nPress Enter to return to menu...")
+            import_artwork_folder()
         elif choice == "7":
-            world_engine_center_v9(); input("\nPress Enter to return to menu...")
+            bulk_build()
         elif choice == "8":
-            production_center(); input("\nPress Enter to return to menu...")
+            production_queue_menu()
         elif choice == "9":
-            import_finished_pdf_v111(); input("\nPress Enter to return to menu...")
+            production_dashboard()
         elif choice == "10":
-            platform_center(); input("\nPress Enter to return to menu...")
+            world_engine_center_v9()
         elif choice == "11":
-            clone_project_from_template(); input("\nPress Enter to return to menu...")
+            production_center()
         elif choice == "12":
-            production_release_center()
+            platform_center()
         elif choice == "13":
+            clone_project_from_template()
+        elif choice == "14":
+            production_release_center()
+        elif choice == "15":
+            v12_rebuild_one_platform()
+        elif choice == "16":
+            v12_cleanup_menu()
+        elif choice == "17" or choice == "H":
+            run_platform_self_test()
+        elif choice == "18":
+            v12_set_active_project()
+        elif choice == "D":
+            project = v12_active_project() or choose_project()
+            if project: v12_open_folder(project / "DELIVERY")
+        elif choice == "Q" or choice == "19":
             print("\nGoodbye.")
             break
         else:
             print("\nInvalid choice.")
+        input("\nPress Enter to continue...")
 
 if __name__ == "__main__":
-
     main()
