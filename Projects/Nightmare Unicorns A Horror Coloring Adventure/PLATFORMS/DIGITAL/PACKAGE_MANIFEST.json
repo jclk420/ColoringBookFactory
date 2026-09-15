@@ -1,27 +1,29 @@
 {
-    "schema_version": 4,
-    "factory_version": "11.1",
-    "platform_engine_version": "4.0",
-    "universal_publishing_version": "1.1",
+    "schema_version": 5,
+    "factory_version": "11.8",
+    "platform_engine_version": "4.6",
+    "universal_publishing_version": "2.0",
     "platform": "Digital PDF",
     "status": "READY",
     "project": "Nightmare Unicorns A Horror Coloring Adventure",
     "title": "NightmareUnicornsFinished",
-    "generated": "2026-09-11T05:17:18",
+    "generated": "2026-09-15T08:56:35",
     "master_pdf": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
     "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
     "variant_mode": "copy",
     "files": [
-        "NightmareUnicornsFinished_DIGITAL.pdf",
-        "PREVIEW_SHEET.png",
         "METADATA.json",
-        "PLATFORM_PREFLIGHT.json"
+        "NightmareUnicornsFinished_DIGITAL.pdf",
+        "PACKAGE_MANIFEST.json",
+        "PLATFORM_PREFLIGHT.json",
+        "PREVIEW_SHEET.png"
     ],
     "file_hashes": {
+        "METADATA.json": "d0f139b640dc8a730cd3460458f824131ab53ca6db1de142051ec997723ce4d6",
         "NightmareUnicornsFinished_DIGITAL.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
-        "PREVIEW_SHEET.png": "b6a0b043867a96ed92368b070198a17eaae89fe0092908c7cff8ddb8880fdb18",
-        "METADATA.json": "49247bfff2f065d651ae09b9311f150d4891594083c85eae9126cffd0e6e1d78",
-        "PLATFORM_PREFLIGHT.json": "1448c78d9cf6150dacf7ef58c41206d52bddbe1e142ae13a73d7d757fd7069e4"
+        "PACKAGE_MANIFEST.json": "7020b402f61bec45b46b77539a058b8917ffe777f2493af240df17c906b9429a",
+        "PLATFORM_PREFLIGHT.json": "2064a94b1d7f1a075825f324848cc530b8be231b13e6caa64a17b3d02b8c8ca5",
+        "PREVIEW_SHEET.png": "b6a0b043867a96ed92368b070198a17eaae89fe0092908c7cff8ddb8880fdb18"
     },
     "warnings": [],
     "preflight": "PLATFORM_PREFLIGHT.json"

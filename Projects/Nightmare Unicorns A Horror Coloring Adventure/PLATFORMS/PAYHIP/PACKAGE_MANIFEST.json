@@ -1,31 +1,33 @@
 {
-    "schema_version": 4,
-    "factory_version": "11.1",
-    "platform_engine_version": "4.0",
-    "universal_publishing_version": "1.1",
+    "schema_version": 5,
+    "factory_version": "11.8",
+    "platform_engine_version": "4.6",
+    "universal_publishing_version": "2.0",
     "platform": "Payhip",
     "status": "READY",
     "project": "Nightmare Unicorns A Horror Coloring Adventure",
     "title": "NightmareUnicornsFinished",
-    "generated": "2026-09-11T05:17:17",
+    "generated": "2026-09-15T08:56:34",
     "master_pdf": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
     "master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
     "variant_mode": "copy",
     "files": [
-        "NightmareUnicornsFinished_PAYHIP.pdf",
-        "PREVIEW_SHEET.png",
         "METADATA.json",
+        "NightmareUnicornsFinished_PAYHIP.pdf",
+        "PACKAGE_MANIFEST.json",
+        "PLATFORM_PREFLIGHT.json",
+        "PREVIEW_SHEET.png",
         "PRODUCT_DESCRIPTION.txt",
-        "README.txt",
-        "PLATFORM_PREFLIGHT.json"
+        "README.txt"
     ],
     "file_hashes": {
+        "METADATA.json": "a471b3165542b55a4d090c2c141e6cd89ff969bf734452dbbf3d7db483c74c7d",
         "NightmareUnicornsFinished_PAYHIP.pdf": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+        "PACKAGE_MANIFEST.json": "f7a9b116160422745732f595b1a3d01e780fd0936375e51b9069660fa8ddab8e",
+        "PLATFORM_PREFLIGHT.json": "e10602239891f2ab5ba28294ec777d4fc0fe31267f5c76406b919f5e89848167",
         "PREVIEW_SHEET.png": "b6a0b043867a96ed92368b070198a17eaae89fe0092908c7cff8ddb8880fdb18",
-        "METADATA.json": "a22d8c4d5adb9c4bc893924973110a20476b585bc249c2c26c81e199a8e63d38",
         "PRODUCT_DESCRIPTION.txt": "a50f266b7eaea393c96ef1c41031ecd5bad54c554d719232bae7a7b89613480b",
-        "README.txt": "6e5cbe46448b4d595fef6f6a0c4251d1167016081948f97faa827533fee59d58",
-        "PLATFORM_PREFLIGHT.json": "792859e876c36b113bad4f0e4bacb5bb088315b7914826332abc2eaf886fb00f"
+        "README.txt": "6e5cbe46448b4d595fef6f6a0c4251d1167016081948f97faa827533fee59d58"
     },
     "warnings": [],
     "preflight": "PLATFORM_PREFLIGHT.json"

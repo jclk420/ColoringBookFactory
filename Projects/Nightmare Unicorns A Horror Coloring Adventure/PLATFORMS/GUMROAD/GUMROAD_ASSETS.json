@@ -1,0 +1,125 @@
+{
+    "schema_version": 1,
+    "factory_version": "11.8",
+    "gumroad_requirements": {
+        "cover_min_width_px": 1280,
+        "cover_min_height_px": 720,
+        "cover_min_dpi": 72,
+        "cover_max_bytes": 52428800,
+        "cover_max_mb_decimal": 50,
+        "product_thumbnail_min_width_px": 600,
+        "product_thumbnail_min_height_px": 600,
+        "max_covers": 8
+    },
+    "source_master_sha256": "3f50b4f670b2a4a960513c81a88d15fcf9cce106d14944d54a8d9a8f6540119d",
+    "source_master": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure\\MASTER\\NightmareUnicornsFinished_MASTER.pdf",
+    "rendering": {
+        "renderer": [
+            "PDFium/pypdfium2"
+        ],
+        "candidate_count": 20,
+        "selected_count": 4,
+        "selected_scores": {
+            "6": 0.0,
+            "15": 0.0,
+            "24": 0.0,
+            "33": 0.0
+        }
+    },
+    "selected_preview_pages": [
+        6,
+        15,
+        24,
+        33
+    ],
+    "cover": "cover.png",
+    "product_thumbnail": "thumbnail.png",
+    "preview_images": [
+        "thumb-01.png",
+        "thumb-02.png",
+        "thumb-03.png",
+        "thumb-04.png"
+    ],
+    "asset_dimensions": {
+        "cover": {
+            "width": 1280,
+            "height": 720,
+            "dpi": [
+                72.01,
+                72.01
+            ],
+            "bytes": 328798
+        },
+        "product_thumbnail": {
+            "width": 600,
+            "height": 600,
+            "dpi": [
+                72.01,
+                72.01
+            ],
+            "bytes": 412876
+        },
+        "previews": {
+            "thumb-01.png": {
+                "width": 600,
+                "height": 600,
+                "dpi": [
+                    72.01,
+                    72.01
+                ],
+                "bytes": 412876
+            },
+            "thumb-02.png": {
+                "width": 600,
+                "height": 600,
+                "dpi": [
+                    72.01,
+                    72.01
+                ],
+                "bytes": 113523
+            },
+            "thumb-03.png": {
+                "width": 600,
+                "height": 600,
+                "dpi": [
+                    72.01,
+                    72.01
+                ],
+                "bytes": 472381
+            },
+            "thumb-04.png": {
+                "width": 600,
+                "height": 600,
+                "dpi": [
+                    72.01,
+                    72.01
+                ],
+                "bytes": 119515
+            }
+        }
+    },
+    "rendered_candidate_count": 20,
+    "rendered_pages": [
+        6,
+        9,
+        12,
+        15,
+        18,
+        21,
+        24,
+        27,
+        30,
+        33,
+        35,
+        38,
+        41,
+        44,
+        47,
+        50,
+        53,
+        56,
+        59,
+        62
+    ],
+    "warnings": []
+}

@@ -80,11 +80,8 @@ def load_json(path):
 
 
 def save_json(path, data):
-    """Write JSON safely, including Windows Path objects produced by release workflows."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False, default=str)
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
 
 def load_optional_book_config(source_folder):
@@ -5430,236 +5427,6 @@ def platform_center():
 # ============================================================
 
 
-
-# ============================================================
-# v11.7 PRODUCTION RELEASE / DELIVERY AUDIT CENTER
-# ============================================================
-
-RELEASE_ENGINE_VERSION = "1.1"
-
-def _release_file_record(path, root=None):
-    path = Path(path)
-    record = {
-        "name": path.name,
-        "relative_path": str(path.relative_to(root)) if root else str(path),
-        "size_bytes": path.stat().st_size if path.exists() else 0,
-        "sha256": file_hash(path) if path.is_file() else None,
-        "exists": path.exists(),
-    }
-    return record
-
-
-def audit_delivery_packages(project):
-    """Deeply audit final platform packages and delivery ZIPs without modifying them."""
-    project = Path(project)
-    settings = load_project_settings_safe(project)
-    title = settings.get("title", project.name)
-    profiles = load_platform_profiles()
-    delivery = project / DELIVERY_DIRNAME
-    results = {}
-    total_errors = 0
-    total_warnings = 0
-
-    print("\n" + "=" * 78)
-    print("FINAL DELIVERY AUDIT")
-    print("=" * 78)
-    print(f"Project: {title}")
-    print(f"Release Engine: {RELEASE_ENGINE_VERSION}")
-    print("MASTER remains untouched during this audit.")
-    print("-" * 78)
-
-    master = find_master_pdf(project)
-    master_hash = file_hash(master) if master and master.exists() else None
-    if not master:
-        print("MASTER: BLOCKED — no MASTER PDF found")
-        total_errors += 1
-
-    for name, profile in profiles.items():
-        if not profile.get("enabled", False):
-            continue
-        root = project / PLATFORM_DIRNAME / profile.get("output_dir", name.upper())
-        errors = []
-        warnings = []
-        files = []
-
-        manifest = root / "PACKAGE_MANIFEST.json"
-        if not root.exists():
-            errors.append("Platform package directory is missing.")
-        elif not manifest.exists():
-            errors.append("PACKAGE_MANIFEST.json is missing.")
-        else:
-            try:
-                data = load_json(manifest)
-                if not isinstance(data, dict):
-                    errors.append("PACKAGE_MANIFEST.json is not a JSON object.")
-            except Exception as error:
-                errors.append(f"PACKAGE_MANIFEST.json cannot be read: {error}")
-
-        if root.exists():
-            for item in sorted(root.rglob("*")):
-                if item.is_file():
-                    rec = _release_file_record(item, root)
-                    files.append(rec)
-                    if rec["size_bytes"] <= 0:
-                        errors.append(f"Zero-byte file: {item.name}")
-
-        pdfs = [Path(x["relative_path"]) for x in files if str(x["relative_path"]).lower().endswith(".pdf")]
-        if master_hash and root.exists():
-            package_pdfs = [x for x in root.rglob("*.pdf") if x.is_file()]
-            if package_pdfs and name in {"Digital PDF", "Payhip", "Gumroad"}:
-                # Platform packages may legitimately transform assets, so only
-                # flag missing PDFs; do not require hash equality here.
-                pass
-
-        zip_name = f"{kdp_safe_filename(title)}_{name.replace(' ', '_').upper()}_PACKAGE.zip"
-        zip_path = delivery / zip_name
-        zip_record = None
-        if zip_path.exists():
-            zip_record = _release_file_record(zip_path, delivery)
-            if zip_path.stat().st_size <= 0:
-                errors.append("Delivery ZIP is zero bytes.")
-            try:
-                with zipfile.ZipFile(zip_path, "r") as zf:
-                    bad = zf.testzip()
-                    if bad:
-                        errors.append(f"ZIP integrity failure: {bad}")
-                    names = zf.namelist()
-                    if "PACKAGE_MANIFEST.json" not in names:
-                        errors.append("Delivery ZIP is missing PACKAGE_MANIFEST.json.")
-            except zipfile.BadZipFile:
-                errors.append("Delivery ZIP is corrupt or unreadable.")
-        elif root.exists() and manifest.exists():
-            warnings.append("Delivery ZIP has not been created yet.")
-
-        status = "BLOCKED" if errors else ("READY_WITH_WARNINGS" if warnings else "READY")
-        total_errors += len(errors)
-        total_warnings += len(warnings)
-        results[name] = {
-            "status": status,
-            "package": str(root),
-            "file_count": len(files),
-            "files": files,
-            "delivery_zip": zip_record,
-            "errors": errors,
-            "warnings": warnings,
-        }
-        print(f"{name:<16} {status} | files={len(files)} | ZIP={'PASS' if zip_record else 'MISSING'}")
-        for e in errors: print(f"  ERROR: {e}")
-        for w in warnings: print(f"  WARNING: {w}")
-
-    overall = "BLOCKED" if total_errors else ("REVIEW" if total_warnings else "READY")
-    report = project / "REPORTS" / "FINAL_DELIVERY_AUDIT.json"
-    save_json(report, {
-        "schema_version": 1,
-        "factory_version": FACTORY_VERSION,
-        "release_engine_version": RELEASE_ENGINE_VERSION,
-        "generated": datetime.now().isoformat(timespec="seconds"),
-        "project": project.name,
-        "title": title,
-        "master": {"path": str(master or ""), "sha256": master_hash},
-        "overall_status": overall,
-        "total_errors": total_errors,
-        "total_warnings": total_warnings,
-        "platforms": results,
-    })
-    print("-" * 78)
-    print(f"FINAL DELIVERY STATUS: {overall}")
-    print(f"Errors: {total_errors} | Warnings: {total_warnings}")
-    print(f"Audit report: {report}")
-    return results
-
-
-def create_release_bundle(project):
-    """Generate all enabled packages, create delivery ZIPs, audit them, and write a release report."""
-    project = Path(project)
-    print("\n" + "=" * 78)
-    print("PRODUCTION RELEASE BUILD")
-    print("=" * 78)
-    print("This is the one-stop production workflow: packages -> ZIPs -> audit -> release report.")
-
-    master = find_master_pdf(project)
-    if not master:
-        print("ERROR: No MASTER PDF exists. Build/import the book first.")
-        return None
-
-    results = generate_all_platform_packages(project)
-    delivery_index = create_delivery_index(project, results)
-    audit = audit_delivery_packages(project)
-    snapshot = create_project_snapshot(project)
-
-    report = project / "REPORTS" / "PRODUCTION_RELEASE_REPORT.json"
-    save_json(report, {
-        "schema_version": 1,
-        "factory_version": FACTORY_VERSION,
-        "release_engine_version": RELEASE_ENGINE_VERSION,
-        "generated": datetime.now().isoformat(timespec="seconds"),
-        "project": project.name,
-        "master_sha256": file_hash(master),
-        "platform_results": results,
-        "delivery_index": str(delivery_index),
-        "delivery_audit": audit,
-        "snapshot": str(snapshot),
-    })
-
-    print("\n" + "=" * 78)
-    print("PRODUCTION RELEASE COMPLETE")
-    print("=" * 78)
-    print(f"Release report: {report}")
-    print(f"Delivery index: {delivery_index}")
-    print(f"Safety snapshot: {snapshot}")
-    print(f"Final delivery status: {audit and ('BLOCKED' if any(v.get('errors') for v in audit.values()) else ('REVIEW' if any(v.get('warnings') for v in audit.values()) else 'READY'))}")
-    return {"results": results, "audit": audit, "report": report, "snapshot": snapshot}
-
-
-def production_release_center():
-    """User-friendly control center for final production and delivery."""
-    while True:
-        print("\n" + "=" * 78)
-        print("PRODUCTION RELEASE CENTER")
-        print("=" * 78)
-        print("1. ONE-CLICK PRODUCTION RELEASE (packages + ZIPs + audit + snapshot)")
-        print("2. Audit Delivery Packages")
-        print("3. Rebuild Platform Packages")
-        print("4. Create Delivery ZIPs")
-        print("5. Create Safety Snapshot")
-        print("6. Open Project Delivery Folder")
-        print("7. Open Project Reports Folder")
-        print("8. Back to Main Menu")
-        choice = input("\nChoose: ").strip()
-        if choice == "8":
-            return
-        project = choose_project() if choice in {"1","2","3","4","5","6","7"} else None
-        if not project:
-            if choice not in {"8"}: print("No project selected.")
-            continue
-        if choice == "1":
-            create_release_bundle(project)
-        elif choice == "2":
-            audit_delivery_packages(project)
-        elif choice == "3":
-            generate_all_platform_packages(project)
-            print("\nPlatform packages rebuilt.")
-        elif choice == "4":
-            results = generate_all_platform_packages(project)
-            idx = create_delivery_index(project, results)
-            print(f"\nDelivery ZIP generation complete. Index: {idx}")
-        elif choice == "5":
-            snap = create_project_snapshot(project)
-            print(f"\nSafety snapshot created: {snap}")
-        elif choice == "6":
-            target = project / DELIVERY_DIRNAME
-            target.mkdir(exist_ok=True)
-            try: os.startfile(str(target))
-            except Exception: print(f"Delivery folder: {target}")
-        elif choice == "7":
-            target = project / "REPORTS"
-            target.mkdir(exist_ok=True)
-            try: os.startfile(str(target))
-            except Exception: print(f"Reports folder: {target}")
-        input("\nPress Enter to return to Release Center...")
-
-
-
 def main():
 
     PROJECTS.mkdir(
@@ -8104,9 +7871,9 @@ def import_finished_pdf_v111():
 #     pypdf embedded-image extraction remains the zero-extra-dependency path.
 # ============================================================
 
-FACTORY_VERSION = "11.8"
-PLATFORM_ENGINE_VERSION = "4.6"
-UNIVERSAL_PUBLISHING_VERSION = "2.0"
+FACTORY_VERSION = "11.4"
+PLATFORM_ENGINE_VERSION = "4.3"
+UNIVERSAL_PUBLISHING_VERSION = "1.2"
 
 GUMROAD_COVER_WIDTH = 1280
 GUMROAD_COVER_HEIGHT = 720
@@ -9410,8 +9177,7 @@ def main():
         print("9.  PUBLISH / CONVERT FINISHED PDF")
         print("10. Platform & Publishing Center")
         print("11. Clone a project from template")
-        print("12. PRODUCTION RELEASE CENTER")
-        print("13. Exit")
+        print("12. Exit")
         print("\n9 = Drop/select a finished PDF and build the platform packages automatically.")
         choice = input("\nChoose: ").strip()
 
@@ -9440,8 +9206,6 @@ def main():
         elif choice == "11":
             clone_project_from_template(); input("\nPress Enter to return to menu...")
         elif choice == "12":
-            production_release_center()
-        elif choice == "13":
             print("\nGoodbye.")
             break
         else:
