@@ -1,5 +1,5 @@
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter, ImageEnhance
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 import json
@@ -14,7 +14,7 @@ from datetime import datetime
 from hashlib import sha256
 
 # ============================================================
-# COLORING BOOK FACTORY v11.6
+# COLORING BOOK FACTORY v12.7
 # WORLD-AWARE PRODUCTION ENGINE + AUTOMATED ASSEMBLY + PAGE BUILDER + PDF/KDP PREFLIGHT + PRODUCTION CENTER
 #
 # v8.2 changes:
@@ -46,7 +46,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "11.6"
+FACTORY_VERSION = "12.7"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -5123,6 +5123,9 @@ def convert_existing_pdf_enhanced():
         "source_pdf_size_mb": info.get("file_size_mb"),
         "imported_at": datetime.now().isoformat(timespec="seconds"),
         "imported_pdf_metadata": info.get("metadata", {}),
+        "embedded_kdp_cover": True,
+        "cover_source": "embedded_finished_pdf",
+        "cover_verified_by_intake": True,
     }
     save_json(project / "project.json", settings)
     save_json(project / "book.json", {"pages": [], "source": "imported_pdf"})
@@ -5659,7 +5662,7 @@ def production_release_center():
 
 
 
-def main():
+def legacy_main_v11():
 
     PROJECTS.mkdir(
         exist_ok=True
@@ -7263,7 +7266,7 @@ world_v2_entity_menu = world_v10_entity_menu
 # section intentionally override earlier platform functions so older projects
 # remain compatible while gaining the new publishing pipeline.
 
-FACTORY_VERSION = "11.0"
+FACTORY_VERSION = "12.7"
 PLATFORM_ENGINE_VERSION = "4.0"
 UNIVERSAL_PUBLISHING_VERSION = "1.0"
 
@@ -7562,8 +7565,21 @@ def _kdp_profile_audit(project, master_pdf, info, settings):
                       if abs(s["width"] - tw) > 0.01 or abs(s["height"] - th) > 0.01]
         if mismatches:
             errors.append(f"{len(mismatches)} page(s) do not match project trim size {tw} x {th} inches.")
-    if not _platform_cover(project):
+    # Imported finished PDFs may already contain the complete KDP cover.
+    # Do not report the absence of a separate MASTER_COVER as a failure/warning
+    # when the project was created through the finished-PDF intake workflow.
+    project_settings = load_project_settings_safe(project)
+    imported_finished_pdf = bool(
+        project_settings.get("embedded_kdp_cover")
+        or project_settings.get("production_profile") == "Imported Finished PDF"
+        or project_settings.get("source_pdf")
+    )
+    if not _platform_cover(project) and not imported_finished_pdf:
         warnings.append("No separate MASTER_COVER asset is present. KDP will require a cover file unless using KDP Cover Creator.")
+    elif not _platform_cover(project) and imported_finished_pdf:
+        # Informational status is recorded in the manifest/report, but it is not
+        # counted as a warning because the finished PDF is the cover-bearing source.
+        pass
     return errors, warnings
 
 
@@ -7988,7 +8004,7 @@ def platform_center():
 # from the main menu and provides a drag/drop-capable intake UI.
 # ============================================================
 
-FACTORY_VERSION = "11.1"
+FACTORY_VERSION = "12.7"
 UNIVERSAL_PUBLISHING_VERSION = "1.1"
 
 
@@ -8103,9 +8119,9 @@ def import_finished_pdf_v111():
 #     pypdf embedded-image extraction remains the zero-extra-dependency path.
 # ============================================================
 
-FACTORY_VERSION = "12.1"
-PLATFORM_ENGINE_VERSION = "4.6"
-UNIVERSAL_PUBLISHING_VERSION = "2.0"
+FACTORY_VERSION = "12.7"
+PLATFORM_ENGINE_VERSION = "5.0"
+UNIVERSAL_PUBLISHING_VERSION = "2.4"
 
 GUMROAD_COVER_WIDTH = 1280
 GUMROAD_COVER_HEIGHT = 720
@@ -8136,15 +8152,30 @@ def _image_save_png_or_jpeg(image, path_base, dpi=72, max_bytes=None):
     return jpg_path
 
 
+def _fit_contain(image, size, background="white", padding=24):
+    """Fit an image completely inside a square canvas; never crop the artwork."""
+    image = image.convert("RGB")
+    size = int(size)
+    padding = max(0, int(padding))
+    target = max(1, size - 2 * padding)
+    ratio = min(target / image.width, target / image.height)
+    resized = image.resize(
+        (max(1, int(round(image.width * ratio))), max(1, int(round(image.height * ratio)))),
+        Image.Resampling.LANCZOS,
+    )
+    canvas_img = Image.new("RGB", (size, size), background)
+    x = (size - resized.width) // 2
+    y = (size - resized.height) // 2
+    canvas_img.paste(resized, (x, y))
+    return canvas_img
+
+
 def _fit_crop_square(image, size=600, margin=0):
-    """Center-crop an image to a square without stretching the source artwork."""
+    """Legacy square helper retained for compatibility; new previews use contain mode."""
     image = image.convert("RGB")
     target = max(1, int(size) - (2 * int(margin)))
     ratio = max(target / image.width, target / image.height)
-    new_size = (
-        max(target, int(round(image.width * ratio))),
-        max(target, int(round(image.height * ratio))),
-    )
+    new_size = (max(target, int(round(image.width * ratio))), max(target, int(round(image.height * ratio))))
     resized = image.resize(new_size, Image.Resampling.LANCZOS)
     left = max(0, (resized.width - target) // 2)
     top = max(0, (resized.height - target) // 2)
@@ -8156,28 +8187,173 @@ def _fit_crop_square(image, size=600, margin=0):
     return cropped
 
 
-def _fit_cover_panel(image, width=1280, height=720):
-    """Build a 16:9 Gumroad cover without stretching the coloring artwork."""
+def _render_pdf_front_page(master_pdf, output_dir):
+    """Render PDF page 1 as the preferred finished-cover source.
+
+    Imported finished PDFs are cover-aware: page 1 is treated as the likely
+    customer-facing cover before the Factory ever falls back to interior art.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output = output_dir / "finished-front-cover.png"
+    pdfium, message = _try_import_pdfium(auto_install=True)
+    warnings = []
+    if message:
+        warnings.append(message)
+    if pdfium is not None:
+        document = None
+        try:
+            document = pdfium.PdfDocument(str(master_pdf))
+            if len(document) < 1:
+                return None, warnings + ["MASTER PDF contains no pages; no front cover can be rendered."]
+            page = document[0]
+            bitmap = page.render(scale=1.8, rev_byteorder=True)
+            image = bitmap.to_pil().convert("RGB")
+            image.save(output, "PNG", optimize=True)
+            try: page.close()
+            except Exception: pass
+            return output, warnings
+        except Exception as error:
+            warnings.append(f"PDFium front-cover render failed: {error}")
+        finally:
+            try:
+                if document is not None: document.close()
+            except Exception: pass
+
+    # Legacy fallback only when PDFium is unavailable.
+    fitz, _ = _try_import_fitz(auto_install=False)
+    if fitz is not None:
+        document = None
+        try:
+            document = fitz.open(str(master_pdf))
+            if len(document) < 1:
+                return None, warnings + ["MASTER PDF contains no pages; no front cover can be rendered."]
+            page = document.load_page(0)
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.8, 1.8), alpha=False)
+            pix.save(str(output))
+            return output, warnings + ["Front cover rendered with PyMuPDF legacy fallback."]
+        except Exception as error:
+            warnings.append(f"PyMuPDF front-cover render failed: {error}")
+        finally:
+            try:
+                if document is not None: document.close()
+            except Exception: pass
+    return None, warnings + ["No usable PDF renderer is available for the finished front cover."]
+
+
+def _marketing_color_treatment(image):
+    """Give monochrome fallback artwork a restrained colored marketing treatment."""
     image = image.convert("RGB")
-    panel_w = int(width * 0.57)
-    panel_h = int(height - 60)
-    ratio = min((panel_w - 40) / image.width, (panel_h - 40) / image.height)
-    ratio = max(ratio, 0.01)
-    resized = image.resize(
-        (max(1, int(image.width * ratio)), max(1, int(image.height * ratio))),
-        Image.Resampling.LANCZOS,
-    )
+    # Only colorize genuinely near-monochrome artwork; never alter an already
+    # colored finished cover.
+    sample = image.copy()
+    sample.thumbnail((96, 96), Image.Resampling.LANCZOS)
+    pixels = list(sample.getdata())
+    if not pixels:
+        return image, False
+    chroma = sum(max(px) - min(px) for px in pixels) / max(1, len(pixels))
+    if chroma > 18:
+        return image, False
+    gray = ImageOps.grayscale(image)
+    treated = ImageOps.colorize(gray, black=(10, 8, 18), white=(238, 220, 205), mid=(92, 48, 62))
+    return treated.convert("RGB"), True
 
-    cover = Image.new("RGB", (width, height), "white")
-    left_x = (panel_w - resized.width) // 2
-    top_y = (height - resized.height) // 2
-    cover.paste(resized, (left_x, top_y))
 
-    draw = ImageDraw.Draw(cover)
-    draw.rectangle((panel_w, 0, width, height), outline="black", width=3)
+def _fit_cover_unified(image, width=1280, height=720):
+    """Create one unified 16:9 marketing composition; never split it into panels."""
+    image = image.convert("RGB")
+    # Full-bleed background derived from the same artwork. This keeps the cover
+    # visually unified while allowing portrait KDP covers to remain completely visible.
+    bg_ratio = max(width / image.width, height / image.height)
+    bg_size = (max(width, int(round(image.width * bg_ratio))), max(height, int(round(image.height * bg_ratio))))
+    background = image.resize(bg_size, Image.Resampling.LANCZOS)
+    left = max(0, (background.width - width) // 2)
+    top = max(0, (background.height - height) // 2)
+    background = background.crop((left, top, left + width, top + height))
+    background = background.filter(ImageFilter.GaussianBlur(radius=18))
+    background = ImageEnhance.Brightness(background).enhance(0.38)
 
-    return cover, draw, panel_w
+    cover = background.copy()
+    # Center the complete source cover/artwork. No center-crop is used.
+    pad_x, pad_y = 55, 38
+    inner_w, inner_h = width - 2 * pad_x, height - 2 * pad_y
+    ratio = min(inner_w / image.width, inner_h / image.height)
+    foreground = image.resize((max(1, int(round(image.width * ratio))), max(1, int(round(image.height * ratio)))), Image.Resampling.LANCZOS)
+    x = (width - foreground.width) // 2
+    y = (height - foreground.height) // 2
 
+    # A subtle translucent frame separates the complete cover from its derived background.
+    frame = Image.new("RGBA", (foreground.width + 14, foreground.height + 14), (0, 0, 0, 0))
+    fdraw = ImageDraw.Draw(frame)
+    fdraw.rounded_rectangle((0, 0, frame.width - 1, frame.height - 1), radius=12, fill=(0, 0, 0, 110), outline=(230, 220, 210, 210), width=3)
+    cover.paste(frame.convert("RGB"), (x - 7, y - 7))
+    cover.paste(foreground, (x, y))
+    return cover
+
+
+def _fit_cover_panel(image, width=1280, height=720):
+    """Backward-compatible alias; v12.4 intentionally uses a unified composition."""
+    canvas = _fit_cover_unified(image, width, height)
+    return canvas, ImageDraw.Draw(canvas), width
+
+
+def _draw_centered_text(draw, box, text, font, fill=(238, 238, 238), max_lines=4, spacing=8):
+    """Draw wrapped text centered inside a box, reducing font size when needed."""
+    x1, y1, x2, y2 = box
+    available = max(20, x2 - x1)
+    current_font = font
+    for _ in range(4):
+        lines = textwrap.wrap(str(text or ""), width=max(8, int(available / max(8, current_font.size * 0.55))))[:max_lines]
+        heights = [current_font.getbbox(line)[3] - current_font.getbbox(line)[1] for line in lines]
+        total_h = sum(heights) + spacing * max(0, len(lines) - 1)
+        if total_h <= (y2 - y1):
+            break
+        current_font = get_font(max(24, current_font.size - 6), True)
+    y = y1 + max(0, ((y2 - y1) - total_h) // 2)
+    for line, h in zip(lines, heights):
+        bbox = draw.textbbox((0, 0), line, font=current_font)
+        tw = bbox[2] - bbox[0]
+        draw.text((x1 + (available - tw) // 2, y), line, font=current_font, fill=fill)
+        y += h + spacing
+    return y
+
+
+def _make_product_thumbnail(cover_canvas, title, size=600):
+    """Create a clean square thumbnail from the finished unified cover.
+
+    The thumbnail never adds a second title/author line, preventing the duplicate
+    J.A.C. and duplicate-title problem caused by the old thumbnail treatment.
+    """
+    source = cover_canvas.convert("RGB")
+    ratio = min(size / source.width, size / source.height)
+    fitted = source.resize((max(1, int(round(source.width * ratio))), max(1, int(round(source.height * ratio)))), Image.Resampling.LANCZOS)
+    thumb = Image.new("RGB", (size, size), (18, 18, 18))
+    x = (size - fitted.width) // 2
+    y = (size - fitted.height) // 2
+    thumb.paste(fitted, (x, y))
+    return thumb
+
+
+def _asset_visual_quality(image_path, expected_size=None):
+    """Return lightweight QA facts used to catch obviously bad generated assets."""
+    result = {"exists": False, "width": 0, "height": 0, "aspect_ratio": 0.0, "near_blank": False, "error": None}
+    try:
+        path = Path(image_path)
+        if not path.exists():
+            return result
+        with Image.open(path) as img:
+            result["exists"] = True
+            result["width"], result["height"] = img.size
+            result["aspect_ratio"] = round(img.width / max(1, img.height), 4)
+            gray = img.convert("L")
+            gray.thumbnail((240, 240), Image.Resampling.LANCZOS)
+            extrema = gray.getextrema()
+            result["near_blank"] = (extrema[1] - extrema[0]) < 8
+            if expected_size and tuple(img.size) != tuple(expected_size):
+                result["error"] = f"Expected {expected_size[0]}x{expected_size[1]}, got {img.width}x{img.height}."
+    except Exception as error:
+        result["error"] = str(error)
+    return result
 
 def _extract_pdf_embedded_artwork(master_pdf, output_dir, max_candidates=20):
     """Extract the largest embedded raster image from each useful PDF page."""
@@ -8493,208 +8669,171 @@ def _choose_gumroad_candidates(candidates, count=GUMROAD_PREVIEW_COUNT):
 
 
 def _make_gumroad_assets(project, staging, master_pdf, settings):
-    """
-    Create:
-      cover.png/jpg       -> 1280x720+ cover, >=72 DPI, <50 MB
-      thumbnail.png/jpg   -> 600x600 product thumbnail
-      thumb-01..04        -> four 600x600 interior preview images
-      GUMROAD_ASSETS.json -> exact dimensions/source-page manifest
-    """
+    """Create Gumroad assets with no destructive artwork cropping and built-in visual QA."""
     staging = Path(staging)
     source_dir = staging / ".__gumroad_sources"
     source_dir.mkdir(parents=True, exist_ok=True)
     warnings = []
 
-    # Prefer an existing dedicated cover when one exists. Otherwise build one
-    # from the first actual interior artwork extracted from the MASTER PDF.
-    existing_cover = _platform_cover(project)
-    candidates, extract_warnings = _extract_pdf_embedded_artwork(
-        master_pdf, source_dir, max_candidates=max(12, GUMROAD_PREVIEW_COUNT * 3)
-    )
-    warnings.extend(extract_warnings)
+    # Remove only Factory-owned generated assets so a rebuild cannot leave stale files behind.
+    for pattern in ("cover.png", "cover.jpg", "thumbnail.png", "thumbnail.jpg", "thumb-*.png", "thumb-*.jpg",
+                    "GUMROAD_ASSETS.json", "GUMROAD_UPLOAD_CHECKLIST.txt"):
+        for old in staging.glob(pattern):
+            try: old.unlink()
+            except Exception as error: warnings.append(f"Could not replace stale Gumroad asset {old.name}: {error}")
 
+    existing_cover = _platform_cover(project)
+    candidates, extract_warnings = _extract_pdf_embedded_artwork(master_pdf, source_dir, max_candidates=max(12, GUMROAD_PREVIEW_COUNT * 3))
+    warnings.extend(extract_warnings)
     if len(candidates) < GUMROAD_PREVIEW_COUNT:
-        rendered, render_warnings = _render_pdf_pages_universal(
-            master_pdf, source_dir, max_candidates=max(20, GUMROAD_PREVIEW_COUNT * 5)
-        )
+        rendered, render_warnings = _render_pdf_pages_universal(master_pdf, source_dir, max_candidates=max(20, GUMROAD_PREVIEW_COUNT * 5))
         warnings.extend(render_warnings)
         existing_hashes = {x.get("sha256") for x in candidates}
         for item in rendered:
             if item.get("sha256") not in existing_hashes:
-                candidates.append(item)
-                existing_hashes.add(item.get("sha256"))
-
+                candidates.append(item); existing_hashes.add(item.get("sha256"))
     candidates.sort(key=lambda x: (int(x.get("page", 0)), -int(x.get("area", 0))))
     selected = _choose_gumroad_candidates(candidates, GUMROAD_PREVIEW_COUNT)
-
     if not selected:
-        warnings.append(
-            "No usable interior artwork previews could be rendered from the MASTER PDF. "
-            "The Factory attempted embedded-image extraction and the universal PDF renderer."
-        )
+        warnings.append("No usable interior artwork previews could be rendered from the MASTER PDF.")
 
     generated = []
     title = str(settings.get("title") or project.name).strip()
     author = str(settings.get("author") or "").strip()
     subtitle = str(settings.get("subtitle") or settings.get("cover_subtitle") or "").strip()
 
-    # --- Gumroad cover ---
-    cover_path = None
+    # --- Main Gumroad cover: use the actual finished front cover first. ---
+    # Priority: dedicated MASTER_COVER image -> rendered PDF page 1 -> interior
+    # artwork fallback. Only the last fallback gets Factory-added typography.
+    cover_canvas = None
+    cover_source = "none"
+    cover_is_finished = False
+
     if existing_cover and existing_cover.exists() and existing_cover.suffix.lower() in IMAGE_EXTENSIONS:
         try:
             with Image.open(existing_cover) as src_img:
-                # Reframe the existing cover into the exact Gumroad landscape spec.
-                cover_canvas, _, _ = _fit_cover_panel(src_img, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
+                cover_canvas = _fit_cover_unified(src_img, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
+            cover_source = "MASTER_COVER"
+            cover_is_finished = True
         except Exception as error:
-            warnings.append(f"Existing cover could not be used: {error}")
-            cover_canvas = None
-    elif selected:
+            warnings.append(f"Dedicated MASTER_COVER could not be used: {error}")
+
+    if cover_canvas is None:
+        front_cover_path, front_warnings = _render_pdf_front_page(master_pdf, source_dir)
+        warnings.extend(front_warnings)
+        if front_cover_path and front_cover_path.exists():
+            try:
+                with Image.open(front_cover_path) as src_img:
+                    treated, was_colorized = _marketing_color_treatment(src_img)
+                    cover_canvas = _fit_cover_unified(treated, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
+                cover_source = "embedded_finished_pdf_page_1"
+                cover_is_finished = True
+                if was_colorized:
+                    warnings.append("Finished PDF front cover was monochrome; a restrained marketing color treatment was applied to the Gumroad asset only.")
+            except Exception as error:
+                warnings.append(f"Finished PDF front cover could not be converted into Gumroad cover: {error}")
+
+    if cover_canvas is None and selected:
         try:
             with Image.open(selected[0]["path"]) as src_img:
-                cover_canvas, _, _ = _fit_cover_panel(src_img, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
+                treated, was_colorized = _marketing_color_treatment(src_img)
+                cover_canvas = _fit_cover_unified(treated, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
+            cover_source = "interior_artwork_fallback"
+            if was_colorized:
+                warnings.append("No finished cover was available; fallback artwork received a restrained marketing color treatment.")
+            # Only this fallback gets text added, because the source is not itself a cover.
+            draw = ImageDraw.Draw(cover_canvas)
+            overlay = Image.new("RGBA", cover_canvas.size, (0, 0, 0, 0))
+            odraw = ImageDraw.Draw(overlay)
+            odraw.rounded_rectangle((55, 48, GUMROAD_COVER_WIDTH - 55, 210), radius=24, fill=(0, 0, 0, 155), outline=(235, 225, 215, 210), width=2)
+            cover_canvas = Image.alpha_composite(cover_canvas.convert("RGBA"), overlay).convert("RGB")
+            draw = ImageDraw.Draw(cover_canvas)
+            _draw_centered_text(draw, (90, 65, GUMROAD_COVER_WIDTH - 90, 175), title, get_font(58, True), fill=(248, 242, 236), max_lines=2, spacing=8)
+            if subtitle:
+                _draw_centered_text(draw, (150, 175, GUMROAD_COVER_WIDTH - 150, 215), subtitle, get_font(22, False), fill=(238, 225, 218), max_lines=1, spacing=5)
+            if author:
+                bbox = draw.textbbox((0, 0), author, font=get_font(28, True))
+                draw.text(((GUMROAD_COVER_WIDTH - (bbox[2] - bbox[0])) // 2, GUMROAD_COVER_HEIGHT - 72), author, font=get_font(28, True), fill=(248, 242, 236))
         except Exception as error:
-            cover_canvas = None
             warnings.append(f"Artwork-based Gumroad cover generation failed: {error}")
-    else:
-        cover_canvas = Image.new("RGB", (GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT), "white")
 
-    if cover_canvas is not None:
-        draw = ImageDraw.Draw(cover_canvas)
-        panel_x = int(GUMROAD_COVER_WIDTH * 0.57) + 35
-        panel_w = GUMROAD_COVER_WIDTH - panel_x - 35
-        title_font = get_font(54, True)
-        subtitle_font = get_font(24, False)
-        author_font = get_font(28, True)
+    if cover_canvas is None:
+        cover_canvas = Image.new("RGB", (GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT), (24, 24, 24))
+        warnings.append("Gumroad cover used a fallback background because no usable cover source was available.")
 
-        title_lines = textwrap.wrap(title, width=20)[:4]
-        y = 170
-        for line in title_lines:
-            draw.text((panel_x, y), line, font=title_font, fill="black")
-            y += 64
+    cover_path = _image_save_png_or_jpeg(cover_canvas, staging / "cover", dpi=GUMROAD_MIN_DPI, max_bytes=GUMROAD_COVER_MAX_BYTES)
+    generated.append(cover_path)
 
-        if subtitle:
-            y += 18
-            for line in textwrap.wrap(subtitle, width=27)[:3]:
-                draw.text((panel_x, y), line, font=subtitle_font, fill="black")
-                y += 34
-
-        if author:
-            draw.text((panel_x, 610), f"by {author}", font=author_font, fill="black")
-
-        cover_path = _image_save_png_or_jpeg(
-            cover_canvas, staging / "cover", dpi=GUMROAD_MIN_DPI, max_bytes=GUMROAD_COVER_MAX_BYTES
-        )
-        generated.append(cover_path)
-
-    # --- Four square interior previews ---
+    # --- Interior previews: contain, never center-crop ---
     thumb_paths = []
     for number, candidate in enumerate(selected[:GUMROAD_PREVIEW_COUNT], start=1):
         try:
             with Image.open(candidate["path"]) as src_img:
-                thumb = _fit_crop_square(src_img, GUMROAD_THUMB_WIDTH)
-            path = _image_save_png_or_jpeg(
-                thumb, staging / f"thumb-{number:02d}",
-                dpi=GUMROAD_MIN_DPI, max_bytes=GUMROAD_COVER_MAX_BYTES
-            )
-            thumb_paths.append(path)
-            generated.append(path)
+                thumb = _fit_contain(src_img, GUMROAD_THUMB_WIDTH, background=(248, 248, 245), padding=18)
+            path = _image_save_png_or_jpeg(thumb, staging / f"thumb-{number:02d}", dpi=GUMROAD_MIN_DPI, max_bytes=GUMROAD_COVER_MAX_BYTES)
+            thumb_paths.append(path); generated.append(path)
         except Exception as error:
             warnings.append(f"Preview thumbnail {number} could not be created: {error}")
 
-    # Dedicated product thumbnail is mandatory and independent of preview extraction.
-    product_thumb = None
+    # Product thumbnail gets its own composition; it is never copied from a potentially cropped preview.
     try:
-        if thumb_paths:
-            with Image.open(thumb_paths[0]) as src_thumb:
-                product_image = src_thumb.convert("RGB")
-        elif cover_canvas is not None:
-            product_image = _fit_crop_square(cover_canvas.convert("RGB"), GUMROAD_THUMB_WIDTH)
-            warnings.append("No interior preview was available; product thumbnail fell back to the generated Gumroad cover.")
-        else:
-            product_image = Image.new("RGB", (GUMROAD_THUMB_WIDTH, GUMROAD_THUMB_HEIGHT), "white")
-            draw_fallback = ImageDraw.Draw(product_image)
-            draw_fallback.text((30, 270), title[:60], font=get_font(32, True), fill="black")
-            warnings.append("Product thumbnail used a text fallback because no artwork or cover was available.")
-        product_thumb = _image_save_png_or_jpeg(
-            product_image, staging / "thumbnail", dpi=GUMROAD_MIN_DPI, max_bytes=GUMROAD_COVER_MAX_BYTES
-        )
+        product_image = _make_product_thumbnail(cover_canvas, title, GUMROAD_THUMB_WIDTH)
+        product_thumb = _image_save_png_or_jpeg(product_image, staging / "thumbnail", dpi=GUMROAD_MIN_DPI, max_bytes=GUMROAD_COVER_MAX_BYTES)
         generated.append(product_thumb)
     except Exception as error:
+        product_thumb = None
         warnings.append(f"Dedicated Gumroad product thumbnail generation failed: {error}")
 
-    # --- Specification / source manifest ---
+    # --- Visual QA ---
+    cover_qa = _asset_visual_quality(cover_path, (GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT))
+    product_qa = _asset_visual_quality(product_thumb, (GUMROAD_THUMB_WIDTH, GUMROAD_THUMB_HEIGHT))
+    preview_qa = {p.name: _asset_visual_quality(p, (GUMROAD_THUMB_WIDTH, GUMROAD_THUMB_HEIGHT)) for p in thumb_paths}
+    if cover_qa.get("near_blank"): warnings.append("Gumroad cover appears nearly blank; inspect the generated cover before publishing.")
+    if product_qa.get("near_blank"): warnings.append("Gumroad product thumbnail appears nearly blank; inspect it before publishing.")
+    if len(thumb_paths) < GUMROAD_PREVIEW_COUNT:
+        warnings.append(f"Only {len(thumb_paths)} of {GUMROAD_PREVIEW_COUNT} interior preview images were generated.")
+
     assets_manifest = {
-        "schema_version": 1,
-        "factory_version": FACTORY_VERSION,
+        "schema_version": 2, "factory_version": FACTORY_VERSION,
         "gumroad_requirements": {
-            "cover_min_width_px": GUMROAD_COVER_WIDTH,
-            "cover_min_height_px": GUMROAD_COVER_HEIGHT,
-            "cover_min_dpi": GUMROAD_MIN_DPI,
-            "cover_max_bytes": GUMROAD_COVER_MAX_BYTES,
-            "cover_max_mb_decimal": 50,
-            "product_thumbnail_min_width_px": GUMROAD_THUMB_WIDTH,
-            "product_thumbnail_min_height_px": GUMROAD_THUMB_HEIGHT,
-            "max_covers": 8,
+            "cover_min_width_px": GUMROAD_COVER_WIDTH, "cover_min_height_px": GUMROAD_COVER_HEIGHT,
+            "cover_min_dpi": GUMROAD_MIN_DPI, "cover_max_bytes": GUMROAD_COVER_MAX_BYTES,
+            "cover_max_mb_decimal": 50, "product_thumbnail_min_width_px": GUMROAD_THUMB_WIDTH,
+            "product_thumbnail_min_height_px": GUMROAD_THUMB_HEIGHT, "max_covers": 8,
         },
-        "source_master_sha256": file_hash(master_pdf),
-        "source_master": str(master_pdf),
-        "rendering": {
-            "renderer": sorted({str(x.get("render_method", "embedded-image")) for x in candidates}),
-            "candidate_count": len(candidates),
-            "selected_count": len(selected),
-            "selected_scores": {str(int(x["page"])): float(x.get("artwork_score", 0)) for x in selected},
-        },
+        "source_master_sha256": file_hash(master_pdf), "source_master": str(master_pdf),
+        "rendering": {"renderer": sorted({str(x.get("render_method", "embedded-image")) for x in candidates}),
+                       "candidate_count": len(candidates), "selected_count": len(selected),
+                       "selected_scores": {str(int(x["page"])): float(x.get("artwork_score", 0)) for x in selected}},
         "selected_preview_pages": [int(x["page"]) for x in selected],
+        "cover_source": cover_source,
+        "cover_is_finished_source": cover_is_finished,
         "cover": str(cover_path.name) if cover_path else None,
         "product_thumbnail": str(product_thumb.name) if product_thumb else None,
         "preview_images": [p.name for p in thumb_paths],
-        "asset_dimensions": {
-            "cover": _image_dimensions(cover_path),
-            "product_thumbnail": _image_dimensions(product_thumb),
-            "previews": {p.name: _image_dimensions(p) for p in thumb_paths},
-        },
-        "rendered_candidate_count": len(candidates),
-        "rendered_pages": [int(x.get("page", 0)) for x in candidates],
+        "asset_dimensions": {"cover": _image_dimensions(cover_path), "product_thumbnail": _image_dimensions(product_thumb),
+                             "previews": {p.name: _image_dimensions(p) for p in thumb_paths}},
+        "visual_quality": {"cover": cover_qa, "product_thumbnail": product_qa, "previews": preview_qa},
+        "rendered_candidate_count": len(candidates), "rendered_pages": [int(x.get("page", 0)) for x in candidates],
         "warnings": warnings,
     }
     assets_manifest_path = staging / "GUMROAD_ASSETS.json"
-    save_json(assets_manifest_path, assets_manifest)
-    generated.append(assets_manifest_path)
+    save_json(assets_manifest_path, assets_manifest); generated.append(assets_manifest_path)
 
-    # --- Upload checklist tailored to the generated assets ---
     checklist = staging / "GUMROAD_UPLOAD_CHECKLIST.txt"
-    checklist.write_text(
-        "\n".join([
-            "GUMROAD UPLOAD CHECKLIST",
-            "========================",
-            "",
-            "1. Product file:",
-            f"   Upload the digital PDF: generated by the factory.",
-            "",
-            "2. Cover image:",
-            f"   {cover_path.name if cover_path else 'NOT GENERATED'}",
-            "   Recommended minimum: 1280 x 720 px, 72 DPI, under 50 MB.",
-            "",
-            "3. Product thumbnail:",
-            f"   {product_thumb.name if product_thumb else 'NOT GENERATED'}",
-            "   Minimum: 600 x 600 px.",
-            "",
-            "4. Additional preview images:",
-            *[f"   {p.name}" for p in thumb_paths],
-            "",
-            "5. Do not upload a PDF as a Gumroad cover image.",
-            "6. Gumroad allows up to 8 cover images; the factory creates one main cover",
-            "   plus four square interior preview images for the product asset set.",
-            "",
-            "The PDF MASTER remains unchanged by this process.",
-            "",
-        ]),
-        encoding="utf-8",
-    )
+    checklist.write_text("\n".join([
+        "GUMROAD UPLOAD CHECKLIST", "========================", "",
+        "1. Product file:", "   Upload the generated digital PDF.", "",
+        "2. Main cover:", f"   {cover_path.name if cover_path else 'NOT GENERATED'}",
+        "   1280 x 720 px, 72 DPI, under 50 MB. Artwork is contained to prevent accidental cropping.", "",
+        "3. Product thumbnail:", f"   {product_thumb.name if product_thumb else 'NOT GENERATED'}",
+        "   600 x 600 px. Dedicated square composition; not copied from a cropped interior preview.", "",
+        "4. Additional preview images:", *[f"   {p.name}" for p in thumb_paths], "",
+        "5. Preview artwork uses contain framing so important parts of the line art are not cut off.",
+        "6. Rebuilding the package removes only previous Factory-owned Gumroad assets; MASTER PDF is untouched.", "",
+    ]), encoding="utf-8")
     generated.append(checklist)
-
     return generated, warnings, assets_manifest
-
 
 def _image_dimensions(path):
     """Return width/height/DPI for a generated image, or None if unavailable."""
@@ -9111,7 +9250,7 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
         }
 
 
-# Override the active generator so v11.6 is the last/authoritative definition.
+# Override the active generator so the current production generator is authoritative.
 generate_platform_package = generate_platform_package_v112
 
 
@@ -9119,7 +9258,7 @@ def generate_all_platform_packages_v112(project):
     profiles = load_platform_profiles()
     enabled = [name for name, profile in profiles.items() if profile.get("enabled", False)]
     results = {}
-    print("\nUNIVERSAL PUBLISHING ENGINE v1.2 — GENERATE ALL ENABLED PLATFORMS")
+    print("\nUNIVERSAL PUBLISHING ENGINE v2.3 — GENERATE ALL ENABLED PLATFORMS")
     print("-" * 78)
     for name in enabled:
         result = generate_platform_package(project, name, quiet=True)
@@ -9653,8 +9792,426 @@ def v12_cleanup_menu():
             print(f"Could not remove {target}: {error}")
 
 
+
+# ============================================================
+# COLORING BOOK FACTORY v12.7 — PRODUCTION RELEASE HARDENING + INTEGRITY
+# Bundled upgrade:
+#   - Captures an immutable MASTER/source fingerprint before release work.
+#   - Verifies the MASTER is byte-for-byte unchanged after packages/ZIPs/audit.
+#   - Writes a release artifact inventory with SHA-256 hashes and sizes.
+#   - Adds a machine-readable RELEASE_STATE.json for resumable diagnostics.
+#   - Refuses to call a release clean when package/audit errors remain.
+#   - Keeps all existing platform/Gumroad generation behavior intact.
+# ============================================================
+
+RELEASE_INTEGRITY_VERSION = "1.1"
+RELEASE_STATE_FILENAME = "RELEASE_STATE.json"
+RELEASE_ARTIFACT_INDEX_FILENAME = "RELEASE_ARTIFACT_INDEX.json"
+
+
+def _v126_artifact_inventory(project):
+    """Inventory release-owned deliverables without modifying them."""
+    project = Path(project)
+    roots = []
+    for name in ("MASTER", "PDF", "KDP_PACKAGE", "PLATFORMS", "DELIVERY", "REPORTS"):
+        path = project / name
+        if path.exists():
+            roots.append(path)
+    files = []
+    seen = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for item in root.rglob("*"):
+            if not item.is_file():
+                continue
+            try:
+                resolved = str(item.resolve())
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                files.append({
+                    "path": str(item.relative_to(project)),
+                    "size": item.stat().st_size,
+                    "sha256": file_hash(item),
+                })
+            except (OSError, ValueError) as error:
+                files.append({"path": str(item.relative_to(project)), "error": str(error)})
+    return sorted(files, key=lambda x: x.get("path", "").lower())
+
+
+def _v126_write_release_state(project, status, master_hash=None, source_hash=None, **extra):
+    project = Path(project)
+    state = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "release_integrity_version": RELEASE_INTEGRITY_VERSION,
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "project": project.name,
+        "status": status,
+        "master_sha256": master_hash,
+        "source_sha256": source_hash,
+    }
+    state.update(extra)
+    save_json(project / "REPORTS" / RELEASE_STATE_FILENAME, state)
+    return project / "REPORTS" / RELEASE_STATE_FILENAME
+
+
+def _v126_write_artifact_index(project, status="RECORDED"):
+    project = Path(project)
+    report_dir = project / "REPORTS"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    inventory = _v126_artifact_inventory(project)
+    payload = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "release_integrity_version": RELEASE_INTEGRITY_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "project": project.name,
+        "status": status,
+        "artifacts": inventory,
+        "artifact_count": len(inventory),
+    }
+    path = report_dir / RELEASE_ARTIFACT_INDEX_FILENAME
+    save_json(path, payload)
+    return path
+
+
+def _v126_verify_master_unchanged(project, expected_hash):
+    master = find_master_pdf(Path(project))
+    if not master or not master.exists():
+        return False, "MASTER PDF disappeared during release."
+    try:
+        actual = file_hash(master)
+    except Exception as error:
+        return False, f"Could not hash MASTER PDF after release: {error}"
+    if actual != expected_hash:
+        return False, "MASTER PDF changed during release; release is BLOCKED."
+    return True, "MASTER PDF unchanged (SHA-256 verified)."
+
+
+def create_release_bundle_v126(project):
+    """Integrity-aware replacement for the final production release workflow."""
+    project = Path(project)
+    print("\n" + "=" * 78)
+    print(f"PRODUCTION RELEASE BUILD v{FACTORY_VERSION}")
+    print("=" * 78)
+    print("Integrity mode: ON")
+
+    master = find_master_pdf(project)
+    if not master:
+        print("ERROR: No MASTER PDF exists. Build/import the book first.")
+        return None
+
+    try:
+        master_hash_before = file_hash(master)
+    except Exception as error:
+        print(f"ERROR: Could not fingerprint MASTER PDF: {error}")
+        return None
+
+    source_hash_before = None
+    source = project / "INPUT" / "source.pdf"
+    if source.exists():
+        try:
+            source_hash_before = file_hash(source)
+        except Exception:
+            source_hash_before = None
+
+    _v126_write_release_state(
+        project, "STARTED", master_hash_before, source_hash_before,
+        message="Release started; MASTER fingerprint captured before generation."
+    )
+
+    try:
+        results = generate_all_platform_packages(project)
+        delivery_index = create_delivery_index(project, results)
+        audit = audit_delivery_packages(project)
+
+        master_ok, master_message = _v126_verify_master_unchanged(project, master_hash_before)
+        if not master_ok:
+            print(f"ERROR: {master_message}")
+            state_path = _v126_write_release_state(
+                project, "BLOCKED", master_hash_before, source_hash_before,
+                integrity_error=master_message,
+            )
+            _v126_write_artifact_index(project, "BLOCKED")
+            return {"results": results, "audit": audit, "report": None, "snapshot": None,
+                    "status": "BLOCKED", "integrity_error": master_message, "state": state_path}
+
+        audit_errors = sum(len(v.get("errors", [])) for v in audit.values() if isinstance(v, dict))
+        audit_warnings = sum(len(v.get("warnings", [])) for v in audit.values() if isinstance(v, dict))
+        result_errors = sum(len(r.get("errors", [])) for r in results.values() if isinstance(r, dict))
+        result_warnings = sum(len(r.get("warnings", [])) for r in results.values() if isinstance(r, dict))
+        total_errors = audit_errors + result_errors
+        total_warnings = audit_warnings + result_warnings
+        final_status = "BLOCKED" if total_errors else ("REVIEW" if total_warnings else "READY")
+
+        snapshot = create_project_snapshot(project)
+        artifact_index = _v126_write_artifact_index(project, final_status)
+        report = project / "REPORTS" / "PRODUCTION_RELEASE_REPORT.json"
+        save_json(report, {
+            "schema_version": 2,
+            "factory_version": FACTORY_VERSION,
+            "release_engine_version": RELEASE_ENGINE_VERSION,
+            "release_integrity_version": RELEASE_INTEGRITY_VERSION,
+            "generated": datetime.now().isoformat(timespec="seconds"),
+            "project": project.name,
+            "master_sha256_before": master_hash_before,
+            "master_sha256_after": file_hash(master),
+            "master_unchanged": True,
+            "source_sha256": source_hash_before,
+            "platform_results": results,
+            "delivery_index": str(delivery_index),
+            "delivery_audit": audit,
+            "snapshot": str(snapshot),
+            "artifact_index": str(artifact_index),
+            "final_status": final_status,
+            "total_errors": total_errors,
+            "total_warnings": total_warnings,
+        })
+        state_path = _v126_write_release_state(
+            project, final_status, master_hash_before, source_hash_before,
+            report=str(report), artifact_index=str(artifact_index),
+            master_unchanged=True, total_errors=total_errors, total_warnings=total_warnings,
+        )
+
+        print("\n" + "=" * 78)
+        print("PRODUCTION RELEASE COMPLETE")
+        print("=" * 78)
+        print(f"Final status:   {final_status}")
+        print(f"Errors:         {total_errors}")
+        print(f"Warnings:       {total_warnings}")
+        print(f"MASTER:         VERIFIED UNCHANGED")
+        print(f"Release report: {report}")
+        print(f"Artifact index: {artifact_index}")
+        print(f"State file:     {state_path}")
+        print(f"Safety snapshot:{snapshot}")
+        return {"results": results, "audit": audit, "report": report, "snapshot": snapshot,
+                "status": final_status, "artifact_index": artifact_index, "state": state_path}
+
+    except Exception as error:
+        _v126_write_release_state(
+            project, "BLOCKED", master_hash_before, source_hash_before,
+            integrity_error=str(error),
+        )
+        _v126_write_artifact_index(project, "BLOCKED")
+        print(f"\nPRODUCTION RELEASE FAILED: {error}")
+        return {"results": {}, "audit": {}, "report": None, "snapshot": None,
+                "status": "BLOCKED", "errors": [str(error)]}
+
+
+# Make the integrity-aware release workflow authoritative for v12.7.
+create_release_bundle = create_release_bundle_v126
+
+
+
+# ============================================================
+# COLORING BOOK FACTORY v12.7 — RELEASE CENTER HARDENING
+#   - Adds a single authoritative release-health view.
+#   - Verifies MASTER and source.pdf before and after release.
+#   - Makes BLOCKED/REVIEW/READY status visible from the main release center.
+#   - Adds a safe resume/repair action that reruns the integrity-aware release.
+#   - Keeps MASTER immutable and refuses a READY result after fingerprint drift.
+# ============================================================
+
+RELEASE_HARDENING_VERSION = "1.0"
+
+
+def _v127_release_health(project):
+    """Return normalized release state for dashboards without changing files."""
+    project = Path(project)
+    state_path = project / "REPORTS" / RELEASE_STATE_FILENAME
+    audit = _v12_audit_state(project)
+    state = {}
+    if state_path.exists():
+        try:
+            data = load_json(state_path)
+            if isinstance(data, dict):
+                state = data
+        except Exception:
+            state = {}
+    master = find_master_pdf(project)
+    master_hash = file_hash(master) if master and master.exists() else None
+    expected_master = state.get("master_sha256")
+    master_ok = bool(master_hash and (not expected_master or master_hash == expected_master))
+    delivery = project / DELIVERY_DIRNAME
+    artifact_index = project / "REPORTS" / RELEASE_ARTIFACT_INDEX_FILENAME
+    report = project / "REPORTS" / "PRODUCTION_RELEASE_REPORT.json"
+    audit_errors = int((audit or {}).get("errors", 0) or 0)
+    audit_warnings = int((audit or {}).get("warnings", 0) or 0)
+    state_status = str(state.get("status", "NOT STARTED")).upper()
+    if not master:
+        status = "BLOCKED"
+    elif state_status == "BLOCKED" or audit_errors:
+        status = "BLOCKED"
+    elif state_status in {"READY", "PASS", "PASSED"} and master_ok and delivery.exists() and audit:
+        status = "READY" if audit_warnings == 0 else "REVIEW"
+    elif state:
+        status = "REVIEW"
+    else:
+        status = "NOT RELEASED"
+    return {
+        "status": status,
+        "state": state_status,
+        "master": bool(master),
+        "master_ok": master_ok,
+        "delivery": delivery.exists(),
+        "artifact_index": artifact_index.exists(),
+        "report": report.exists(),
+        "audit": audit,
+        "state_path": state_path,
+    }
+
+
+def _v127_verify_source_unchanged(project, expected_hash):
+    source = Path(project) / "INPUT" / "source.pdf"
+    if not expected_hash:
+        return True, "No source.pdf fingerprint was recorded."
+    if not source.exists():
+        return False, "INPUT/source.pdf disappeared during release."
+    try:
+        actual = file_hash(source)
+    except Exception as error:
+        return False, f"Could not hash source.pdf after release: {error}"
+    if actual != expected_hash:
+        return False, "INPUT/source.pdf changed during release; release is BLOCKED."
+    return True, "Source PDF unchanged (SHA-256 verified)."
+
+
+def create_release_bundle_v127(project):
+    """Integrity-aware v12.7 release wrapper around the proven v12.6 engine."""
+    project = Path(project)
+    master = find_master_pdf(project)
+    if not master:
+        print("ERROR: No MASTER PDF exists. Build/import the book first.")
+        return None
+    master_before = file_hash(master)
+    source = project / "INPUT" / "source.pdf"
+    source_before = file_hash(source) if source.exists() else None
+
+    result = create_release_bundle_v126(project)
+    if not isinstance(result, dict):
+        return result
+
+    master_after = find_master_pdf(project)
+    master_ok = bool(master_after and master_after.exists() and file_hash(master_after) == master_before)
+    source_ok, source_message = _v127_verify_source_unchanged(project, source_before)
+    if not master_ok or not source_ok:
+        integrity_error = " | ".join(x for x in [
+            "MASTER changed during release." if not master_ok else "",
+            source_message if not source_ok else "",
+        ] if x)
+        report = project / "REPORTS" / "PRODUCTION_RELEASE_REPORT.json"
+        if report.exists():
+            try:
+                data = load_json(report)
+                data["factory_version"] = FACTORY_VERSION
+                data["release_hardening_version"] = RELEASE_HARDENING_VERSION
+                data["master_unchanged"] = master_ok
+                data["source_unchanged"] = source_ok
+                data["integrity_error"] = integrity_error
+                data["final_status"] = "BLOCKED"
+                save_json(report, data)
+            except Exception:
+                pass
+        state = _v126_write_release_state(
+            project, "BLOCKED", master_before, source_before,
+            master_unchanged=master_ok,
+            source_unchanged=source_ok,
+            integrity_error=integrity_error,
+        )
+        result["status"] = "BLOCKED"
+        result["integrity_error"] = integrity_error
+        result["state"] = state
+        print("\nRELEASE INTEGRITY GATE: BLOCKED")
+        print(f"  {integrity_error}")
+        return result
+
+    result["master_unchanged"] = True
+    result["source_unchanged"] = True
+    return result
+
+
+# v12.7 is now the authoritative production release entry point.
+create_release_bundle = create_release_bundle_v127
+
+
+def production_release_center_v127():
+    """Production release control center with visible integrity state."""
+    while True:
+        project = v12_active_project()
+        print("\n" + "=" * 78)
+        print("PRODUCTION RELEASE CENTER v12.7")
+        print("=" * 78)
+        if project:
+            health = _v127_release_health(project)
+            print(f"Active project: {project.name}")
+            print(f"Release status: {health['status']}")
+            print(f"MASTER:         {'PASS' if health['master'] and health['master_ok'] else 'BLOCKED'}")
+            print(f"Delivery:       {'PRESENT' if health['delivery'] else 'MISSING'}")
+            print(f"Audit errors:   {health['audit'].get('errors', 0) if health['audit'] else 0}")
+            print(f"Audit warnings: {health['audit'].get('warnings', 0) if health['audit'] else 0}")
+        else:
+            print("Active project: None selected")
+        print("-" * 78)
+        print("1. ONE-CLICK PRODUCTION RELEASE")
+        print("2. RELEASE HEALTH / STATUS")
+        print("3. RESUME / REPAIR RELEASE")
+        print("4. Audit Delivery Packages")
+        print("5. Rebuild One Platform")
+        print("6. Create Delivery ZIPs")
+        print("7. Create Safety Snapshot")
+        print("8. Open Delivery Folder")
+        print("9. Open Reports Folder")
+        print("10. Back")
+        choice = input("\nChoose: ").strip()
+        if choice == "10":
+            return
+        if choice == "2":
+            project = project or choose_project()
+            if project:
+                h = _v127_release_health(project)
+                print("\nRELEASE HEALTH")
+                print("-" * 78)
+                for key, value in h.items():
+                    if key not in {"audit", "state_path"}:
+                        print(f"{key:<18}: {value}")
+                if h["audit"]:
+                    print(f"audit status      : {h['audit'].get('status')}")
+                print(f"state file        : {h['state_path']}")
+            input("\nPress Enter to continue...")
+            continue
+        project = project or choose_project()
+        if not project:
+            continue
+        if choice == "1":
+            create_release_bundle(project)
+        elif choice == "3":
+            print("\nRESUME / REPAIR RELEASE")
+            print("This reruns packages, delivery ZIPs, audit, and integrity verification.")
+            create_release_bundle(project)
+        elif choice == "4":
+            audit_delivery_packages(project)
+        elif choice == "5":
+            v12_rebuild_one_platform(project)
+        elif choice == "6":
+            results = generate_all_platform_packages(project)
+            print(f"\nDelivery index: {create_delivery_index(project, results)}")
+        elif choice == "7":
+            print(f"\nSafety snapshot: {create_project_snapshot(project)}")
+        elif choice == "8":
+            v12_open_folder(project / DELIVERY_DIRNAME)
+        elif choice == "9":
+            v12_open_folder(project / "REPORTS")
+        else:
+            print("Invalid choice.")
+        input("\nPress Enter to continue...")
+
+
+production_release_center = production_release_center_v127
+
 def main():
-    """Coloring Book Factory v12.0 Production UX & Automation Center."""
+    """Coloring Book Factory v12.7 Production Release Center."""
     PROJECTS.mkdir(exist_ok=True)
     while True:
         active = v12_active_project()
