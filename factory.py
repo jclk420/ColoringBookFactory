@@ -46,7 +46,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "12.7"
+FACTORY_VERSION = "12.8"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -8119,7 +8119,7 @@ def import_finished_pdf_v111():
 #     pypdf embedded-image extraction remains the zero-extra-dependency path.
 # ============================================================
 
-FACTORY_VERSION = "12.7"
+FACTORY_VERSION = "12.10"
 PLATFORM_ENGINE_VERSION = "5.0"
 UNIVERSAL_PUBLISHING_VERSION = "2.4"
 
@@ -8259,6 +8259,26 @@ def _marketing_color_treatment(image):
     return treated.convert("RGB"), True
 
 
+def _extract_gumroad_front_cover_panel(image):
+    """Return the customer-facing front panel from a KDP full-wrap cover.
+
+    KDP wrap covers are laid out back-cover | spine | front-cover. The old
+    Gumroad builder treated the entire wrap as one image, which made the title
+    appear on the far right and produced a visibly wrong marketing cover.
+    A normal portrait front cover is returned unchanged.
+    """
+    image = image.convert("RGB")
+    ratio = image.width / max(1, image.height)
+    # Approximate 17.41 x 11.25 KDP wrap. Keep the detection deliberately
+    # narrow so ordinary landscape artwork is never mistaken for a wrap.
+    if 1.40 <= ratio <= 1.72 and image.width >= image.height * 1.40:
+        left = int(round(image.width * 0.497))
+        right = int(round(image.width * 0.986))
+        if right - left >= 200:
+            return image.crop((left, 0, right, image.height)), True
+    return image, False
+
+
 def _fit_cover_unified(image, width=1280, height=720):
     """Create one unified 16:9 marketing composition; never split it into panels."""
     image = image.convert("RGB")
@@ -8356,7 +8376,14 @@ def _asset_visual_quality(image_path, expected_size=None):
     return result
 
 def _extract_pdf_embedded_artwork(master_pdf, output_dir, max_candidates=20):
-    """Extract the largest embedded raster image from each useful PDF page."""
+    """Extract actual interior artwork while excluding front/back matter.
+
+    The old extractor walked every PDF page, so a copyright/title page that
+    contained a large embedded image could become preview #1. For finished
+    coloring books, preview selection starts after the standard front matter
+    and stops before the closing pages. Each candidate also receives the same
+    artwork-density score used by the rendered-page path.
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     Reader = _pdf_reader_class()
@@ -8368,7 +8395,16 @@ def _extract_pdf_embedded_artwork(master_pdf, output_dir, max_candidates=20):
     errors = []
     try:
         reader = Reader(str(master_pdf), strict=False)
+        total_pages = len(reader.pages)
+        first_art_page = GUMROAD_FRONT_MATTER_PAGES + 1 if total_pages > GUMROAD_FRONT_MATTER_PAGES + GUMROAD_BACK_MATTER_PAGES else 1
+        last_art_page = total_pages - GUMROAD_BACK_MATTER_PAGES if total_pages > GUMROAD_FRONT_MATTER_PAGES + GUMROAD_BACK_MATTER_PAGES else total_pages
+
         for page_number, page in enumerate(reader.pages, start=1):
+            # Do not let title/copyright/TOC pages or closing pages become
+            # customer-facing Gumroad previews.
+            if page_number < first_art_page or page_number > last_art_page:
+                continue
+
             try:
                 page_images = list(getattr(page, "images", []) or [])
             except Exception:
@@ -8392,6 +8428,7 @@ def _extract_pdf_embedded_artwork(master_pdf, output_dir, max_candidates=20):
                         candidate_path = output_dir / f"embedded-page-{page_number:04d}-{image_number:02d}{ext}"
                         image.save(candidate_path, "JPEG" if ext == ".jpg" else "PNG",
                                    dpi=(72, 72))
+                        artwork_score = _pdf_preview_score(candidate_path)
                         page_candidates.append({
                             "page": page_number,
                             "path": candidate_path,
@@ -8399,21 +8436,26 @@ def _extract_pdf_embedded_artwork(master_pdf, output_dir, max_candidates=20):
                             "sha256": digest,
                             "width": image.width,
                             "height": image.height,
+                            "artwork_score": artwork_score,
+                            "render_method": "embedded-image",
                         })
                         seen_hashes.add(digest)
                 except Exception:
                     continue
 
             if page_candidates:
-                # Prefer the largest artwork on each page.
-                page_candidates.sort(key=lambda x: x["area"], reverse=True)
-                candidates.append(page_candidates[0])
+                # Prefer the largest image on each interior page, then use
+                # artwork density as a tie-breaker.
+                page_candidates.sort(key=lambda x: (float(x.get("artwork_score", 0)), x["area"]), reverse=True)
+                best = page_candidates[0]
+                if float(best.get("artwork_score", 0)) > 0:
+                    candidates.append(best)
                 if len(candidates) >= max_candidates:
                     break
     except Exception as error:
         errors.append(f"Embedded PDF artwork extraction failed: {error}")
 
-    candidates.sort(key=lambda x: x["page"])
+    candidates.sort(key=lambda x: (float(x.get("artwork_score", 0)), -int(x.get("page", 0))), reverse=True)
     return candidates, errors
 
 
@@ -8450,18 +8492,33 @@ def _try_import_fitz(auto_install=False):
 
 
 def _pdf_preview_score(path):
-    """Score a rendered page for coloring-book artwork rather than title/text pages."""
+    """Score a rendered/extracted page for coloring artwork without requiring NumPy.
+
+    The previous scorer could return zero on machines without NumPy, which made
+    perfectly valid line-art pages disappear from the Gumroad candidate pool.
+    This scorer uses Pillow only and deliberately treats the score as a ranking
+    signal rather than a hard artwork gate.
+    """
     try:
         with Image.open(path) as img:
             gray = img.convert("L")
             gray.thumbnail((320, 420), Image.Resampling.LANCZOS)
-            import numpy as np
-            arr = np.asarray(gray, dtype=np.uint8)
-            dark = float((arr < 235).mean())
-            mid = float(((arr >= 40) & (arr < 235)).mean())
-            if dark < 0.015 or dark > 0.62:
+            hist = gray.histogram()
+            total = max(1, sum(hist))
+            dark = sum(hist[:220]) / total
+            very_dark = sum(hist[:80]) / total
+            mid = sum(hist[80:220]) / total
+
+            # Reject truly blank/near-white pages, but don't reject dense
+            # black line-art merely because its ink coverage is high.
+            if dark < 0.003:
                 return 0.0
-            score = min(dark / 0.18, 1.0) * 0.55 + min(mid / 0.10, 1.0) * 0.45
+
+            # Coloring pages normally contain substantial white space plus
+            # visible black linework.  These weights are intentionally soft.
+            score = (min(dark / 0.18, 1.0) * 0.55 +
+                     min(mid / 0.10, 1.0) * 0.30 +
+                     min(very_dark / 0.08, 1.0) * 0.15)
             return round(score, 6)
     except Exception:
         return 0.0
@@ -8645,25 +8702,55 @@ def _render_pdf_pages_with_fitz(master_pdf, output_dir, max_candidates=20):
     return _render_pdf_pages_universal(master_pdf, output_dir, max_candidates)
 
 def _choose_gumroad_candidates(candidates, count=GUMROAD_PREVIEW_COUNT):
-    """Choose high-scoring artwork pages with page-distance diversity."""
-    usable = [x for x in candidates if Path(x["path"]).exists()]
+    """Choose actual interior artwork pages and spread previews through the book.
+
+    Front matter is excluded first. The remaining pages are divided into
+    deterministic ranges and the strongest artwork page from each range is
+    selected. This prevents four thumbnails from clustering around the first
+    few pages after the copyright page.
+    """
+    usable = []
+    for item in candidates:
+        try:
+            page = int(item.get("page", 0))
+        except Exception:
+            page = 0
+        if not Path(item["path"]).exists():
+            continue
+        if page and page <= GUMROAD_FRONT_MATTER_PAGES:
+            continue
+        score = float(item.get("artwork_score", 0) or 0)
+        if score <= 0:
+            continue
+        usable.append(item)
     if not usable:
         return []
-    usable.sort(key=lambda x: (float(x.get("artwork_score", 0)), -int(x.get("page", 0))), reverse=True)
+
+    # One candidate per broad section gives a much more useful customer
+    # preview set than simply taking the four highest-scoring early pages.
+    usable.sort(key=lambda x: int(x.get("page", 0)))
+    if len(usable) <= count:
+        return usable[:count]
+
     selected = []
-    min_distance = max(3, int(64 / max(1, count * 2)))
-    for candidate in usable:
-        page = int(candidate.get("page", 0))
-        if all(abs(page - int(x.get("page", 0))) >= min_distance for x in selected):
-            selected.append(candidate)
-            if len(selected) >= count:
-                break
+    n = len(usable)
+    for bucket in range(count):
+        start_i = round(bucket * n / count)
+        end_i = round((bucket + 1) * n / count)
+        bucket_items = usable[start_i:max(start_i + 1, end_i)]
+        if not bucket_items:
+            continue
+        best = max(bucket_items, key=lambda x: (float(x.get("artwork_score", 0)), int(x.get("area", 0))))
+        if best not in selected:
+            selected.append(best)
+
+    # If unusual PDF structure leaves a bucket empty, fill deterministically
+    # from the strongest remaining interior candidates.
     if len(selected) < count:
-        for candidate in usable:
-            if candidate not in selected:
-                selected.append(candidate)
-                if len(selected) >= count:
-                    break
+        remaining = [x for x in usable if x not in selected]
+        remaining.sort(key=lambda x: (float(x.get("artwork_score", 0)), -int(x.get("page", 0))), reverse=True)
+        selected.extend(remaining[:count - len(selected)])
+
     selected.sort(key=lambda x: int(x.get("page", 0)))
     return selected[:count]
 
@@ -8686,7 +8773,7 @@ def _make_gumroad_assets(project, staging, master_pdf, settings):
     candidates, extract_warnings = _extract_pdf_embedded_artwork(master_pdf, source_dir, max_candidates=max(12, GUMROAD_PREVIEW_COUNT * 3))
     warnings.extend(extract_warnings)
     if len(candidates) < GUMROAD_PREVIEW_COUNT:
-        rendered, render_warnings = _render_pdf_pages_universal(master_pdf, source_dir, max_candidates=max(20, GUMROAD_PREVIEW_COUNT * 5))
+        rendered, render_warnings = _render_pdf_pages_universal(master_pdf, source_dir, max_candidates=max(64, GUMROAD_PREVIEW_COUNT * 16))
         warnings.extend(render_warnings)
         existing_hashes = {x.get("sha256") for x in candidates}
         for item in rendered:
@@ -8712,9 +8799,12 @@ def _make_gumroad_assets(project, staging, master_pdf, settings):
     if existing_cover and existing_cover.exists() and existing_cover.suffix.lower() in IMAGE_EXTENSIONS:
         try:
             with Image.open(existing_cover) as src_img:
-                cover_canvas = _fit_cover_unified(src_img, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
-            cover_source = "MASTER_COVER"
+                front_panel, was_wrap = _extract_gumroad_front_cover_panel(src_img)
+                cover_canvas = _fit_cover_unified(front_panel, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
+            cover_source = "MASTER_COVER_FRONT_PANEL" if was_wrap else "MASTER_COVER"
             cover_is_finished = True
+            if was_wrap:
+                warnings.append("MASTER_COVER was detected as a KDP full wrap; only the front-cover panel was used for Gumroad.")
         except Exception as error:
             warnings.append(f"Dedicated MASTER_COVER could not be used: {error}")
 
@@ -8724,12 +8814,13 @@ def _make_gumroad_assets(project, staging, master_pdf, settings):
         if front_cover_path and front_cover_path.exists():
             try:
                 with Image.open(front_cover_path) as src_img:
-                    treated, was_colorized = _marketing_color_treatment(src_img)
-                    cover_canvas = _fit_cover_unified(treated, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
-                cover_source = "embedded_finished_pdf_page_1"
+                    front_panel, was_wrap = _extract_gumroad_front_cover_panel(src_img)
+                    # A finished cover is authoritative: preserve its artwork and typography.
+                    cover_canvas = _fit_cover_unified(front_panel, GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT)
+                cover_source = "embedded_finished_pdf_front_panel" if was_wrap else "embedded_finished_pdf_page_1"
                 cover_is_finished = True
-                if was_colorized:
-                    warnings.append("Finished PDF front cover was monochrome; a restrained marketing color treatment was applied to the Gumroad asset only.")
+                if was_wrap:
+                    warnings.append("PDF page 1 was detected as a KDP full wrap; only the front-cover panel was used for Gumroad.")
             except Exception as error:
                 warnings.append(f"Finished PDF front cover could not be converted into Gumroad cover: {error}")
 
@@ -8758,8 +8849,11 @@ def _make_gumroad_assets(project, staging, master_pdf, settings):
             warnings.append(f"Artwork-based Gumroad cover generation failed: {error}")
 
     if cover_canvas is None:
-        cover_canvas = Image.new("RGB", (GUMROAD_COVER_WIDTH, GUMROAD_COVER_HEIGHT), (24, 24, 24))
-        warnings.append("Gumroad cover used a fallback background because no usable cover source was available.")
+        # Never ship a blank/dark placeholder as a customer-facing cover.
+        # If the finished cover cannot be recovered, the asset build is allowed
+        # to fail loudly so the problem is fixed instead of hidden.
+        errors = ["No usable finished cover or interior artwork was available for the Gumroad cover."]
+        raise RuntimeError(errors[0])
 
     cover_path = _image_save_png_or_jpeg(cover_canvas, staging / "cover", dpi=GUMROAD_MIN_DPI, max_bytes=GUMROAD_COVER_MAX_BYTES)
     generated.append(cover_path)
@@ -10285,6 +10379,381 @@ def main():
             break
         else:
             print("\nInvalid choice.")
+        input("\nPress Enter to continue...")
+
+
+# ============================================================
+# v12.8 MAJOR UPGRADE — FINISHED BOOK FOLDER INTAKE + AUTHORITATIVE COVER
+#
+# A finished coloring book may consist of two separate source files:
+#   1) interior PDF
+#   2) KDP full-wrap cover PDF/image
+#
+# This layer makes the FOLDER the intake unit.  It deliberately refuses to
+# silently use an interior copyright/title page as a finished cover.
+# ============================================================
+
+SEPARATE_COVER_VERSION = "1.0"
+
+# Finished-book PDFs commonly contain title/copyright/TOC/front-matter pages
+# before the actual coloring artwork. Those pages must never become Gumroad
+# preview thumbnails. The values are deliberately conservative and can be
+# overridden later if a book format requires a different layout.
+GUMROAD_FRONT_MATTER_PAGES = 5
+GUMROAD_BACK_MATTER_PAGES = 2
+GUMROAD_PREVIEW_MIN_ARTWORK_SCORE = 0.035
+SEPARATE_COVER_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
+SEPARATE_COVER_PDF_EXTENSIONS = {".pdf"}
+SEPARATE_COVER_POSITIVE = (
+    "cover", "fullwrap", "full-wrap", "full_wrap", "kdp", "jacket", "wrap", "frontcover", "front-cover", "front_cover"
+)
+SEPARATE_COVER_NEGATIVE = (
+    "thumbnail", "thumb", "preview", "interior", "coloring", "copyright", "toc", "tableofcontents",
+    "titlepage", "title-page", "lore", "sample", "manifest", "proof", "watermark", "backcover", "back-cover"
+)
+
+
+def _cover_candidate_score(path, interior_pdf=None):
+    """Score a source-folder file as a likely finished cover without guessing from PDF page order."""
+    path = Path(path)
+    name = path.stem.lower().replace(" ", "")
+    score = 0
+    reasons = []
+    for token in SEPARATE_COVER_POSITIVE:
+        if token in name:
+            score += 45
+            reasons.append(f"name:{token}")
+    for token in SEPARATE_COVER_NEGATIVE:
+        if token in name:
+            score -= 60
+            reasons.append(f"exclude:{token}")
+    if interior_pdf and path.resolve() == Path(interior_pdf).resolve():
+        return -10000, ["same-as-interior"]
+    if path.suffix.lower() in SEPARATE_COVER_PDF_EXTENSIONS:
+        score += 10
+    elif path.suffix.lower() in SEPARATE_COVER_IMAGE_EXTENSIONS:
+        score += 8
+    else:
+        return -10000, ["unsupported-extension"]
+
+    try:
+        if path.suffix.lower() in SEPARATE_COVER_IMAGE_EXTENSIONS:
+            with Image.open(path) as im:
+                ratio = im.width / max(1, im.height)
+                if 1.42 <= ratio <= 1.68:
+                    score += 80; reasons.append("KDP-wrap-ratio")
+                elif 0.68 <= ratio <= 0.86:
+                    score += 45; reasons.append("front-cover-ratio")
+                elif ratio > 1.2:
+                    score += 15; reasons.append("landscape")
+        elif path.suffix.lower() == ".pdf":
+            info = inspect_pdf(path)
+            pages = int(info.get("page_count") or 0)
+            sizes = info.get("sizes") or []
+            if pages == 1:
+                score += 35; reasons.append("single-page-pdf")
+            elif pages > 1:
+                score -= min(80, pages * 5)
+            if sizes:
+                w = float(sizes[0].get("width", 0) or 0)
+                h = float(sizes[0].get("height", 0) or 0)
+                ratio = w / max(0.01, h)
+                if 1.42 <= ratio <= 1.68:
+                    score += 90; reasons.append("KDP-wrap-ratio")
+                elif 0.68 <= ratio <= 0.86:
+                    score += 45; reasons.append("front-cover-ratio")
+    except Exception as error:
+        reasons.append(f"inspect-error:{error}")
+    return score, reasons
+
+
+def _discover_separate_cover(source_folder, interior_pdf):
+    """Find a dedicated cover in the finished-book folder and likely cover subfolders."""
+    source_folder = Path(source_folder)
+    interior_pdf = Path(interior_pdf).resolve()
+    search_roots = [source_folder]
+    for name in ("COVER", "COVERS", "KDP", "KDP_PACKAGE", "SOURCE", "SOURCES"):
+        candidate = source_folder / name
+        if candidate.is_dir():
+            search_roots.append(candidate)
+
+    candidates = []
+    seen = set()
+    for root in search_roots:
+        for item in root.iterdir():
+            if not item.is_file():
+                continue
+            resolved = item.resolve()
+            if resolved in seen or resolved == interior_pdf:
+                continue
+            seen.add(resolved)
+            score, reasons = _cover_candidate_score(item, interior_pdf)
+            if score > -1000:
+                candidates.append({"path": item, "score": score, "reasons": reasons})
+
+    candidates.sort(key=lambda x: (x["score"], x["path"].name.lower()), reverse=True)
+    if not candidates:
+        return None, [], "NOT_FOUND"
+    top = candidates[0]
+    second = candidates[1]["score"] if len(candidates) > 1 else -9999
+    # Require a meaningful signal. A generic unrelated image/PDF must not become
+    # a cover merely because it happened to be next to the interior.
+    if top["score"] < 45:
+        return None, candidates, "NOT_FOUND"
+    if len(candidates) > 1 and top["score"] - second < 20:
+        return None, candidates, "AMBIGUOUS"
+    return top, candidates, "FOUND"
+
+
+def _render_separate_cover_source(source, output_dir):
+    """Convert a separate cover PDF/image into a stable PNG for downstream use."""
+    source = Path(source); output_dir = Path(output_dir); output_dir.mkdir(parents=True, exist_ok=True)
+    if source.suffix.lower() in SEPARATE_COVER_IMAGE_EXTENSIONS:
+        out = output_dir / "MASTER_COVER.png"
+        with Image.open(source) as im:
+            im.convert("RGB").save(out, "PNG", dpi=(300, 300), optimize=True)
+        return out
+    if source.suffix.lower() == ".pdf":
+        try:
+            import pypdfium2 as pdfium
+        except Exception as error:
+            raise RuntimeError(f"Separate cover is a PDF but pypdfium2 is unavailable: {error}")
+        pdf = pdfium.PdfDocument(str(source))
+        if len(pdf) < 1:
+            raise RuntimeError("Separate cover PDF contains no pages.")
+        page = pdf[0]
+        bitmap = page.render(scale=3.0)
+        pil = bitmap.to_pil().convert("RGB")
+        out = output_dir / "MASTER_COVER.png"
+        pil.save(out, "PNG", dpi=(216, 216), optimize=True)
+        return out
+    raise RuntimeError(f"Unsupported separate cover format: {source.suffix}")
+
+
+def _record_authoritative_cover(project, source, rendered_cover, candidates, status):
+    """Store the source cover provenance and checksum inside the immutable MASTER area."""
+    project = Path(project); master_dir = project / "MASTER"; master_dir.mkdir(parents=True, exist_ok=True)
+    cover_dir = master_dir / "COVER_SOURCE"; cover_dir.mkdir(parents=True, exist_ok=True)
+    source_copy = cover_dir / Path(source).name
+    if Path(source).resolve() != source_copy.resolve():
+        shutil.copy2(source, source_copy)
+    rendered_copy = master_dir / "MASTER_COVER.png"
+    if Path(rendered_cover).resolve() != rendered_copy.resolve():
+        shutil.copy2(rendered_cover, rendered_copy)
+    payload = {
+        "schema_version": 1,
+        "resolver_version": SEPARATE_COVER_VERSION,
+        "status": status,
+        "source_file": str(Path(source).resolve()),
+        "source_basename": Path(source).name,
+        "source_sha256": file_hash(source),
+        "master_cover": str(rendered_copy),
+        "master_cover_sha256": file_hash(rendered_copy),
+        "detected_at": datetime.now().isoformat(timespec="seconds"),
+        "candidates": [
+            {"file": str(x["path"]), "score": x["score"], "reasons": x["reasons"]}
+            for x in candidates[:10]
+        ],
+    }
+    save_json(master_dir / "COVER_SOURCE.json", payload)
+    return rendered_copy, payload
+
+
+def _resolve_finished_cover_for_folder(project, source_folder, interior_pdf):
+    """Resolve a dedicated cover; never substitute PDF page 1 when a folder is used."""
+    found, candidates, status = _discover_separate_cover(source_folder, interior_pdf)
+    print("\nCOVER DETECTION")
+    print("-" * 78)
+    print(f"Interior PDF:  {Path(interior_pdf).name}")
+    if status == "AMBIGUOUS":
+        print("Cover detected: AMBIGUOUS")
+        for item in candidates[:5]:
+            print(f"  {item['score']:>4}  {item['path'].name}")
+        raise RuntimeError("Multiple plausible cover files were found. Rename the intended cover with 'cover' or 'full-wrap' in the filename and retry.")
+    if not found:
+        print("Cover detected: NO")
+        raise RuntimeError("No dedicated cover file was found in the selected book folder. The Factory will not use an interior page as a fake cover.")
+    rendered = _render_separate_cover_source(found["path"], Path(project) / "_TEMP" / "cover_source")
+    master_cover, payload = _record_authoritative_cover(project, found["path"], rendered, candidates, status)
+    try:
+        with Image.open(master_cover) as im:
+            ratio = im.width / max(1, im.height)
+            cover_type = "KDP FULL WRAP" if 1.42 <= ratio <= 1.68 else ("FRONT COVER" if 0.68 <= ratio <= 0.86 else "OTHER")
+            print(f"Cover detected: YES")
+            print(f"Cover file:    {found['path']}")
+            print(f"Cover type:    {cover_type}")
+            print(f"Dimensions:    {im.width}x{im.height}")
+            print(f"Confidence:    {found['score']}")
+    except Exception:
+        pass
+    return master_cover, payload
+
+
+def choose_finished_book_folder_v128():
+    """Pick the folder containing the finished interior PDF and separate cover."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
+        folder = filedialog.askdirectory(parent=root, title="Select Finished Coloring Book Folder")
+        root.destroy()
+        return Path(folder) if folder else None
+    except Exception as error:
+        print(f"Folder picker unavailable ({error}).")
+        raw = input("Enter the full path to the finished book folder: ").strip().strip('"')
+        return Path(raw) if raw else None
+
+
+def import_finished_book_folder_v128():
+    """Folder intake for an interior PDF + separate finished cover."""
+    print("\n" + "=" * 78)
+    print("FINISHED BOOK FOLDER → MASTER + ALL PLATFORMS")
+    print("=" * 78)
+    print("Select the folder containing the interior PDF and its separate full-wrap cover.")
+    folder = choose_finished_book_folder_v128()
+    if not folder or not folder.is_dir():
+        print("No valid book folder selected.")
+        return None
+    pdfs = [p for p in folder.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"]
+    if not pdfs:
+        print("ERROR: No PDF found in the selected folder.")
+        return None
+    # Prefer a PDF that does not look like a cover. If there is only one PDF,
+    # it is the interior and the separate cover may be an image.
+    interior_candidates = [p for p in pdfs if not any(t in p.stem.lower().replace(" ", "") for t in SEPARATE_COVER_POSITIVE)]
+    if len(interior_candidates) == 1:
+        interior_pdf = interior_candidates[0]
+    elif len(pdfs) == 1:
+        interior_pdf = pdfs[0]
+    else:
+        print("Multiple PDFs found. Select the INTERIOR PDF:")
+        for i, item in enumerate(pdfs, 1): print(f"  {i}. {item.name}")
+        raw = input("Choose interior PDF number: ").strip()
+        if not raw.isdigit() or not (1 <= int(raw) <= len(pdfs)):
+            print("Invalid selection."); return None
+        interior_pdf = pdfs[int(raw) - 1]
+
+    info = inspect_pdf(interior_pdf)
+    if info.get("error"):
+        print(f"ERROR: {info['error']}"); return None
+    print(f"\nInterior: {interior_pdf.name}")
+    print(f"Pages:    {info.get('page_count')}")
+    print(f"Size:     {info.get('file_size_mb')} MB")
+    default_title = re.sub(r"[_-]+", " ", interior_pdf.stem).strip()
+    name = input(f"\nProject name [{default_title}]: ").strip() or default_title
+    author = input("Author [blank = unknown]: ").strip()
+    project_name = re.sub(r"[^A-Za-z0-9._ -]+", "", name).strip().rstrip(".") or "Imported Finished Book"
+    project = PROJECTS / unique_project_name(project_name)
+    project.mkdir(parents=True, exist_ok=True); setup_project(project); (project / "MASTER").mkdir(exist_ok=True)
+    sizes = info.get("sizes") or [{"width": 8.5, "height": 11}]
+    settings = {
+        "title": name,
+        "author": author,
+        "trim_width": sizes[0]["width"], "trim_height": sizes[0]["height"], "dpi": 300,
+        "production_profile": "Imported Finished Book Folder", "factory_version": FACTORY_VERSION,
+        "platform_engine_version": PLATFORM_ENGINE_VERSION, "universal_publishing_version": UNIVERSAL_PUBLISHING_VERSION,
+        "world_engine_version": WORLD_ENGINE_VERSION, "source_pdf": str(interior_pdf), "source_pdf_sha256": file_hash(interior_pdf),
+        "source_pdf_pages": info.get("page_count"), "source_pdf_size_mb": info.get("file_size_mb"),
+        "source_folder": str(folder.resolve()), "cover_resolver_version": SEPARATE_COVER_VERSION,
+        "imported_at": datetime.now().isoformat(timespec="seconds"), "imported_pdf_metadata": info.get("metadata", {}),
+    }
+    save_json(project / "project.json", settings); save_json(project / "book.json", {"pages": [], "source": "imported_finished_book_folder"})
+    # Lock the interior first, then resolve the separate cover into MASTER.
+    master = import_existing_pdf_to_master(project, interior_pdf)
+    if not master:
+        print("ERROR: MASTER creation failed."); return None
+    try:
+        _resolve_finished_cover_for_folder(project, folder, interior_pdf)
+    except Exception as error:
+        print(f"\nCOVER INTAKE BLOCKED: {error}")
+        print("No platform packages were generated because a verified finished cover is required.")
+        return None
+    print(f"\nMASTER LOCKED: {master}")
+    print("Interior source remains untouched. Separate cover source is recorded in MASTER/COVER_SOURCE.json.")
+    results = generate_all_platform_packages(project)
+    create_delivery_index(project, results)
+    health = project_health_scan(project)
+    print_project_health(health)
+    print(f"\nImported project: {project}")
+    return project
+
+
+# Make the folder workflow the first-class Quick Publish intake.
+def v12_quick_publish():
+    print("\nQUICK PUBLISH")
+    print("1. Select an existing project")
+    print("2. Import/select a finished PDF")
+    print("3. Import a FINISHED BOOK FOLDER (interior + separate cover)")
+    print("4. Use active project")
+    choice = input("\nChoose: ").strip()
+    if choice == "2":
+        import_finished_pdf_v111(); return
+    if choice == "3":
+        import_finished_book_folder_v128(); return
+    project = v12_active_project() if choice == "4" else v12_choose_recent_project()
+    if not project: return
+    _v12_save_state({**_v12_load_state(), "active_project": str(project)})
+    production_release_center()
+
+
+# Extend the main menu without removing the existing single-PDF workflow.
+_LEGACY_MAIN = main
+
+def main():
+    PROJECTS.mkdir(exist_ok=True)
+    while True:
+        active = v12_active_project()
+        print("\n" + "=" * 78)
+        print(f"        COLORING BOOK FACTORY v{FACTORY_VERSION} — FOLDER INTAKE")
+        print("=" * 78)
+        print(f"Active project: {active.name if active else 'None selected'}")
+        print("1. QUICK PUBLISH FINISHED BOOK")
+        print("2. Recent Projects")
+        print("3. Active Project Dashboard")
+        print("4. Build a book")
+        print("5. Create a new project")
+        print("6. Import Artwork Folder -> Create Book")
+        print("7. Build ALL books")
+        print("8. Production Queue")
+        print("9. Production Dashboard")
+        print("10. Worlds & Universes")
+        print("11. Production Center")
+        print("12. Platform & Publishing Center")
+        print("13. Clone a project from template")
+        print("14. PRODUCTION RELEASE CENTER")
+        print("15. Rebuild One Platform")
+        print("16. Safe Cleanup")
+        print("17. Factory Health / Self-Test")
+        print("18. Set Active Project")
+        print("19. Exit")
+        print("\nShortcuts: P=Quick Publish, R=Recent, A=Active, D=Delivery, H=Health, Q=Quit")
+        choice = input("\nChoose: ").strip().upper()
+        if choice == "P" or choice == "1": v12_quick_publish()
+        elif choice == "R" or choice == "2": v12_recent_projects_menu()
+        elif choice == "A" or choice == "3": v12_active_dashboard()
+        elif choice == "4":
+            project = choose_project()
+            if project: build_book(project)
+        elif choice == "5": create_project()
+        elif choice == "6": import_artwork_folder()
+        elif choice == "7": bulk_build()
+        elif choice == "8": production_queue_menu()
+        elif choice == "9": production_dashboard()
+        elif choice == "10": world_engine_center_v9()
+        elif choice == "11": production_center()
+        elif choice == "12": platform_center()
+        elif choice == "13": clone_project_from_template()
+        elif choice == "14": production_release_center()
+        elif choice == "15": v12_rebuild_one_platform()
+        elif choice == "16": v12_cleanup_menu()
+        elif choice == "17" or choice == "H": run_platform_self_test()
+        elif choice == "18": v12_set_active_project()
+        elif choice == "D":
+            project = v12_active_project() or choose_project()
+            if project: v12_open_folder(project / "DELIVERY")
+        elif choice == "Q" or choice == "19":
+            print("\nGoodbye."); break
+        else: print("\nInvalid choice.")
         input("\nPress Enter to continue...")
 
 if __name__ == "__main__":
