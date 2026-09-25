@@ -1,71 +1,51 @@
 # ============================================================
-# COLORING BOOK FACTORY - GITIGNORE
-# Keep source code + project metadata
-# Exclude generated production files
+# Coloring Book Factory - Generated / Local Data
 # ============================================================
+
+# Generated projects and publishing output
+Projects/
+
+# World Engine generated worlds
+Worlds/*
+!Worlds/world_index.json
+
+# Generated platform packages / deliveries
+Delivery/
+Releases/
+Output/
+Exports/
+
+# Temporary and cache data
+Temp/
+tmp/
+temp/
+Cache/
+cache/
+__pycache__/
 
 # Python
-__pycache__/
-*.py[cod]
+*.pyc
 *.pyo
-*.pyd
-.venv/
-venv/
-env/
-ENV/
 
-# ============================================================
-# PROJECT INPUT ARTWORK
-# ============================================================
-
-Projects/*/INPUT/
-
-# ============================================================
-# GENERATED ARTWORK / PAGE FILES
-# ============================================================
-
-Projects/*/PROCESSED/
-Projects/*/PAGES/
-
-# ============================================================
-# GENERATED PRODUCTION OUTPUT
-# ============================================================
-
-Projects/*/PDF/
-Projects/*/FINAL/
-Projects/*/KDP_PACKAGE/
-Projects/*/QC/
-Projects/*/BUILD_SNAPSHOTS/
-Projects/*/REPORTS/
-
-# Generated PDFs anywhere
+# Generated publishing files
 *.pdf
-
-# ============================================================
-# GENERATED IMAGE FILES
-# ============================================================
-
 *.png
 *.jpg
 *.jpeg
 *.webp
-*.tif
-*.tiff
+*.zip
 
-# ============================================================
-# GENERATED / TEMPORARY DATA
-# ============================================================
+# Generated reports / manifests
+*_REPORT.txt
+*_REPORT.md
+artifact_index.json
+release_report.json
+manifest.json
 
-*.log
-*.tmp
-*.bak
-*.cache
+# Local runtime/state files
+*.state
+*.lock
 
-# ============================================================
-# OPERATING SYSTEM / EDITOR FILES
-# ============================================================
-
+# Windows
 Thumbs.db
-.DS_Store
-.vscode/
-.idea/
+Desktop.ini

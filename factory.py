@@ -46,7 +46,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "12.8"
+FACTORY_VERSION = "12.11"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -5958,7 +5958,7 @@ def world_v2_attach_book(world, project_id, title, series_id="", book_number=Non
 
 
 def world_v2_audit(world):
-    upgraded = world_v2_upgrade_record(world)
+    upgraded = world_location_recalculate_metadata(world_v2_upgrade_record(world))
     errors = []
     warnings = []
     seen_names = {}
@@ -6336,6 +6336,136 @@ def world_v2_guided_entity(world, category):
         print("Invalid choice.")
 
 
+# ============================================================
+# WORLD LOCATION HIERARCHY / FACTORY v12.11
+# ============================================================
+WORLD_LOCATION_LEVELS = (
+    ("region", "Region"),
+    ("town", "Town / City"),
+    ("district", "District / Subdivision"),
+    ("building", "Building"),
+    ("room", "Room / Interior Area"),
+    ("area", "Area / Outdoor Site"),
+)
+
+def world_location_level_label(level):
+    for key, label in WORLD_LOCATION_LEVELS:
+        if key == str(level).strip().casefold(): return label
+    return str(level or "Location").replace("_", " ").title()
+
+def world_location_parent(world, location_id):
+    target = str(location_id or "").strip()
+    for item in world.get("locations", []):
+        if str(item.get("id", "")) == target:
+            pid = str(item.get("parent_id", "")).strip()
+            if pid:
+                return next((x for x in world.get("locations", []) if str(x.get("id", "")) == pid), None)
+    return None
+
+def world_location_path(world, location_or_id, seen=None):
+    current = location_or_id if isinstance(location_or_id, dict) else world_v2_find(world, "locations", location_or_id)
+    if not current: return ""
+    seen = set(seen or set())
+    cid = str(current.get("id", ""))
+    if cid in seen: return str(current.get("name", "Untitled"))
+    seen.add(cid)
+    parent = world_location_parent(world, cid)
+    if parent: return world_location_path(world, parent, seen) + " / " + str(current.get("name", "Untitled"))
+    return str(current.get("name", "Untitled"))
+
+def world_location_children(world, parent_id=""):
+    pid = str(parent_id or "").strip()
+    return [x for x in world.get("locations", []) if str(x.get("parent_id", "")).strip() == pid]
+
+def world_location_descendants(world, parent_id):
+    found=[]; queue=[str(parent_id or "").strip()]
+    while queue:
+        children=world_location_children(world, queue.pop(0)); found.extend(children); queue.extend(str(x.get("id")) for x in children if x.get("id"))
+    return found
+
+def world_location_tree_lines(world):
+    lines=[]
+    def walk(items,prefix=""):
+        items=sorted(items,key=lambda x:str(x.get("name","")).casefold())
+        for i,item in enumerate(items):
+            last=i==len(items)-1
+            lines.append(f"{prefix}{'└─ ' if last else '├─ '}{item.get('name','Untitled')} [{world_location_level_label(item.get('level','location'))}]")
+            children=world_location_children(world,item.get('id',''))
+            if children: walk(children,prefix+('   ' if last else '│  '))
+    walk(world_location_children(world,""))
+    return lines
+
+def world_location_recalculate_metadata(world):
+    upgraded=world_v2_upgrade_record(world); locations=upgraded.setdefault("locations",[])
+    valid={str(x.get("id","")) for x in locations if x.get("id")}
+    for item in locations:
+        pid=str(item.get("parent_id","")).strip()
+        if pid==str(item.get("id","")) or (pid and pid not in valid): item["parent_id"]=""
+        item.setdefault("level","location")
+        item.setdefault("location_type",item.get("type","Custom") or "Custom")
+    for item in locations:
+        item["location_path"]=world_location_path(upgraded,item)
+        item["children_ids"]=[str(x.get("id")) for x in locations if str(x.get("parent_id",""))==str(item.get("id",""))]
+    return upgraded
+
+def world_v2_location_add_interactive(world):
+    upgraded=world_location_recalculate_metadata(world)
+    print("\nADD LOCATION")
+    name=input("Location name: ").strip()
+    if not name: return upgraded
+    description=input("Description: ").strip()
+    print("\nLocation level:")
+    for n,(key,label) in enumerate(WORLD_LOCATION_LEVELS,1): print(f"{n}. {label} ({key})")
+    try: level=WORLD_LOCATION_LEVELS[int(input("Choose [1]: ").strip() or "1")-1][0]
+    except (ValueError,IndexError): level="area"
+    candidates=[x for x in upgraded.get("locations",[]) if str(x.get("level","location")).casefold()!=level]
+    parent_id=""
+    if candidates:
+        print("\nParent location (optional):")
+        print("0. None / top level")
+        candidates=sorted(candidates,key=lambda x:world_location_path(upgraded,x).casefold())
+        for n,x in enumerate(candidates,1): print(f"{n}. {world_location_path(upgraded,x)}")
+        try:
+            pos=int(input("Choose parent [0]: ").strip() or "0")
+            if pos>0: parent_id=str(candidates[pos-1].get("id",""))
+        except (ValueError,IndexError): print("Invalid parent; using top level.")
+    item={"name":name,"description":description,"level":level,"location_type":input("Location type [optional]: ").strip() or world_location_level_label(level),"parent_id":parent_id,"environment":input("Environment [optional]: ").strip(),"important_details":input("Important details [optional]: ").strip()}
+    return world_location_recalculate_metadata(world_v2_upsert(upgraded,"locations",item))
+
+def world_location_hierarchy_menu(world):
+    while True:
+        world=world_location_recalculate_metadata(world)
+        print("\n"+"="*72+"\nLOCATION HIERARCHY\n"+"="*72)
+        print("\n".join(world_location_tree_lines(world)) or "No locations created yet.")
+        print("\nA. Add location\nE. Edit location\nR. Remove location\nT. Show full location paths\nX. Back")
+        choice=input("Choose: ").strip().lower()
+        if choice=="x": return world_v2_save(world)
+        if choice=="a": world=world_v2_location_add_interactive(world); continue
+        locations=sorted(world.get("locations",[]),key=lambda x:world_location_path(world,x).casefold())
+        if choice=="t":
+            for x in locations: print("-",world_location_path(world,x))
+            input("Press Enter to continue..."); continue
+        if choice not in {"e","r"} or not locations: continue
+        for n,x in enumerate(locations,1): print(f"{n}. {world_location_path(world,x)}")
+        try: item=locations[int(input("Location number: ").strip())-1]
+        except (ValueError,IndexError): print("Invalid selection."); continue
+        if choice=="r":
+            children=world_location_descendants(world,item.get("id",""))
+            if children: print(f"Cannot remove '{item.get('name')}' while it has {len(children)} child location(s)."); continue
+            world,removed=world_v2_delete(world,"locations",item.get("id","")); print(f"Removed: {removed}")
+        else:
+            edited=dict(item); value=input(f"Name [{edited.get('name','')}]: ").strip(); edited["name"]=value or edited.get("name","")
+            value=input(f"Description [{edited.get('description','')}]: ").strip(); edited["description"]=value or edited.get("description","")
+            print("1. Keep parent\n2. Change parent")
+            if (input("Choose [1]: ").strip() or "1")=="2":
+                candidates=[x for x in locations if x.get("id")!=item.get("id")]
+                print("0. None / top level")
+                for n,x in enumerate(candidates,1): print(f"{n}. {world_location_path(world,x)}")
+                try:
+                    pos=int(input("Parent: ").strip()); edited["parent_id"]="" if pos==0 else str(candidates[pos-1].get("id",""))
+                except (ValueError,IndexError): pass
+            world=world_location_recalculate_metadata(world_v2_upsert(world,"locations",edited))
+
 def world_v2_add_entity_interactive(world, category):
     """Add an entity. Characters/creatures use the friendly wizard by default."""
     upgraded = world_v2_upgrade_record(world)
@@ -6584,29 +6714,28 @@ def world_engine_center_v9():
             print("2. Characters")
             print("3. Creatures")
             print("4. Locations")
-            print("5. Objects")
-            print("6. Factions")
-            print("7. Lore")
-            print("8. Timeline")
-            print("9. Rules")
-            print("10. Run continuity audit")
-            print("11. Generate World Bible")
-            print("12. Attach a book project")
-            print("13. Archive world")
+            print("5. Location Hierarchy")
+            print("6. Objects")
+            print("7. Factions")
+            print("8. Lore")
+            print("9. Timeline")
+            print("10. Rules")
+            print("11. Run continuity audit")
+            print("12. Generate World Bible")
+            print("13. Attach a book project")
+            print("14. Archive world")
             print("X. Back")
             action = input("Choose: ").strip().lower()
             if action == "x":
                 break
             if action == "1":
                 world = world_v2_edit_core(world)
-            elif action in {str(number) for number in range(2, 10)}:
-                category = {
-                    "2": "characters", "3": "creatures", "4": "locations",
-                    "5": "objects", "6": "factions", "7": "lore",
-                    "8": "timeline", "9": "rules",
-                }[action]
+            elif action in {"2", "3", "4", "6", "7", "8", "9", "10"}:
+                category = {"2":"characters","3":"creatures","4":"locations","6":"objects","7":"factions","8":"lore","9":"timeline","10":"rules"}[action]
                 world = world_v2_entity_menu(world, category)
-            elif action == "10":
+            elif action == "5":
+                world = world_location_hierarchy_menu(world)
+            elif action == "11":
                 report = world_v2_audit(world)
                 print(f"Continuity status: {report['status']}")
                 for error in report["errors"]:
@@ -6627,10 +6756,10 @@ def world_engine_center_v9():
                     encoding="utf-8",
                 )
                 print(f"Report saved: {report_path}")
-            elif action == "11":
+            elif action == "12":
                 path = world_v2_write_bible(world)
                 print(f"World Bible saved: {path}")
-            elif action == "12":
+            elif action == "13":
                 project_id = input("Project ID/name: ").strip()
                 title = input("Book title: ").strip()
                 series = input("Series ID/name (optional): ").strip()
@@ -6640,7 +6769,7 @@ def world_engine_center_v9():
                     world, project_id, title, series, book_number, True
                 )
                 print("Book attached.")
-            elif action == "13":
+            elif action == "14":
                 confirm = input(
                     f"Type ARCHIVE to archive '{world['name']}': "
                 ).strip()
@@ -8720,8 +8849,7 @@ def _choose_gumroad_candidates(candidates, count=GUMROAD_PREVIEW_COUNT):
         if page and page <= GUMROAD_FRONT_MATTER_PAGES:
             continue
         score = float(item.get("artwork_score", 0) or 0)
-        if score <= 0:
-            continue
+        # Heuristic score is a preference, never a hard rejection.
         usable.append(item)
     if not usable:
         return []
@@ -8781,8 +8909,16 @@ def _make_gumroad_assets(project, staging, master_pdf, settings):
                 candidates.append(item); existing_hashes.add(item.get("sha256"))
     candidates.sort(key=lambda x: (int(x.get("page", 0)), -int(x.get("area", 0))))
     selected = _choose_gumroad_candidates(candidates, GUMROAD_PREVIEW_COUNT)
-    if not selected:
-        warnings.append("No usable interior artwork previews could be rendered from the MASTER PDF.")
+    if len(selected) < GUMROAD_PREVIEW_COUNT:
+        rendered, render_warnings = _render_pdf_pages_universal(master_pdf, source_dir, max_candidates=max(64, page_total))
+        warnings.extend(render_warnings)
+        existing_hashes = {x.get("sha256") for x in candidates}
+        for item in rendered:
+            if item.get("sha256") not in existing_hashes:
+                candidates.append(item); existing_hashes.add(item.get("sha256"))
+        selected = _choose_gumroad_candidates(candidates, GUMROAD_PREVIEW_COUNT)
+    if len(selected) < GUMROAD_PREVIEW_COUNT:
+        warnings.append(f"Only {len(selected)} of {GUMROAD_PREVIEW_COUNT} usable interior artwork previews were identified.")
 
     generated = []
     title = str(settings.get("title") or project.name).strip()
@@ -9034,6 +9170,12 @@ def _validate_gumroad_assets(staging):
             errors.append(f"Could not inspect Gumroad cover: {error}")
 
     thumbs = sorted(list(staging.glob("thumb-*.png")) + list(staging.glob("thumb-*.jpg")))
+    thumb_hashes = []
+    for path in thumbs:
+        try: thumb_hashes.append(file_hash(path))
+        except Exception: pass
+    if len(thumb_hashes) != len(set(thumb_hashes)):
+        warnings.append("Two or more Gumroad interior preview thumbnails are identical; inspect the preview selection.")
     if len(thumbs) < GUMROAD_PREVIEW_COUNT:
         errors.append(
             f"Only {len(thumbs)} interior preview thumbnail(s) were generated; "
