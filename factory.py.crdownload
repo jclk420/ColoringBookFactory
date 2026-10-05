@@ -1,0 +1,884 @@
+from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter, ImageEnhance
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+import json
+import textwrap
+import shutil
+import sys
+import subprocess
+import zipfile
+import re
+import os
+from datetime import datetime
+from hashlib import sha256
+
+# ============================================================
+# COLORING BOOK FACTORY v13.1
+# WORLD-AWARE PRODUCTION ENGINE + AUTOMATED ASSEMBLY + PAGE BUILDER + PDF/KDP PREFLIGHT + PRODUCTION CENTER
+#
+# v8.2 changes:
+#   - New "Clone a project from template" option: pick an existing book
+#     as a style/structure template and stamp out a new project with
+#     trim size, DPI, border, KDP page-count rules, ink type, and
+#     assembly mode carried over. Title, subtitle, description, keywords,
+#     categories, artwork, and world/series attachment always start
+#     blank on the clone, so a template's own listing text or world
+#     canon status can never leak into the new book by accident.
+#
+# v8.1 changes:
+#   - Worlds & Universes screen no longer dead-ends when no worlds exist
+#     (it used to print "No worlds created yet." and return immediately,
+#     hiding "Create new world" and every other option).
+#   - World Management Center: view world books, world production history,
+#     archive/restore a world (with type-to-confirm safety), search worlds,
+#     and list/remove existing world entities (not just add new ones).
+#   - Production events (interior builds and platform package generation)
+#     now write into the attached world's production history.
+#   - Platform status displays (Platform Audit, Platform Engine self-test,
+#     project health, and platform package generation) now print the
+#     actual warning text next to any non-zero warning count, instead of
+#     just a count, so a READY_WITH_WARNINGS result is self-explanatory.
+# ============================================================
+
+FACTORY = Path(__file__).resolve().parent
+PROJECTS = FACTORY / "Projects"
+
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+
+FACTORY_VERSION = "13.2"
+WORLD_ENGINE_VERSION = "1.1"
+WORLDS_DIR = FACTORY / "Worlds"
+WORLD_INDEX_FILENAME = "world_index.json"
+WORLD_SCHEMA_VERSION = 2
+BUILD_STATE_FILE = "build_state.json"
+SUPPORTED_TRIM_SIZES = {
+    "8.5x11": (8.5, 11.0),
+    "8x10": (8.0, 10.0),
+    "7.5x9.25": (7.5, 9.25),
+    "6x9": (6.0, 9.0),
+}
+
+VALID_PAGE_TYPES = {"title", "copyright", "toc", "coloring", "text", "lore", "intro", "activity", "blank"}
+
+# v5.0 production configuration / bookkeeping
+BOOK_CONFIG_FILENAME = "_book.json"
+BUILD_HISTORY_FILENAME = "build_history.json"
+PRODUCTION_QUEUE_FILENAME = "production_queue.json"
+UPSCALE_INTERMEDIATE_DIR = "PROCESSED"
+CONTACT_SHEET_FILENAME = "artwork_contact_sheet.png"
+
+
+
+# ============================================================
+# JSON
+# ============================================================
+
+def load_json(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_json(path, data):
+    """Write JSON safely, including Windows Path objects produced by release workflows."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False, default=str)
+
+
+def load_optional_book_config(source_folder):
+    """Load optional _book.json from an imported artwork folder."""
+    path = source_folder / BOOK_CONFIG_FILENAME
+    if not path.exists():
+        return {}
+    try:
+        data = load_json(path)
+        if not isinstance(data, dict):
+            raise ValueError("_book.json must contain an object")
+        return data
+    except Exception as error:
+        print(f"WARNING: Could not read {BOOK_CONFIG_FILENAME}: {error}")
+        return {}
+
+
+def load_build_history(project):
+    path = project / BUILD_HISTORY_FILENAME
+    if not path.exists():
+        return {"version": FACTORY_VERSION, "builds": []}
+    try:
+        data = load_json(path)
+        if not isinstance(data, dict):
+            raise ValueError("history must be an object")
+        data.setdefault("builds", [])
+        return data
+    except Exception:
+        return {"version": FACTORY_VERSION, "builds": []}
+
+
+def record_build_history(project, status, page_count=0, errors=None, warnings=None, fingerprint=None):
+    history = load_build_history(project)
+    history["version"] = FACTORY_VERSION
+    history["builds"].append({
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "status": status,
+        "page_count": page_count,
+        "errors": list(errors or []),
+        "warnings": list(warnings or []),
+        "fingerprint": fingerprint,
+    })
+    history["builds"] = history["builds"][-100:]
+    save_json(project / BUILD_HISTORY_FILENAME, history)
+
+
+def load_queue():
+    path = PROJECTS / PRODUCTION_QUEUE_FILENAME
+    if not path.exists():
+        return {"version": FACTORY_VERSION, "items": []}
+    try:
+        data = load_json(path)
+        return data if isinstance(data, dict) else {"version": FACTORY_VERSION, "items": []}
+    except Exception:
+        return {"version": FACTORY_VERSION, "items": []}
+
+
+def save_queue(queue):
+    queue["version"] = FACTORY_VERSION
+    save_json(PROJECTS / PRODUCTION_QUEUE_FILENAME, queue)
+
+
+# ============================================================
+# BUILD STATE / HASHING
+# ============================================================
+
+def file_hash(path):
+    h = sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def load_build_state(project):
+    path = project / BUILD_STATE_FILE
+    if not path.exists():
+        return {"version": FACTORY_VERSION, "images": {}, "last_build": None}
+    try:
+        return load_json(path)
+    except Exception:
+        return {"version": FACTORY_VERSION, "images": {}, "last_build": None}
+
+
+def save_build_state(project, state):
+    save_json(project / BUILD_STATE_FILE, state)
+
+
+def update_project_defaults(settings):
+    defaults = {
+        "trim_width": 8.5,
+        "trim_height": 11,
+        "dpi": 300,
+        "border_pixels": 150,
+        "min_source_width": 1500,
+        "min_source_height": 2000,
+        "kdp_ink_type": "black_white",
+        "kdp_auto_pad_minimum_pages": True,
+        "kdp_minimum_pages": 24,
+        "kdp_maximum_pages": 828,
+        "kdp_generate_cover": True,
+        "cover_subtitle": "A Coloring Adventure",
+        "cover_blurb": "Explore strange creatures, dark machines, and unforgettable nightmares—one page at a time.",
+        "artwork_upscale": True,
+        "artwork_upscale_target_width": 2550,
+        "artwork_upscale_target_height": 3300,
+        "artwork_upscale_only_if_smaller": True,
+        "build_history_enabled": True,
+        "production_profile": "KDP 8.5x11 B&W",
+        "book_spec_version": 1,
+        "world_id": "",
+        "world_engine_version": WORLD_ENGINE_VERSION,
+        "template_profile": "classic_clean",
+        "cover_template": "auto_framed",
+        "production_manifest_enabled": True,
+        "checksum_artifacts": True,
+        "build_snapshots_enabled": True,
+        "cache_by_artwork_identity": True,
+        "metadata_export_enabled": True,
+        "readiness_gate": True,
+        # v6.2 world-aware production
+        "universe_name": "",
+        "series_name": "",
+        "world_relationship": "standalone",
+        "world_canon": True,
+        "continuity_gate": True,
+        "auto_update_world_bible": True,
+        "auto_register_artwork_entities": True,
+        "production_profile_version": 2,
+    }
+    changed = False
+    for key, value in defaults.items():
+        if key not in settings:
+            settings[key] = value
+            changed = True
+    return changed
+
+
+def source_inventory(images):
+    inventory = {}
+    for image in images:
+        try:
+            inventory[image.name] = {
+                "hash": file_hash(image),
+                "size": image.stat().st_size,
+                "modified": image.stat().st_mtime,
+            }
+        except Exception as error:
+            inventory[image.name] = {"error": str(error)}
+    return inventory
+
+
+PROCESSING_ENGINE_VERSION = "6.0-production"
+
+def settings_fingerprint(settings):
+    relevant = {
+        "trim_width": settings.get("trim_width", 8.5),
+        "trim_height": settings.get("trim_height", 11),
+        "dpi": settings.get("dpi", 300),
+        "border_pixels": settings.get("border_pixels", 150),
+    }
+    payload = json.dumps(relevant, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return sha256(payload).hexdigest()
+
+
+def manifest_fingerprint(book):
+    payload = json.dumps(book, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return sha256(payload).hexdigest()
+
+
+def settings_full_fingerprint(settings):
+    payload = json.dumps(settings, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return sha256(payload).hexdigest()
+
+
+def clean_project_outputs(project):
+    for folder_name in ("PROCESSED", "PAGES"):
+        folder = project / folder_name
+        folder.mkdir(exist_ok=True)
+        for file in folder.glob("*.png"):
+            try:
+                file.unlink()
+            except OSError:
+                pass
+
+
+# ============================================================
+# FONTS
+# ============================================================
+
+def get_font(size, bold=False):
+
+    candidates = []
+
+    if bold:
+        candidates += [
+            r"C:\Windows\Fonts\arialbd.ttf",
+            r"C:\Windows\Fonts\calibrib.ttf",
+        ]
+
+    candidates += [
+        r"C:\Windows\Fonts\arial.ttf",
+        r"C:\Windows\Fonts\calibri.ttf",
+    ]
+
+    for path in candidates:
+
+        if Path(path).exists():
+
+            return ImageFont.truetype(
+                path,
+                size
+            )
+
+    return ImageFont.load_default()
+
+
+# ============================================================
+# PROJECT SETUP
+# ============================================================
+
+def setup_project(project):
+
+    folders = [
+        "INPUT",
+        "PROCESSED",
+        "PAGES",
+        "COVER",
+        "PDF",
+        "FINAL",
+        "REPORTS",
+        "KDP_PACKAGE"
+    ]
+
+    for folder in folders:
+
+        (project / folder).mkdir(
+            exist_ok=True
+        )
+
+
+# ============================================================
+# WORLD ENGINE / UNIVERSES
+# ============================================================
+
+def world_slug(name):
+    """Create a safe folder name for a persistent world."""
+    import re
+    value = re.sub(r"[^A-Za-z0-9._ -]+", "", str(name)).strip().rstrip(".")
+    value = re.sub(r"\s+", " ", value)
+    return value or "New World"
+
+
+def world_path(world_id):
+    return WORLDS_DIR / str(world_id)
+
+
+def load_world_index():
+    WORLDS_DIR.mkdir(parents=True, exist_ok=True)
+    path = WORLDS_DIR / WORLD_INDEX_FILENAME
+    if not path.exists():
+        return {"version": WORLD_SCHEMA_VERSION, "engine_version": WORLD_ENGINE_VERSION, "worlds": {}}
+    try:
+        data = load_json(path)
+        if not isinstance(data, dict):
+            raise ValueError("world index must be an object")
+        data.setdefault("version", WORLD_SCHEMA_VERSION)
+        data.setdefault("engine_version", WORLD_ENGINE_VERSION)
+        data.setdefault("worlds", {})
+        return data
+    except Exception as error:
+        print(f"WARNING: Could not read world index: {error}")
+        return {"version": WORLD_SCHEMA_VERSION, "engine_version": WORLD_ENGINE_VERSION, "worlds": {}}
+
+
+def save_world_index(index):
+    WORLDS_DIR.mkdir(parents=True, exist_ok=True)
+    index["version"] = WORLD_SCHEMA_VERSION
+    index["engine_version"] = WORLD_ENGINE_VERSION
+    save_json(WORLDS_DIR / WORLD_INDEX_FILENAME, index)
+
+
+def load_world(world_id):
+    path = world_path(world_id) / "world.json"
+    if not path.exists():
+        return None
+    try:
+        data = load_json(path)
+        if not isinstance(data, dict):
+            return None
+        data.setdefault("schema_version", WORLD_SCHEMA_VERSION)
+        data.setdefault("series", [])
+        data.setdefault("relationships", [])
+        data.setdefault("books", [])
+        return data
+    except Exception as error:
+        print(f"WARNING: Could not load world {world_id}: {error}")
+        return None
+
+
+def save_world(world):
+    wid = str(world.get("world_id", "")).strip()
+    if not wid:
+        raise ValueError("World is missing world_id")
+    folder = world_path(wid)
+    folder.mkdir(parents=True, exist_ok=True)
+    save_json(folder / "world.json", world)
+    index = load_world_index()
+    index.setdefault("worlds", {})[wid] = {
+        "world_id": wid,
+        "name": world.get("name", wid),
+        "updated": world.get("updated"),
+    }
+    save_world_index(index)
+
+
+def make_world_id(name):
+    """Return a stable-ish filesystem-safe world id without collisions."""
+    base = world_slug(name)
+    candidate = base
+    counter = 2
+    index = load_world_index()
+    while candidate in index.get("worlds", {}) or world_path(candidate).exists():
+        candidate = f"{base} ({counter})"
+        counter += 1
+    return candidate
+
+
+def new_world_record(name, description="", genre="", tone=""):
+    now = datetime.now().isoformat(timespec="seconds")
+    return {
+        "schema_version": WORLD_SCHEMA_VERSION,
+        "engine_version": WORLD_ENGINE_VERSION,
+        "world_id": make_world_id(name),
+        "name": str(name).strip() or "New World",
+        "description": str(description).strip(),
+        "genre": str(genre).strip(),
+        "tone": str(tone).strip(),
+        "universe": True,
+        "series": [],
+        "rules": [],
+        "timeline": [],
+        "characters": [],
+        "creatures": [],
+        "locations": [],
+        "objects": [],
+        "factions": [],
+        "lore": [],
+        "books": [],
+        "relationships": [],
+        "created": now,
+        "updated": now,
+    }
+
+
+def world_entity_list(world, category):
+    values = world.get(category, [])
+    return values if isinstance(values, list) else []
+
+
+def world_entity_key(entity):
+    """Stable human-readable key used for deduplication/continuity."""
+    if isinstance(entity, dict):
+        return str(entity.get("name") or entity.get("title") or "").strip().lower()
+    return str(entity).strip().lower()
+
+
+def add_world_entity(world, category, entity):
+    if category not in {"characters", "creatures", "locations", "objects", "factions", "lore", "timeline", "rules"}:
+        raise ValueError("Invalid world category")
+    world.setdefault(category, [])
+    key = world_entity_key(entity)
+    if key and any(world_entity_key(existing) == key for existing in world[category]):
+        return False
+    world[category].append(entity)
+    world["updated"] = datetime.now().isoformat(timespec="seconds")
+    save_world(world)
+    if world.get("auto_update_world_bible", True):
+        try:
+            write_world_bible(world)
+        except Exception:
+            pass
+    return True
+
+
+def record_world_production_event(project, event_type, status, page_count=0, errors=0, warnings=0):
+    """Append a production event to the attached world's history, if any.
+
+    Never invents a world attachment; a standalone project simply has no
+    world to record against.
+    """
+    world = get_project_world(project)
+    if not world:
+        return False
+    try:
+        settings = load_json(project / "project.json")
+    except Exception:
+        settings = {}
+    history = world.setdefault("production_history", [])
+    history.append({
+        "date": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project),
+        "title": settings.get("title", project.name),
+        "event": event_type,
+        "status": status,
+        "pages": page_count,
+        "errors": errors,
+        "warnings": warnings,
+    })
+    # Keep this list from growing without bound across a long-lived world.
+    if len(history) > 500:
+        world["production_history"] = history[-500:]
+    world["updated"] = datetime.now().isoformat(timespec="seconds")
+    save_world(world)
+    return True
+
+
+def detach_project_from_world(project):
+    """Remove a project from its current world without deleting the project."""
+    settings = load_json(project / "project.json")
+    old_id = str(settings.get("world_id", "")).strip()
+    settings["world_id"] = ""
+    settings["world_relationship"] = "standalone"
+    save_json(project / "project.json", settings)
+    if old_id:
+        world = load_world(old_id)
+        if world:
+            world["books"] = [
+                x for x in world.get("books", [])
+                if not (isinstance(x, dict) and x.get("project") == str(project))
+            ]
+            world["updated"] = datetime.now().isoformat(timespec="seconds")
+            save_world(world)
+
+
+def attach_project_to_world(project, world_id, relationship=None, series_name=None):
+    """Attach a book to a world; relationships remain explicit rather than assumed."""
+    settings = load_json(project / "project.json")
+    world = load_world(world_id)
+    if not world:
+        raise ValueError(f"World not found: {world_id}")
+
+    old_id = str(settings.get("world_id", "")).strip()
+    if old_id and old_id != world_id:
+        old_world = load_world(old_id)
+        if old_world:
+            old_world["books"] = [
+                x for x in old_world.get("books", [])
+                if not (isinstance(x, dict) and x.get("project") == str(project))
+            ]
+            old_world["updated"] = datetime.now().isoformat(timespec="seconds")
+            save_world(old_world)
+
+    relationship = str(relationship or settings.get("world_relationship") or "canon").strip().lower()
+    if relationship not in {"canon", "related", "inspired_by", "non_canon", "standalone"}:
+        relationship = "canon"
+    series = str(series_name if series_name is not None else settings.get("series_name", "")).strip()
+
+    settings["world_id"] = world_id
+    settings["world_engine_version"] = WORLD_ENGINE_VERSION
+    settings["world_relationship"] = relationship
+    settings["world_canon"] = relationship == "canon"
+    settings["universe_name"] = world.get("name", world_id)
+    settings["series_name"] = series
+    save_json(project / "project.json", settings)
+
+    books = world.setdefault("books", [])
+    books[:] = [x for x in books if not (isinstance(x, dict) and x.get("project") == str(project))]
+    books.append({
+        "project": str(project),
+        "title": settings.get("title", project.name),
+        "series": series,
+        "relationship": relationship,
+        "canon": relationship == "canon",
+        "attached": datetime.now().isoformat(timespec="seconds"),
+    })
+    if series and series not in world.setdefault("series", []):
+        world["series"].append(series)
+    world["updated"] = datetime.now().isoformat(timespec="seconds")
+    save_world(world)
+    return True
+
+
+def get_project_world(project):
+    try:
+        settings = load_json(project / "project.json")
+    except Exception:
+        return None
+    wid = str(settings.get("world_id", "")).strip()
+    return load_world(wid) if wid else None
+
+
+def project_world_context(project, settings=None):
+    """Return explicit world/series relationship metadata for manifests and QC."""
+    if settings is None:
+        try:
+            settings = load_json(project / "project.json")
+        except Exception:
+            settings = {}
+    world = get_project_world(project)
+    return {
+        "world_id": str(settings.get("world_id", "")).strip(),
+        "universe": str(settings.get("universe_name", "")).strip() or (world.get("name", "") if world else ""),
+        "series": str(settings.get("series_name", "")).strip(),
+        "relationship": str(settings.get("world_relationship", "standalone")).strip().lower(),
+        "canon": bool(settings.get("world_canon", True)) if world else False,
+        "world_exists": bool(world),
+    }
+
+
+def register_project_artwork_entities(project, world, images, book):
+    """Register explicit artwork-to-world references without inventing lore."""
+    if not world or not images:
+        return 0
+    registry = load_artwork_registry(project)
+    artworks = registry.setdefault("artworks", {})
+    changed = 0
+    pages = book.get("pages", []) if isinstance(book, dict) else []
+    by_artwork = {str(p.get("artwork_id")): p for p in pages if isinstance(p, dict) and p.get("artwork_id")}
+    for source in images:
+        aid = artwork_identity_id(source)
+        rec = artworks.get(aid, {})
+        page = by_artwork.get(aid, {})
+        title = rec.get("title") or artwork_title(source, 1)
+        refs = rec.get("world_references", [])
+        if not isinstance(refs, list):
+            refs = []
+        ref = {
+            "project": str(project),
+            "book": str(project_world_context(project).get("series") or project.name),
+            "artwork_id": aid,
+            "filename": source.name,
+            "title": title,
+            "page_title": page.get("title", title),
+        }
+        if not any(isinstance(x, dict) and x.get("project") == str(project) for x in refs):
+            refs.append(ref)
+            changed += 1
+        rec["world_references"] = refs
+        artworks[aid] = rec
+    registry["version"] = FACTORY_VERSION
+    save_artwork_registry(project, registry)
+    return changed
+
+
+def world_continuity_check_for_project(project, settings, book, images):
+    """Project-level continuity gate. Only checks explicit references; never invents canon."""
+    world = get_project_world(project)
+    if not world:
+        return [], []
+    errors, warnings = [], []
+    ctx = project_world_context(project, settings)
+    if ctx["relationship"] == "standalone":
+        warnings.append("Project has a world_id but relationship is marked standalone.")
+    if ctx["relationship"] == "canon":
+        # Timeline duplicate checks are world-wide; entity duplicate checks are handled by world report.
+        report, world_errors, world_warnings = world_continuity_report(world)
+        errors.extend(world_errors)
+        warnings.extend(world_warnings)
+    # Check explicit manifest entity references.
+    valid_ids = {}
+    for category in ("characters", "creatures", "locations", "objects", "factions"):
+        for item in world_entity_list(world, category):
+            if isinstance(item, dict) and item.get("name"):
+                valid_ids[str(item.get("name")).strip().lower()] = category
+    for n, entry in enumerate(book.get("pages", []), 1):
+        if not isinstance(entry, dict):
+            continue
+        refs = entry.get("world_entities", [])
+        if isinstance(refs, str):
+            refs = [refs]
+        if isinstance(refs, list):
+            for ref in refs:
+                key = str(ref).strip().lower()
+                if key and key not in valid_ids:
+                    warnings.append(f"Manifest page {n}: world entity reference '{ref}' was not found in {world.get('name', 'world')}.")
+    return errors, warnings
+
+
+
+
+def write_world_bible(world):
+    folder = world_path(world["world_id"])
+    folder.mkdir(parents=True, exist_ok=True)
+    lines = [
+        f"{world.get('name', 'World')} - WORLD BIBLE",
+        "=" * 72,
+        f"Genre: {world.get('genre', '')}",
+        f"Tone: {world.get('tone', '')}",
+        "",
+        "WORLD OVERVIEW",
+        "----------------",
+        world.get("description", ""),
+        "",
+        "WORLD RULES",
+        "-----------",
+    ]
+    for item in world_entity_list(world, "rules"):
+        lines.append(f"- {item}")
+    for category, heading, fields in [
+        ("characters", "CHARACTERS", ["name", "role", "description", "appearance", "personality", "notes"]),
+        ("creatures", "CREATURES", ["name", "type", "description", "appearance", "behavior", "notes"]),
+        ("locations", "LOCATIONS", ["name", "type", "description", "appearance", "important_details", "notes"]),
+        ("objects", "IMPORTANT OBJECTS", ["name", "type", "description", "powers", "notes"]),
+        ("factions", "FACTIONS", ["name", "description", "goals", "notes"]),
+        ("lore", "LORE", ["title", "body", "notes"]),
+        ("timeline", "TIMELINE", ["date", "title", "description"]),
+    ]:
+        lines.extend(["", heading, "-" * len(heading)])
+        for item in world_entity_list(world, category):
+            if isinstance(item, dict):
+                label = item.get("name") or item.get("title") or "Unnamed"
+                lines.append(f"\n{label}")
+                for field in fields[1:]:
+                    value = item.get(field)
+                    if value:
+                        lines.append(f"  {field.replace('_', ' ').title()}: {value}")
+            else:
+                lines.append(f"- {item}")
+    lines.extend(["", "SERIES", "------"])
+    for series in world_entity_list(world, "series"):
+        lines.append(f"- {series}")
+    lines.extend(["", "BOOKS IN THIS WORLD", "--------------------"])
+    for book in world_entity_list(world, "books"):
+        if isinstance(book, dict):
+            lines.append(
+                f"- {book.get('title', book.get('project', 'Untitled'))} "
+                f"[{book.get('project', '')}] "
+                f"Series: {book.get('series', '') or 'None'} "
+                f"Relationship: {book.get('relationship', 'canon')}"
+            )
+    output = folder / "WORLD_BIBLE.txt"
+    output.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return output
+
+
+def world_continuity_report(world):
+    """Static continuity checks; does not invent lore or alter books."""
+    issues = []
+    warnings = []
+    seen = {}
+    for category in ("characters", "creatures", "locations", "objects", "factions"):
+        for item in world_entity_list(world, category):
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip().lower()
+            if not name:
+                warnings.append(f"{category}: unnamed entity")
+                continue
+            key = (category, name)
+            if key in seen:
+                issues.append(f"Duplicate {category[:-1] if category.endswith('s') else category}: {name}")
+            seen[key] = True
+    for item in world_entity_list(world, "characters"):
+        if isinstance(item, dict) and item.get("name") and not item.get("appearance"):
+            warnings.append(f"Character '{item['name']}' has no appearance record.")
+    timeline_seen = set()
+    for item in world_entity_list(world, "timeline"):
+        if isinstance(item, dict):
+            key = (str(item.get("date", "")).strip().lower(), str(item.get("title", "")).strip().lower())
+            if key != ("", "") and key in timeline_seen:
+                issues.append(f"Duplicate timeline event: {item.get('title', 'Untitled')} ({item.get('date', '')})")
+            timeline_seen.add(key)
+    report = world_path(world["world_id"]) / "CONTINUITY_REPORT.txt"
+    lines = [
+        f"{world.get('name', 'World')} - CONTINUITY REPORT",
+        "=" * 72,
+        f"Errors: {len(issues)}",
+        f"Warnings: {len(warnings)}",
+        "",
+        "ERRORS",
+        "------",
+    ] + [f"- {x}" for x in issues] + ["", "WARNINGS", "--------"] + [f"- {x}" for x in warnings]
+    report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return report, issues, warnings
+
+
+def remove_world_entity(world, category, index_pos):
+    """Remove a world entity by its 1-based display position. Never invents state."""
+    items = world_entity_list(world, category)
+    if index_pos < 1 or index_pos > len(items):
+        return None
+    removed = items.pop(index_pos - 1)
+    world["updated"] = datetime.now().isoformat(timespec="seconds")
+    save_world(world)
+    if world.get("auto_update_world_bible", True):
+        try:
+            write_world_bible(world)
+        except Exception:
+            pass
+    return removed
+
+
+def _describe_world_entity(item):
+    if isinstance(item, dict):
+        return item.get("name") or item.get("title") or "Unnamed"
+    return str(item)
+
+
+def world_manage_menu(world, wid):
+    """Detail screen for a single world: view, add to, and remove from every category."""
+    categories = {
+        "1": ("rules", "Rules"),
+        "2": ("characters", "Characters"),
+        "3": ("creatures", "Creatures"),
+        "4": ("locations", "Locations"),
+        "5": ("objects", "Objects"),
+        "6": ("factions", "Factions"),
+        "7": ("lore", "Lore"),
+        "8": ("timeline", "Timeline"),
+    }
+    while True:
+        world = load_world(wid) or world
+        print(f"\nWORLD: {world.get('name', wid)}")
+        print(f"Description: {world.get('description', '')}")
+        print(f"Genre: {world.get('genre', '')} | Tone: {world.get('tone', '')}")
+        for key, (category, label) in categories.items():
+            print(f"{key}. {label} ({len(world_entity_list(world, category))})")
+        print("9. Export world bible")
+        print("10. Continuity check")
+        print("X. Back")
+        sub = input("Choose: ").strip().lower()
+        if sub == "x":
+            return
+        if sub in categories:
+            category, label = categories[sub]
+            items = world_entity_list(world, category)
+            print(f"\n{label.upper()}")
+            if not items:
+                print("(none yet)")
+            for i, item in enumerate(items, 1):
+                print(f"  {i}. {_describe_world_entity(item)}")
+            print("\nA. Add new")
+            if items:
+                print("R. Remove one")
+            print("X. Back")
+            action = input("Choose: ").strip().lower()
+            if action == "a":
+                if category == "rules":
+                    rule = input("World rule: ").strip()
+                    if rule:
+                        add_world_entity(world, "rules", rule)
+                elif category == "lore":
+                    title = input("Lore title: ").strip()
+                    body = input("Lore text: ").strip()
+                    add_world_entity(world, "lore", {"title": title, "body": body})
+                elif category == "timeline":
+                    date = input("Timeline date/order: ").strip()
+                    title = input("Event title: ").strip()
+                    description = input("Event description: ").strip()
+                    add_world_entity(world, "timeline", {"date": date, "title": title, "description": description})
+                else:
+                    name = input("Name: ").strip()
+                    description = input("Description: ").strip()
+                    appearance = input("Appearance / important details: ").strip()
+                    item = {"name": name, "description": description, "appearance": appearance,
+                            "created": datetime.now().isoformat(timespec="seconds")}
+                    add_world_entity(world, category, item)
+            elif action == "r" and items:
+                try:
+                    pos = int(input("Number to remove: ").strip())
+                    removed = remove_world_entity(world, category, pos)
+                    if removed is not None:
+                        print(f"Removed: {_describe_world_entity(removed)}")
+                    else:
+                        print("Invalid selection.")
+                except ValueError:
+                    print("Invalid selection.")
+        elif sub == "9":
+            print(f"World Bible: {write_world_bible(world)}")
+        elif sub == "10":
+            report, errors, warnings = world_continuity_report(world)
+            print(f"Continuity errors: {len(errors)} | warnings: {len(warnings)}")
+            print(f"Report: {report}")
+
+
+def world_list_menu():
+    while True:
+        index = load_world_index()
+        all_worlds = index.get("worlds", {})
+        active = {wid: meta for wid, meta in all_worlds.items() if not meta.get("archived")}
+        archived = {wid: meta for wid, meta in all_worlds.items() if meta.get("archived")}
+        ordered = sorted(active.keys())
+
+        print("\n" + "=" * 60)
+        print("WORLDS & UNIVERSES")
+        print("=" * 60)
+        if not active:
+            print("No worlds created yet. Start with 'N' to create your first one.")
+        else:
+            for i, wid in enumerate(ordered, 1):
+                world = load_world(wid) or active[wid]
+                print(f"{i}. {world.get('name', wid)} [{wid}]")
+                print(
+                    f"   Series: {len(world_entity_list(world, 'series'))} | "
+                    f"Characters: {len(world_entity_list(world, 'characters'))} | "
+                    f"Creatures: {len(worl

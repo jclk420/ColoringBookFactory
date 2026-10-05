@@ -14,8 +14,9 @@ from datetime import datetime
 from hashlib import sha256
 
 # ============================================================
-# COLORING BOOK FACTORY v12.7
+# COLORING BOOK FACTORY v16.2
 # WORLD-AWARE PRODUCTION ENGINE + AUTOMATED ASSEMBLY + PAGE BUILDER + PDF/KDP PREFLIGHT + PRODUCTION CENTER
+# Release: v16.2 — creation-engine routing, canonical lore/prompt validation, and stale artwork-state safeguards.
 #
 # v8.2 changes:
 #   - New "Clone a project from template" option: pick an existing book
@@ -46,11 +47,16 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "12.11"
+FACTORY_VERSION = "16.2"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
 WORLD_SCHEMA_VERSION = 2
+SERIES_ENGINE_VERSION = "1.0"
+SERIES_DIR = FACTORY / "Series"
+MARKETING_DIR_NAME = "MARKETING"
+SERIES_BIBLE_FILENAME = "SERIES_BIBLE.json"
+SERIES_BIBLE_MD_FILENAME = "SERIES_BIBLE.md"
 BUILD_STATE_FILE = "build_state.json"
 SUPPORTED_TRIM_SIZES = {
     "8.5x11": (8.5, 11.0),
@@ -3046,6 +3052,7 @@ def write_production_manifest(project, settings, book, images, built_pages, fina
             path = Path(path)
             artifacts[path.name] = {"sha256": artifact_sha256(path), "bytes": path.stat().st_size}
     build_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + sha256((str(settings.get("title")) + manifest_fingerprint(book)).encode()).hexdigest()[:10]
+    world_context = project_world_context(project, settings)
     manifest = {
         "factory_version": FACTORY_VERSION,
         "world": world_context,
@@ -5869,7 +5876,11 @@ def world_v2_save(world):
 
 
 def world_v2_find(world, category, identifier):
-    if category not in WORLD_ENTITY_CATEGORIES:
+    # WORLD_ENTITY_CATEGORIES contains the primary world entities.
+    # Books and series are also first-class world records stored at the
+    # world root, so they must be searchable through the same helper.
+    valid_categories = WORLD_ENTITY_CATEGORIES + ("series", "books")
+    if category not in valid_categories:
         raise ValueError(f"Unknown category: {category}")
     query = str(identifier or "").strip().casefold()
     for item in world.get(category, []):
@@ -6337,7 +6348,7 @@ def world_v2_guided_entity(world, category):
 
 
 # ============================================================
-# WORLD LOCATION HIERARCHY / FACTORY v12.11
+# WORLD LOCATION HIERARCHY / FACTORY v13.1
 # ============================================================
 WORLD_LOCATION_LEVELS = (
     ("region", "Region"),
@@ -7395,7 +7406,7 @@ world_v2_entity_menu = world_v10_entity_menu
 # section intentionally override earlier platform functions so older projects
 # remain compatible while gaining the new publishing pipeline.
 
-FACTORY_VERSION = "12.7"
+# Legacy override removed: FACTORY_VERSION remains authoritative at 13.1.
 PLATFORM_ENGINE_VERSION = "4.0"
 UNIVERSAL_PUBLISHING_VERSION = "1.0"
 
@@ -8133,7 +8144,7 @@ def platform_center():
 # from the main menu and provides a drag/drop-capable intake UI.
 # ============================================================
 
-FACTORY_VERSION = "12.7"
+# Legacy override removed: FACTORY_VERSION remains authoritative at 13.1.
 UNIVERSAL_PUBLISHING_VERSION = "1.1"
 
 
@@ -8248,7 +8259,7 @@ def import_finished_pdf_v111():
 #     pypdf embedded-image extraction remains the zero-extra-dependency path.
 # ============================================================
 
-FACTORY_VERSION = "12.10"
+# Legacy override removed: FACTORY_VERSION remains authoritative at 13.1.
 PLATFORM_ENGINE_VERSION = "5.0"
 UNIVERSAL_PUBLISHING_VERSION = "2.4"
 
@@ -10030,7 +10041,7 @@ def v12_cleanup_menu():
 
 
 # ============================================================
-# COLORING BOOK FACTORY v12.7 — PRODUCTION RELEASE HARDENING + INTEGRITY
+# v13.6 HISTORICAL ADDITION — PRODUCTION RELEASE HARDENING + INTEGRITY
 # Bundled upgrade:
 #   - Captures an immutable MASTER/source fingerprint before release work.
 #   - Verifies the MASTER is byte-for-byte unchanged after packages/ZIPs/audit.
@@ -10236,13 +10247,13 @@ def create_release_bundle_v126(project):
                 "status": "BLOCKED", "errors": [str(error)]}
 
 
-# Make the integrity-aware release workflow authoritative for v12.7.
+# Make the integrity-aware release workflow authoritative for v13.1.
 create_release_bundle = create_release_bundle_v126
 
 
 
 # ============================================================
-# COLORING BOOK FACTORY v12.7 — RELEASE CENTER HARDENING
+# v13.6 HISTORICAL ADDITION — RELEASE CENTER HARDENING
 #   - Adds a single authoritative release-health view.
 #   - Verifies MASTER and source.pdf before and after release.
 #   - Makes BLOCKED/REVIEW/READY status visible from the main release center.
@@ -10315,7 +10326,7 @@ def _v127_verify_source_unchanged(project, expected_hash):
 
 
 def create_release_bundle_v127(project):
-    """Integrity-aware v12.7 release wrapper around the proven v12.6 engine."""
+    """Integrity-aware v13.1 release wrapper around the proven v13.1 engine."""
     project = Path(project)
     master = find_master_pdf(project)
     if not master:
@@ -10368,7 +10379,7 @@ def create_release_bundle_v127(project):
     return result
 
 
-# v12.7 is now the authoritative production release entry point.
+# v13.1 is now the authoritative production release entry point.
 create_release_bundle = create_release_bundle_v127
 
 
@@ -10377,7 +10388,7 @@ def production_release_center_v127():
     while True:
         project = v12_active_project()
         print("\n" + "=" * 78)
-        print("PRODUCTION RELEASE CENTER v12.7")
+        print(f"PRODUCTION RELEASE CENTER v{FACTORY_VERSION}")
         print("=" * 78)
         if project:
             health = _v127_release_health(project)
@@ -10447,7 +10458,7 @@ def production_release_center_v127():
 production_release_center = production_release_center_v127
 
 def main():
-    """Coloring Book Factory v12.7 Production Release Center."""
+    """Coloring Book Factory v13.1 Production Release Center."""
     PROJECTS.mkdir(exist_ok=True)
     while True:
         active = v12_active_project()
@@ -10525,7 +10536,7 @@ def main():
 
 
 # ============================================================
-# v12.8 MAJOR UPGRADE — FINISHED BOOK FOLDER INTAKE + AUTHORITATIVE COVER
+# v13.1 MAJOR UPGRADE — FINISHED BOOK FOLDER INTAKE + AUTHORITATIVE COVER
 #
 # A finished coloring book may consist of two separate source files:
 #   1) interior PDF
@@ -10841,62 +10852,2924 @@ def v12_quick_publish():
 # Extend the main menu without removing the existing single-PDF workflow.
 _LEGACY_MAIN = main
 
-def main():
+
+# ============================================================
+# v13.1 — BOOK CREATION ENGINE
+# Idea -> World -> Location -> Blueprint -> Prompt Manifest
+# This layer plans books without touching the existing publishing engine.
+# ============================================================
+
+BOOK_CREATION_ENGINE_VERSION = "16.2"
+BOOK_BLUEPRINT_FILENAME = "BOOK_BLUEPRINT.json"
+PROMPT_MANIFEST_FILENAME = "PROMPT_MANIFEST.json"
+CREATION_MANIFEST_FILENAME = "CREATION_MANIFEST.json"
+
+BOOK_CREATION_DEFAULTS = {
+    "image_count": 30,
+    "trim_width": 8.5,
+    "trim_height": 11.0,
+    "dpi": 300,
+    "border_pixels": 150,
+    "art_style": "adult horror coloring book line art",
+    "line_style": "bold clean black outlines, intricate detail, white background",
+    "negative_prompt": "no color, no shading, no grayscale, no crosshatching, no stippling, no solid black fills, no glow, no mist, no fog, no text, no watermark, no frame",
+}
+
+
+def cb13_safe_name(value):
+    """Return a Windows-safe folder name for a newly created book project."""
+    import re
+    value = re.sub(r'[<>:"/\\|?*]+', "", str(value or ""))
+    value = re.sub(r"\s+", " ", value).strip().rstrip(".")
+    return value or "New Coloring Book"
+
+
+def cb13_slug(value):
+    import re
+    value = re.sub(r"[^A-Za-z0-9]+", "_", str(value or "")).strip("_").lower()
+    return value or "book"
+
+
+def cb13_world_choices():
+    index = load_world_index()
+    worlds = []
+    for wid, meta in (index.get("worlds", {}) or {}).items():
+        if isinstance(meta, dict) and not meta.get("archived", False):
+            world = load_world(wid)
+            if world:
+                worlds.append(world_v2_upgrade_record(world))
+    return sorted(worlds, key=lambda w: str(w.get("name", "")).casefold())
+
+
+
+# ============================================================
+# SERIES / LORE ENGINE v1.1 — MANUAL BOOK SELECTOR
+# ============================================================
+
+def lore_safe_name(value):
+    value = re.sub(r'[<>:"/\\|?*]+', "", str(value or ""))
+    value = re.sub(r"\s+", " ", value).strip().rstrip(".")
+    return value or "New Series"
+
+
+def series_path(series_id):
+    return SERIES_DIR / str(series_id)
+
+
+def series_id_from_name(name):
+    base = lore_safe_name(name)
+    candidate = base
+    counter = 2
+    while series_path(candidate).exists():
+        candidate = f"{base} ({counter})"
+        counter += 1
+    return candidate
+
+
+def save_series_bible(bible):
+    SERIES_DIR.mkdir(parents=True, exist_ok=True)
+    sid = str(bible.get("series_id", "")).strip()
+    if not sid:
+        raise ValueError("Series is missing series_id")
+    folder = series_path(sid)
+    folder.mkdir(parents=True, exist_ok=True)
+    bible["engine_version"] = SERIES_ENGINE_VERSION
+    bible["factory_version"] = FACTORY_VERSION
+    bible["updated"] = datetime.now().isoformat(timespec="seconds")
+    save_json(folder / SERIES_BIBLE_FILENAME, bible)
+    lore_write_series_markdown(bible)
+    return folder
+
+
+def load_series_bible(series_id):
+    path = series_path(series_id) / SERIES_BIBLE_FILENAME
+    if not path.exists():
+        return None
+    try:
+        data = load_json(path)
+        return data if isinstance(data, dict) else None
+    except Exception as error:
+        print(f"WARNING: Could not read series bible: {error}")
+        return None
+
+
+def list_series_bibles():
+    SERIES_DIR.mkdir(parents=True, exist_ok=True)
+    found = []
+    for folder in sorted(SERIES_DIR.iterdir(), key=lambda p: p.name.casefold()):
+        if not folder.is_dir():
+            continue
+        bible = load_series_bible(folder.name)
+        if bible:
+            found.append(bible)
+    return found
+
+
+def lore_write_series_markdown(bible):
+    folder = series_path(bible.get("series_id", ""))
+    lines = [
+        f"{bible.get('name', 'Series')} — SERIES BIBLE",
+        "=" * 78,
+        f"Series ID: {bible.get('series_id', '')}",
+        f"Engine: {bible.get('engine_version', SERIES_ENGINE_VERSION)}",
+        f"World: {bible.get('world_name', '') or 'Not assigned'}",
+        f"Status: {bible.get('status', 'ACTIVE')}",
+        "",
+        "CORE PREMISE",
+        "------------",
+        bible.get("core_premise", ""),
+        "",
+        "CENTRAL MYTHOLOGY",
+        "------------------",
+        bible.get("central_mythology", ""),
+        "",
+        "CANON RULES",
+        "-----------",
+    ]
+    for item in bible.get("canon_rules", []):
+        lines.append(f"- {item}")
+    lines += ["", "ESTABLISHED FACTS", "-----------------"]
+    for item in bible.get("established_facts", []):
+        lines.append(f"- {item}")
+    lines += ["", "OPEN MYSTERIES", "---------------"]
+    for item in bible.get("open_mysteries", []):
+        lines.append(f"- {item}")
+    lines += ["", "REVEALS / LORE PROGRESSION", "---------------------------"]
+    for item in bible.get("reveals", []):
+        if isinstance(item, dict):
+            lines.append(f"- Book {item.get('book_number', '?')}: {item.get('reveal', '')}")
+        else:
+            lines.append(f"- {item}")
+    lines += ["", "BOOKS", "-----"]
+    for book in sorted(bible.get("books", []), key=lambda x: (x.get("book_number", 9999) if isinstance(x, dict) and isinstance(x.get("book_number"), int) else 9999, str(x.get("title", "")) if isinstance(x, dict) else str(x))):
+        if isinstance(book, dict):
+            lines.append(f"- Book {book.get('book_number', '?')}: {book.get('title', '')} [{book.get('project', '')}]")
+        else:
+            lines.append(f"- {book}")
+    lines += ["", "CREATURES", "---------"]
+    for item in bible.get("creatures", []):
+        lines.append(f"- {item.get('name', '') if isinstance(item, dict) else item}")
+    lines += ["", "LOCATIONS", "---------"]
+    for item in bible.get("locations", []):
+        lines.append(f"- {item.get('name', '') if isinstance(item, dict) else item}")
+    lines += ["", "FUTURE HOOKS", "------------"]
+    for item in bible.get("future_hooks", []):
+        lines.append(f"- {item}")
+    lines += ["", "CONTINUITY NOTES", "-----------------"]
+    for item in bible.get("continuity_notes", []):
+        lines.append(f"- {item}")
+    (folder / SERIES_BIBLE_MD_FILENAME).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def lore_extract_project_record(project):
+    project = Path(project)
+    settings = {}
+    for filename in ("project.json", "BOOK_BLUEPRINT.json"):
+        path = project / filename
+        if path.exists():
+            try:
+                data = load_json(path)
+                if filename == "project.json":
+                    settings = data if isinstance(data, dict) else {}
+            except Exception:
+                pass
+    blueprint = {}
+    bp = project / BOOK_BLUEPRINT_FILENAME
+    if bp.exists():
+        try:
+            data = load_json(bp)
+            blueprint = data if isinstance(data, dict) else {}
+        except Exception:
+            pass
+    title = str(settings.get("title") or blueprint.get("title") or project.name).strip()
+    series_name = str(settings.get("series_name") or (blueprint.get("series", {}).get("name", "") if isinstance(blueprint.get("series"), dict) else "")).strip()
+    world_name = str(settings.get("universe_name") or blueprint.get("world", {}).get("name", "") if isinstance(blueprint.get("world"), dict) else "").strip()
+    concept = str(settings.get("description") or blueprint.get("concept") or "").strip()
+    number = settings.get("book_number")
+    if not isinstance(number, int):
+        number = blueprint.get("book_number") if isinstance(blueprint.get("book_number"), int) else None
+    if number is None:
+        match = re.search(r"\b(?:book|vol(?:ume)?)[ _-]*(\d+)\b", title, re.I)
+        if match:
+            number = int(match.group(1))
+    return {
+        "project": project.name,
+        "path": str(project),
+        "title": title,
+        "series_name": series_name,
+        "world_name": world_name,
+        "concept": concept,
+        "book_number": number,
+        "primary_location": settings.get("primary_location_name", ""),
+        "lore_files": [str(p.relative_to(project)) for p in project.rglob("*.txt") if p.name.lower() in {"lore.txt", "world_lore.txt", "series_lore.txt", "story.txt", "description.txt"}],
+    }
+
+
+def lore_sync_explicit_series_attachments(bible):
+    """Sync manually registered Series Bible books back into project.json.
+
+    The Series Bible is authoritative for manual attachments. Older v15.2
+    registrations may already be in bible["books"] without the explicit
+    attachment flag, so this upgrades those records and restores project
+    metadata without touching PDFs or artwork.
+    """
+    if not bible:
+        return 0
+    changed = 0
+    series_name = str(bible.get("name", "")).strip()
+    series_id = str(bible.get("series_id", "")).strip()
+    for book in bible.get("books", []):
+        if not isinstance(book, dict):
+            continue
+        project_name = str(book.get("project", "")).strip()
+        project_path = str(book.get("path", "")).strip()
+        project = Path(project_path) if project_path else (PROJECTS / project_name)
+        if not project_name or not project.exists() or not project.is_dir():
+            continue
+        book["path"] = str(project)
+        book["explicit_attachment"] = True
+        metadata = project / "project.json"
+        if metadata.exists():
+            try:
+                settings = load_json(metadata)
+                before = (settings.get("series_name"), settings.get("series_id"), settings.get("series_canon"), settings.get("book_number"))
+                settings["series_name"] = series_name
+                settings["series_id"] = series_id
+                settings["series_canon"] = True
+                settings["world_relationship"] = settings.get("world_relationship", "canon")
+                if isinstance(book.get("book_number"), int):
+                    settings["book_number"] = book["book_number"]
+                after = (settings.get("series_name"), settings.get("series_id"), settings.get("series_canon"), settings.get("book_number"))
+                if before != after:
+                    save_json(metadata, settings)
+                    changed += 1
+            except Exception as error:
+                print(f"WARNING: Could not sync {project.name}/project.json: {error}")
+    bible["updated"] = datetime.now().isoformat(timespec="seconds")
+    save_series_bible(bible)
+    return changed
+
+
+def lore_find_series_projects(series_name):
+    target = str(series_name or "").strip().casefold()
+    records = []
+    if not PROJECTS.exists():
+        return records
+    for project in sorted(PROJECTS.iterdir(), key=lambda p: p.name.casefold()):
+        if not project.is_dir() or project.name.startswith("_"):
+            continue
+        rec = lore_extract_project_record(project)
+        if target and rec["series_name"].casefold() == target:
+            records.append(rec)
+    return records
+
+
+def lore_candidate_projects(series_name):
+    """Find likely legacy series books whose series_name was never recorded."""
+    target = str(series_name or "").strip().casefold()
+    if not target or not PROJECTS.exists():
+        return []
+    keywords = [x for x in re.split(r"\W+", target) if len(x) >= 4]
+    # The legacy Nightmare books often never had series_name recorded.
+    # Treat the distinctive franchise token as the recognition key.
+    if "nightmare" in target:
+        keywords = ["nightmare"]
+    candidates = []
+    for project in sorted(PROJECTS.iterdir(), key=lambda p: p.name.casefold()):
+        if not project.is_dir():
+            continue
+        rec = lore_extract_project_record(project)
+        if rec["series_name"]:
+            continue
+        hay = f"{rec['title']} {rec['concept']} {rec['world_name']}".casefold()
+        if keywords and all(k in hay for k in keywords):
+            candidates.append(rec)
+    return candidates
+
+
+def lore_new_series(name=None):
+    name = (name or input("Series name: ").strip())
+    if not name:
+        return None
+    sid = series_id_from_name(name)
+    default_myth = "Hollow Stitch Nursery" if "nightmare" in name.casefold() else ""
+    default_premise = "A connected horror coloring-book series whose books expand one persistent mythology without contradicting established canon."
+    world_name = input("World / universe name [Nightmare World if this is the Nightmare series]: ").strip()
+    if not world_name and "nightmare" in name.casefold():
+        world_name = "Nightmare World"
+    central = input(f"Central mythology [{default_myth or 'enter a central mythology'}]: ").strip() or default_myth
+    premise = input(f"Core premise [{default_premise}]: ").strip() or default_premise
+    bible = {
+        "schema_version": 1,
+        "engine_version": SERIES_ENGINE_VERSION,
+        "factory_version": FACTORY_VERSION,
+        "series_id": sid,
+        "name": name,
+        "status": "ACTIVE",
+        "world_name": world_name,
+        "core_premise": premise,
+        "central_mythology": central,
+        "canon_rules": [
+            "Established canon must not be silently contradicted.",
+            "New creatures and locations must be registered before becoming series canon.",
+            "Each book should add new information rather than repeatedly restating the same reveal.",
+            "Open mysteries may remain unresolved until a later book deliberately reveals them.",
+        ],
+        "established_facts": [],
+        "open_mysteries": [],
+        "reveals": [],
+        "books": [],
+        "creatures": [],
+        "locations": [],
+        "future_hooks": [],
+        "continuity_notes": [],
+        "created": datetime.now().isoformat(timespec="seconds"),
+        "updated": datetime.now().isoformat(timespec="seconds"),
+    }
+    save_series_bible(bible)
+    print(f"\nSERIES CREATED: {name}")
+    print(f"Series Bible: {series_path(sid) / SERIES_BIBLE_FILENAME}")
+    return bible
+
+
+def lore_register_book(bible, record, make_canon=True):
+    books = bible.setdefault("books", [])
+    existing = next((b for b in books if isinstance(b, dict) and (b.get("project") == record["project"] or b.get("title") == record["title"])), None)
+    if existing is None:
+        existing = {
+            "project": record["project"],
+            "title": record["title"],
+            "book_number": record.get("book_number"),
+            "canon": bool(make_canon),
+            "world_name": record.get("world_name", ""),
+            "primary_location": record.get("primary_location", ""),
+            "concept": record.get("concept", ""),
+            "path": record.get("path", ""),
+            "explicit_attachment": bool(record.get("explicit_attachment", False)),
+            "added": datetime.now().isoformat(timespec="seconds"),
+        }
+        books.append(existing)
+    else:
+        existing.update({"book_number": record.get("book_number") or existing.get("book_number"), "concept": record.get("concept", existing.get("concept", "")), "path": record.get("path", existing.get("path", "")), "explicit_attachment": bool(record.get("explicit_attachment", existing.get("explicit_attachment", False))), "canon": bool(make_canon)})
+    if record.get("primary_location") and record["primary_location"] not in bible.setdefault("locations", []):
+        bible["locations"].append({"name": record["primary_location"], "source_book": record["title"]})
+
+
+
+def lore_bootstrap_nightmare_series():
+    """Create/reconcile the Nightmare Series around the Hollow Stitch Nursery."""
+    existing = next((b for b in list_series_bibles() if "nightmare" in str(b.get("name", "")).casefold()), None)
+    if existing:
+        bible = existing
+        print(f"Using existing Series Bible: {bible.get('name', '')}")
+    else:
+        world_name = "Nightmare World"
+        try:
+            index = load_world_index()
+            for wid, meta in index.get("worlds", {}).items():
+                if "nightmare" in str(meta.get("name", wid)).casefold():
+                    world_name = str(meta.get("name", wid))
+                    break
+        except Exception:
+            pass
+        bible = {
+            "schema_version": 1,
+            "engine_version": SERIES_ENGINE_VERSION,
+            "factory_version": FACTORY_VERSION,
+            "series_id": series_id_from_name("Nightmare Series"),
+            "name": "Nightmare Series",
+            "status": "ACTIVE",
+            "world_name": world_name,
+            "core_premise": "A connected horror coloring-book series whose nightmares trace back to the Hollow Stitch Nursery, with each book expanding the mythology while preserving established canon.",
+            "central_mythology": "Hollow Stitch Nursery",
+            "canon_rules": [
+                "The Hollow Stitch Nursery is the central mythology of the Nightmare Series.",
+                "Each new book must build on established lore instead of resetting the mythology.",
+                "Existing creatures, locations, events, and reveals remain canon unless deliberately marked for reconciliation.",
+                "New creatures and locations must have a logical connection to the existing world before becoming canon.",
+                "Mysteries may remain unresolved and should be tracked as future lore hooks.",
+                "No existing book is silently rewritten by the lore engine.",
+            ],
+            "established_facts": [],
+            "open_mysteries": [
+                "What was the original purpose of the Hollow Stitch Nursery?",
+                "Who founded or controlled the Nursery?",
+                "What exists beneath or beyond the known Nursery areas?",
+            ],
+            "reveals": [], "books": [], "creatures": [], "locations": [], "future_hooks": [], "continuity_notes": [],
+            "created": datetime.now().isoformat(timespec="seconds"),
+            "updated": datetime.now().isoformat(timespec="seconds"),
+        }
+        save_series_bible(bible)
+    candidates = lore_candidate_projects(bible.get("name", ""))
+    print("\nNIGHTMARE SERIES RECONCILIATION")
+    print(f"Central mythology: {bible.get('central_mythology')}")
+    print(f"Legacy Nightmare projects found by discovery: {len(candidates)}")
+    print("No projects are automatically attached by bootstrap.")
+    print("Use 'Add / Select Books Manually' to choose the exact project folders you want.")
+    if any(isinstance(b, dict) and not isinstance(b.get("book_number"), int) for b in bible.get("books", [])):
+        note = "Some legacy Nightmare books do not have confirmed book numbers; assign the canonical order before creating the next numbered installment."
+        bible["continuity_notes"] = list(dict.fromkeys(bible.get("continuity_notes", []) + [note]))
+    save_series_bible(bible)
+    print(f"\nNightmare Series Bible ready: {series_path(bible['series_id']) / SERIES_BIBLE_FILENAME}")
+    print("Existing book PDFs/artwork were NOT modified.")
+    return bible
+
+def lore_analyze_series(bible=None):
+    if bible is None:
+        bibles = list_series_bibles()
+        if not bibles:
+            print("No Series Bibles exist yet.")
+            return None
+        for i, b in enumerate(bibles, 1):
+            print(f"{i}. {b.get('name', b.get('series_id'))} ({len(b.get('books', []))} books)")
+        try:
+            bible = bibles[int(input("Series number: ").strip()) - 1]
+        except (ValueError, IndexError):
+            print("Invalid selection.")
+            return None
+    # Reconcile explicit manual registrations with the actual project metadata
+    # before reporting attachment status. Manual registration is authoritative.
+    lore_sync_explicit_series_attachments(bible)
+    records = lore_find_series_projects(bible.get("name", ""))
+    candidates = lore_candidate_projects(bible.get("name", ""))
+    print("\n" + "=" * 78)
+    print(f"SERIES LORE ANALYSIS — {bible.get('name', '')}")
+    print("=" * 78)
+    print(f"Central mythology: {bible.get('central_mythology') or 'Not defined'}")
+    print(f"Recorded books: {len(bible.get('books', []))}")
+    print(f"Projects explicitly attached: {len(records)}")
+    print(f"Possible legacy/unattached matches: {len(candidates)}")
+    for rec in records:
+        print(f"  ✓ {rec['title']}" + (f" — Book {rec['book_number']}" if rec.get('book_number') else ""))
+    if candidates:
+        print("\nPOSSIBLE LEGACY BOOKS")
+        for i, rec in enumerate(candidates, 1):
+            print(f"  {i}. {rec['title']}")
+    return bible
+
+
+def lore_curated_nightmare_projects():
+    """Return one curated project per known Nightmare book, excluding duplicate/working-copy folders."""
+    wanted = [
+        "Nightmare Llamas",
+        "Nightmare Cryptids",
+        "Nightmare Unicorns",
+        "Nightmare Teddy Bears",
+        "Nightmare Vending Machines",
+    ]
+    if not PROJECTS.exists():
+        return []
+    all_records = []
+    for project in sorted(PROJECTS.iterdir(), key=lambda p: p.name.casefold()):
+        if not project.is_dir() or project.name.startswith("_"):
+            continue
+        rec = lore_extract_project_record(project)
+        if rec.get("series_name") and rec["series_name"].casefold() != "nightmare series":
+            continue
+        all_records.append(rec)
+
+    active = v12_active_project()
+    selected = []
+    for wanted_title in wanted:
+        key = wanted_title.casefold()
+        matches = []
+        for rec in all_records:
+            hay = f"{rec.get('title','')} {rec.get('project','')}".casefold()
+            if key in hay:
+                matches.append(rec)
+        if not matches:
+            continue
+        # Prefer the active project, then an exact project/title match, then the
+        # project with the newest project.json. This prevents UnicornsFinished
+        # copies from being treated as separate books.
+        def score(rec):
+            project = PROJECTS / rec["project"]
+            exact = int(rec.get("project", "").casefold() == key or rec.get("title", "").casefold() == key)
+            active_score = int(active is not None and project.resolve() == Path(active).resolve())
+            has_pdf = int(any(project.glob("*.pdf")) or (project / "MASTER").exists())
+            try:
+                mtime = (project / "project.json").stat().st_mtime
+            except Exception:
+                mtime = project.stat().st_mtime
+            return (active_score, exact, has_pdf, mtime)
+        chosen = max(matches, key=score)
+        chosen = dict(chosen)
+        chosen["canonical_title"] = wanted_title
+        selected.append(chosen)
+    return selected
+
+
+def lore_attach_curated_nightmare_series(bible):
+    """Attach the five known Nightmare books without importing duplicate legacy folders."""
+    records = lore_curated_nightmare_projects()
+    print("\nCURATED NIGHTMARE SERIES BOOK SET")
+    print("These are treated as five books, not five-plus duplicate project folders:")
+    if not records:
+        print("No matching Nightmare projects were found.")
+        return 0
+    for i, rec in enumerate(records, 1):
+        print(f"  {i}. {rec.get('canonical_title', rec.get('title'))} <- {rec.get('project')}")
+    missing = [t for t in ["Nightmare Llamas", "Nightmare Cryptids", "Nightmare Unicorns", "Nightmare Teddy Bears", "Nightmare Vending Machines"]
+               if not any(r.get("canonical_title") == t for r in records)]
+    if missing:
+        print("\nNot found:")
+        for title in missing:
+            print(f"  - {title}")
+    raw = input("Attach this curated set to the Nightmare Series Bible? [Y/n]: ").strip().lower()
+    if raw not in ("", "y", "yes"):
+        print("No books attached. Existing PDFs/artwork were NOT modified.")
+        return 0
+    count = 0
+    for rec in records:
+        lore_register_book(bible, rec, True)
+        project = PROJECTS / rec["project"]
+        path = project / "project.json"
+        if path.exists():
+            try:
+                settings = load_json(path)
+                settings["series_name"] = bible.get("name", "Nightmare Series")
+                settings["series_id"] = bible.get("series_id", "")
+                settings["series_canon"] = True
+                settings["world_relationship"] = settings.get("world_relationship", "canon")
+                save_json(path, settings)
+            except Exception as error:
+                print(f"WARNING: Could not update project metadata for {project.name}: {error}")
+        count += 1
+    bible["continuity_notes"] = list(dict.fromkeys(bible.get("continuity_notes", []) + [
+        "Five-book curated Nightmare starting set attached; duplicate/working-copy project folders were excluded.",
+        "Canonical book numbering remains unassigned until the creator confirms the series order.",
+    ]))
+    save_series_bible(bible)
+    print(f"\nCURATED NIGHTMARE SET ATTACHED — {count} books registered.")
+    print("Book numbers were intentionally NOT guessed.")
+    print("Existing PDFs/artwork were NOT modified.")
+    return count
+
+
+def lore_all_project_records():
+    """Return every usable project as a manual-selection record.
+
+    This intentionally does NOT use lore keyword matching. Manual selection is
+    the escape hatch for projects whose names/metadata do not contain the
+    expected series name.
+    """
+    records = []
+    if not PROJECTS.exists():
+        return records
+    for project in sorted(PROJECTS.iterdir(), key=lambda p: p.name.casefold()):
+        if not project.is_dir() or project.name.startswith("_"):
+            continue
+        try:
+            rec = lore_extract_project_record(project)
+        except Exception:
+            continue
+        rec["_path"] = str(project)
+        records.append(rec)
+    return records
+
+
+def lore_manual_select_projects(bible):
+    """Show a Windows popup allowing the creator to choose books manually.
+
+    No series-name matching is performed here. The creator explicitly chooses
+    which existing project folders belong to the selected series.
+    """
+    if not bible:
+        return 0
+
+    records = lore_all_project_records()
+    attached = {
+        str(book.get("project", "")).casefold()
+        for book in bible.get("books", [])
+        if isinstance(book, dict)
+    }
+    available = [r for r in records if r.get("project", "").casefold() not in attached]
+
+    if not available:
+        print("\nNo unattached projects are available for manual selection.")
+        return 0
+
+    # tkinter is part of standard Windows Python. If unavailable, retain a
+    # safe console fallback so the factory never loses the manual path.
+    try:
+        import tkinter as tk
+        from tkinter import ttk
+    except Exception as error:
+        print(f"\nPopup selector unavailable ({error}). Using console selector.")
+        print("Select project numbers, comma separated. Enter to cancel.")
+        for i, rec in enumerate(available, 1):
+            print(f"  {i}. {rec['title']} <- {rec['project']}")
+        raw = input("Projects to attach: ").strip()
+        if not raw:
+            return 0
+        chosen = []
+        for part in raw.split(","):
+            try:
+                chosen.append(available[int(part.strip()) - 1])
+            except (ValueError, IndexError):
+                pass
+    else:
+        selected_indices = []
+        root = tk.Tk()
+        root.title(f"Add Books to {bible.get('name', 'Series')}")
+        root.geometry("820x620")
+        root.minsize(700, 500)
+
+        header = ttk.Label(
+            root,
+            text=(
+                "MANUAL SERIES BOOK SELECTOR\n"
+                "Choose the actual project folders that belong to this series.\n"
+                "The factory will NOT try to infer membership from the name."
+            ),
+            justify="left",
+        )
+        header.pack(fill="x", padx=14, pady=(14, 8))
+
+        filter_var = tk.StringVar()
+        ttk.Label(root, text="Filter projects:").pack(anchor="w", padx=14)
+        filter_entry = ttk.Entry(root, textvariable=filter_var)
+        filter_entry.pack(fill="x", padx=14, pady=(2, 8))
+
+        frame = ttk.Frame(root)
+        frame.pack(fill="both", expand=True, padx=14)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical")
+        listbox = tk.Listbox(frame, selectmode=tk.EXTENDED, yscrollcommand=scrollbar.set)
+        scrollbar.config(command=listbox.yview)
+        listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        filtered = []
+
+        def refresh(*_):
+            query = filter_var.get().strip().casefold()
+            filtered.clear()
+            listbox.delete(0, tk.END)
+            for rec in available:
+                hay = f"{rec.get('title','')} {rec.get('project','')} {rec.get('world_name','')}".casefold()
+                if query and query not in hay:
+                    continue
+                filtered.append(rec)
+                label = f"{rec.get('title','')}    [{rec.get('project','')}]"
+                if rec.get("series_name"):
+                    label += f"    series={rec['series_name']}"
+                listbox.insert(tk.END, label)
+
+        def select_all():
+            if filtered:
+                listbox.selection_set(0, tk.END)
+
+        def clear_all():
+            listbox.selection_clear(0, tk.END)
+
+        def attach():
+            selected_indices.clear()
+            selected_indices.extend(listbox.curselection())
+            root.destroy()
+
+        def cancel():
+            selected_indices.clear()
+            root.destroy()
+
+        filter_var.trace_add("write", refresh)
+        refresh()
+
+        buttons = ttk.Frame(root)
+        buttons.pack(fill="x", padx=14, pady=12)
+        ttk.Button(buttons, text="Select All", command=select_all).pack(side="left")
+        ttk.Button(buttons, text="Clear", command=clear_all).pack(side="left", padx=6)
+        ttk.Button(buttons, text="Cancel", command=cancel).pack(side="right")
+        ttk.Button(buttons, text="Add Selected Books", command=attach).pack(side="right", padx=6)
+
+        root.bind("<Escape>", lambda _e: cancel())
+        root.bind("<Control-a>", lambda _e: select_all())
+        filter_entry.focus_set()
+        root.mainloop()
+        chosen = [filtered[i] for i in selected_indices if 0 <= i < len(filtered)]
+
+    if not chosen:
+        print("\nNo books selected. Existing projects were NOT modified.")
+        return 0
+
+    print(f"\nSelected {len(chosen)} project(s):")
+    for i, rec in enumerate(chosen, 1):
+        print(f"  {i}. {rec['title']} <- {rec['project']}")
+
+    count = 0
+    for rec in chosen:
+        raw_number = input(
+            f"Book number for '{rec['title']}' (blank = unassigned): "
+        ).strip()
+        book_number = None
+        if raw_number:
+            try:
+                parsed = int(raw_number)
+                if parsed > 0:
+                    book_number = parsed
+            except ValueError:
+                print("  Invalid book number; leaving it unassigned.")
+
+        rec = dict(rec)
+        rec["book_number"] = book_number
+        rec["explicit_attachment"] = True
+        rec["path"] = str(PROJECTS / rec["project"])
+        lore_register_book(bible, rec, True)
+
+        project = PROJECTS / rec["project"]
+        metadata = project / "project.json"
+        if metadata.exists():
+            try:
+                settings = load_json(metadata)
+                settings["series_name"] = bible.get("name", "")
+                settings["series_id"] = bible.get("series_id", "")
+                settings["series_canon"] = True
+                settings["world_relationship"] = settings.get("world_relationship", "canon")
+                if book_number is not None:
+                    settings["book_number"] = book_number
+                save_json(metadata, settings)
+            except Exception as error:
+                print(f"WARNING: Could not update {project.name}/project.json: {error}")
+        count += 1
+
+    bible["continuity_notes"] = list(dict.fromkeys(
+        bible.get("continuity_notes", []) + [
+            "Books may be attached manually through the popup project selector; manual selection overrides filename/metadata discovery.",
+        ]
+    ))
+    save_series_bible(bible)
+    print(f"\nMANUAL SERIES ATTACHMENT COMPLETE — {count} book(s) registered.")
+    print("Existing PDFs/artwork were NOT modified.")
+    return count
+
+def lore_repair_series():
+    bibles = list_series_bibles()
+    if not bibles:
+        print("No Series Bibles exist. Create the series first.")
+        return
+    for i, b in enumerate(bibles, 1):
+        print(f"{i}. {b.get('name', b.get('series_id'))}")
+    try:
+        bible = bibles[int(input("Series number: ").strip()) - 1]
+    except (ValueError, IndexError):
+        print("Invalid selection.")
+        return
+    if "nightmare" in bible.get("name", "").casefold():
+        print("\nNightmare Series manual reconciliation")
+        print("The popup lets you choose exactly which existing project folders belong to the series.")
+        lore_manual_select_projects(bible)
+        return
+    records = lore_find_series_projects(bible.get("name", ""))
+    candidates = lore_candidate_projects(bible.get("name", ""))
+    if candidates:
+        print("\nPotential legacy books:")
+        for i, rec in enumerate(candidates, 1):
+            print(f"{i}. {rec['title']}")
+        raw = input("Enter numbers to attach (comma separated), or Enter to skip: ").strip()
+        if raw:
+            for part in raw.split(","):
+                try:
+                    rec = candidates[int(part.strip()) - 1]
+                    records.append(rec)
+                except (ValueError, IndexError):
+                    pass
+    unique = {}
+    for rec in records:
+        unique[rec["project"]] = rec
+    records = list(unique.values())
+    for rec in records:
+        lore_register_book(bible, rec, True)
+        project = PROJECTS / rec["project"]
+        if (project / "project.json").exists():
+            try:
+                settings = load_json(project / "project.json")
+                settings["series_name"] = bible.get("name", "")
+                settings["series_id"] = bible.get("series_id", "")
+                settings["world_relationship"] = settings.get("world_relationship", "canon")
+                settings["series_canon"] = True
+                if rec.get("book_number"):
+                    settings["book_number"] = rec["book_number"]
+                save_json(project / "project.json", settings)
+            except Exception:
+                pass
+    # Build a transparent repair report instead of silently rewriting old books.
+    report = {
+        "series": bible.get("name", ""),
+        "central_mythology": bible.get("central_mythology", ""),
+        "books": records,
+        "possible_conflicts": [],
+        "unresolved_items": [
+            "Review each existing book's lore pages against the canonical Series Bible before republishing.",
+            "Existing PDF prose is not automatically declared canon; explicit approval is required for new facts.",
+        ],
+        "generated": datetime.now().isoformat(timespec="seconds"),
+    }
+    save_json(series_path(bible["series_id"]) / "LORE_REPAIR_REPORT.json", report)
+    bible["continuity_notes"] = list(dict.fromkeys(bible.get("continuity_notes", []) + ["Legacy series projects were reconciled into the Series Bible; existing book text remains unchanged until republished."]))
+    save_series_bible(bible)
+    print(f"\nLORE REPAIR COMPLETE — {len(records)} books registered.")
+    print(f"Repair report: {series_path(bible['series_id']) / 'LORE_REPAIR_REPORT.json'}")
+    print("Existing PDFs were NOT modified.")
+
+
+def lore_continuity_audit():
+    bibles = list_series_bibles()
+    if not bibles:
+        print("No Series Bibles exist yet.")
+        return
+    for i, b in enumerate(bibles, 1):
+        print(f"{i}. {b.get('name', b.get('series_id'))}")
+    try:
+        bible = bibles[int(input("Series number: ").strip()) - 1]
+    except (ValueError, IndexError):
+        print("Invalid selection.")
+        return
+    errors, warnings = [], []
+    nums = []
+    for book in bible.get("books", []):
+        if isinstance(book, dict) and isinstance(book.get("book_number"), int):
+            if book["book_number"] in nums:
+                errors.append(f"Duplicate book number: {book['book_number']} ({book.get('title', '')})")
+            nums.append(book["book_number"])
+    if not bible.get("central_mythology"):
+        warnings.append("Central mythology is not defined.")
+    if not bible.get("canon_rules"):
+        warnings.append("No canon rules are defined.")
+    report = {"series": bible.get("name", ""), "errors": errors, "warnings": warnings, "status": "PASS" if not errors else "REVIEW", "generated": datetime.now().isoformat(timespec="seconds")}
+    save_json(series_path(bible["series_id"]) / "CONTINUITY_AUDIT.json", report)
+    print("\nSERIES CONTINUITY AUDIT")
+    print(f"Errors: {len(errors)} | Warnings: {len(warnings)} | Status: {report['status']}")
+    for item in errors + warnings:
+        print(f"- {item}")
+
+
+def lore_add_item(item_type):
+    bibles = list_series_bibles()
+    if not bibles:
+        print("Create a Series Bible first.")
+        return
+    for i, b in enumerate(bibles, 1):
+        print(f"{i}. {b.get('name', b.get('series_id'))}")
+    try:
+        bible = bibles[int(input("Series number: ").strip()) - 1]
+    except (ValueError, IndexError):
+        print("Invalid selection.")
+        return
+    name = input(f"{item_type.title()} name: ").strip()
+    if not name:
+        return
+    description = input("Description / role: ").strip()
+    target = bible.setdefault(item_type, [])
+    if not any((x.get("name") if isinstance(x, dict) else str(x)).casefold() == name.casefold() for x in target):
+        target.append({"name": name, "description": description, "added": datetime.now().isoformat(timespec="seconds")})
+    save_series_bible(bible)
+    print(f"Registered {item_type[:-1] if item_type.endswith('s') else item_type}: {name}")
+
+
+def series_engine_center():
+    while True:
+        bibles = list_series_bibles()
+        print("\n" + "=" * 78)
+        print(f"SERIES & LORE ENGINE v{FACTORY_VERSION}")
+        print("=" * 78)
+        print(f"Series Bibles: {len(bibles)}")
+        print("1. Create New Series")
+        print("2. Bootstrap / Repair Nightmare Series")
+        print("3. Analyze Existing Series")
+        print("4. Add / Select Books Manually")
+        print("5. Repair / Reconcile Existing Series Lore")
+        print("6. Series Continuity Audit")
+        print("7. Register Creature")
+        print("8. Register Location")
+        print("9. Open Series Bible Folder")
+        print("10. Canonical Ownership Check")
+        print("11. Back")
+        c = input("Choose: ").strip()
+        if c == "1": lore_new_series()
+        elif c == "2": lore_bootstrap_nightmare_series()
+        elif c == "3": lore_analyze_series()
+        elif c == "4":
+            bibles = list_series_bibles()
+            if not bibles:
+                print("No Series Bibles exist yet. Create one first.")
+            else:
+                for i, b in enumerate(bibles, 1):
+                    print(f"{i}. {b.get('name', b.get('series_id'))} — {len(b.get('books', []))} books")
+                try:
+                    bible = bibles[int(input("Series number: ").strip()) - 1]
+                    lore_manual_select_projects(bible)
+                except (ValueError, IndexError):
+                    print("Invalid selection.")
+        elif c == "5": lore_repair_series()
+        elif c == "6": lore_continuity_audit()
+        elif c == "7": lore_add_item("creatures")
+        elif c == "8": lore_add_item("locations")
+        elif c == "9":
+            SERIES_DIR.mkdir(parents=True, exist_ok=True)
+            v12_open_folder(SERIES_DIR)
+        elif c == "10": canonical_ownership_check()
+        elif c == "11": return
+        else: print("Invalid choice.")
+        if c != "11": input("\nPress Enter to continue...")
+
+
+def lore_select_series_for_book():
+    bibles = list_series_bibles()
+    print("\nSERIES ATTACHMENT")
+    print("0. Standalone / no series")
+    for i, b in enumerate(bibles, 1):
+        print(f"{i}. {b.get('name', b.get('series_id'))} — {len(b.get('books', []))} books")
+    raw = input("Choose series [0]: ").strip() or "0"
+    try:
+        choice = int(raw)
+    except ValueError:
+        choice = 0
+    if 1 <= choice <= len(bibles):
+        return bibles[choice - 1]
+    return None
+
+
+def lore_attach_new_book_to_series(project, bible, book_number=None):
+    if not project or not bible:
+        return
+    settings = load_json(project / "project.json")
+    settings["series_name"] = bible.get("name", "")
+    settings["series_id"] = bible.get("series_id", "")
+    settings["series_canon"] = True
+    settings["world_relationship"] = "canon"
+    if book_number is not None:
+        settings["book_number"] = book_number
+    save_json(project / "project.json", settings)
+    rec = lore_extract_project_record(project)
+    rec["book_number"] = book_number
+    lore_register_book(bible, rec, True)
+    save_series_bible(bible)
+
+
+def marketing_platform_post(title, series, description, buy_targets=""):
+    hook = f"Enter the nightmare: {title}."
+    if series:
+        hook = f"A new nightmare has arrived in the {series} series: {title}."
+    body = description or "A detailed adult horror coloring adventure filled with strange creatures and unsettling designs."
+    return f"{hook}\n\n{body}\n\nColor, explore, and discover what waits beyond the page.\n\n{buy_targets}".strip()
+
+
+def marketing_build_package(project=None):
+    project = Path(project) if project else (v12_active_project() or choose_project())
+    if not project:
+        return
+    try:
+        settings = load_json(project / "project.json")
+    except Exception:
+        settings = {}
+    title = str(settings.get("title") or project.name).strip()
+    series = str(settings.get("series_name") or "").strip()
+    description = str(settings.get("description") or settings.get("cover_blurb") or "").strip()
+    marketing = project / MARKETING_DIR_NAME
+    marketing.mkdir(parents=True, exist_ok=True)
+    image_dir = marketing / "IMAGES"
+    preview_dir = marketing / "PREVIEW"
+    image_dir.mkdir(exist_ok=True)
+    preview_dir.mkdir(exist_ok=True)
+    targets = "KDP • Gumroad • Payhip • Etsy (where eligible)"
+    universal = marketing_platform_post(title, series, description, targets)
+    variants = {
+        "UNIVERSAL_POST.txt": universal,
+        "X_POST.txt": universal[:275] + ("…" if len(universal) > 275 else ""),
+        "FACEBOOK_POST.txt": universal,
+        "INSTAGRAM_CAPTION.txt": universal + "\n\n#coloringbook #horrorcoloringbook #adultcoloring #horrorart",
+        "MESSENGER_MESSAGE.txt": f"I just released {title}!\n\n{description or 'It is an adult horror coloring adventure.'}\n\n{targets}",
+        "PRODUCT_DESCRIPTION.txt": description or f"{title} is an adult horror coloring adventure featuring intricate black-and-white line art.",
+        "SHORT_AD.txt": f"{title} — an adult horror coloring adventure. Intricate creatures. Dark details. Your colors. {targets}",
+        "LAUNCH_ANNOUNCEMENT.txt": f"NEW RELEASE: {title}\n\n{description or 'The newest nightmare is here.'}\n\n{targets}",
+    }
+    for filename, content in variants.items():
+        (marketing / filename).write_text(content.strip() + "\n", encoding="utf-8")
+    # Reuse production assets when they already exist; never modify the source artwork.
+    candidates = [
+        project / "PLATFORM" / "GUMROAD" / "cover.png",
+        project / "PLATFORM" / "GUMROAD" / "thumbnail.png",
+        project / "QC" / CONTACT_SHEET_FILENAME,
+        project / "QC" / "artwork_contact_sheet.png",
+    ]
+    copied = []
+    for src in candidates:
+        if src.exists() and src.is_file():
+            dest = image_dir / src.name
+            try:
+                shutil.copy2(src, dest)
+                copied.append(str(dest))
+            except Exception:
+                pass
+    # Generate a simple square promotional image from an existing contact sheet when possible.
+    sheet = next((Path(x) for x in copied if Path(x).suffix.lower() in IMAGE_EXTENSIONS and "contact" in Path(x).name.lower()), None)
+    if sheet and sheet.exists():
+        try:
+            im = Image.open(sheet).convert("RGB")
+            side = min(im.size)
+            left = (im.width - side) // 2
+            top = (im.height - side) // 2
+            promo = im.crop((left, top, left + side, top + side)).resize((1080, 1080))
+            promo.save(image_dir / "SOCIAL_SQUARE.png", dpi=(72, 72))
+        except Exception:
+            pass
+    # Build a small sample PDF from the finished interior, skipping common non-art opening pages.
+    final_candidates = sorted((project / "FINAL").glob("*.pdf")) if (project / "FINAL").exists() else []
+    if final_candidates:
+        sample_path = preview_dir / f"{title}_SAMPLE.pdf"
+        try:
+            from pypdf import PdfReader, PdfWriter
+            reader = PdfReader(str(final_candidates[0]))
+            writer = PdfWriter()
+            blueprint = load_json(project / BOOK_BLUEPRINT_FILENAME) if (project / BOOK_BLUEPRINT_FILENAME).exists() else {}
+            pages = blueprint.get("pages", []) if isinstance(blueprint, dict) else []
+            selected = []
+            for idx in range(len(reader.pages)):
+                ptype = pages[idx].get("type") if idx < len(pages) and isinstance(pages[idx], dict) else None
+                if ptype in {"coloring", None}:
+                    selected.append(idx)
+                if len(selected) >= 5:
+                    break
+            if not selected:
+                selected = list(range(min(5, len(reader.pages))))
+            for idx in selected:
+                writer.add_page(reader.pages[idx])
+            with open(sample_path, "wb") as f:
+                writer.write(f)
+        except Exception as error:
+            (preview_dir / "SAMPLE_BUILD_WARNING.txt").write_text(str(error) + "\n", encoding="utf-8")
+    manifest = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "project": project.name,
+        "title": title,
+        "series": series,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "files": sorted(str(p.relative_to(marketing)) for p in marketing.rglob("*") if p.is_file()),
+    }
+    save_json(marketing / "MARKETING_MANIFEST.json", manifest)
+    print("\nMARKETING PACKAGE COMPLETE")
+    print(f"Folder: {marketing}")
+    print(f"Text assets: {len(variants)}")
+    print(f"Images copied/generated: {len(copied)}")
+    print(f"Sample PDF: {'READY' if list(preview_dir.glob('*_SAMPLE.pdf')) else 'NOT CREATED'}")
+    return marketing
+
+
+def marketing_center():
+    while True:
+        project = v12_active_project()
+        print("\n" + "=" * 78)
+        print(f"MARKETING CENTER v{FACTORY_VERSION}")
+        print("=" * 78)
+        print(f"Active project: {project.name if project else 'None'}")
+        print("1. Generate Marketing Package")
+        print("2. Generate Universal Social Post")
+        print("3. Generate Sample / Preview Package")
+        print("4. Open Marketing Folder")
+        print("5. Back")
+        c = input("Choose: ").strip()
+        if c == "1": marketing_build_package(project)
+        elif c == "2":
+            marketing_build_package(project)
+            if project: print((project / MARKETING_DIR_NAME / "UNIVERSAL_POST.txt").read_text(encoding="utf-8"))
+        elif c == "3": marketing_build_package(project)
+        elif c == "4":
+            if project:
+                (project / MARKETING_DIR_NAME).mkdir(parents=True, exist_ok=True)
+                v12_open_folder(project / MARKETING_DIR_NAME)
+        elif c == "5": return
+        else: print("Invalid choice.")
+        if c != "5": input("\nPress Enter to continue...")
+
+def cb13_choose_world():
+    worlds = cb13_world_choices()
+    print("\nWORLD SELECTION")
+    print("0. No world / standalone book")
+    for i, world in enumerate(worlds, 1):
+        print(f"{i}. {world.get('name', world.get('world_id', 'World'))}")
+    raw = input("Choose world [0]: ").strip() or "0"
+    try:
+        choice = int(raw)
+    except ValueError:
+        choice = 0
+    if 1 <= choice <= len(worlds):
+        return worlds[choice - 1]
+    return None
+
+
+def cb13_choose_location(world):
+    if not world:
+        return None
+    world = world_location_recalculate_metadata(world)
+    locations = sorted(
+        world.get("locations", []),
+        key=lambda x: world_location_path(world, x).casefold()
+    )
+    if not locations:
+        print("\nNo locations exist in this world yet.")
+        print("The book can remain world-level, or you can create locations later in World Engine.")
+        return None
+    print("\nPRIMARY LOCATION")
+    print("0. World-level / no primary location")
+    for i, loc in enumerate(locations, 1):
+        path = world_location_path(world, loc)
+        print(f"{i}. {path} [{world_location_level_label(loc.get('level', 'location'))}]")
+    raw = input("Choose primary location [0]: ").strip() or "0"
+    try:
+        choice = int(raw)
+        if 1 <= choice <= len(locations):
+            return locations[choice - 1]
+    except ValueError:
+        pass
+    return None
+
+
+def cb13_existing_entity_names(world, category):
+    if not world:
+        return []
+    return [
+        str(x.get("name", "")).strip()
+        for x in world.get(category, [])
+        if isinstance(x, dict) and str(x.get("name", "")).strip()
+    ]
+
+
+def cb16_lore_snapshot(series):
+    """Return a compact, generation-safe snapshot of series canon."""
+    if not isinstance(series, dict):
+        return {
+            "attached": False, "series_id": "", "series_name": "",
+            "central_mythology": "", "core_premise": "", "canon_rules": [],
+            "established_facts": [], "open_mysteries": [], "reveals": [],
+            "creatures": [], "locations": [], "future_hooks": [],
+        }
+    def names(items, limit=12):
+        out=[]
+        for item in items or []:
+            if isinstance(item, dict):
+                value=str(item.get("name") or item.get("title") or "").strip()
+            else:
+                value=str(item).strip()
+            if value and value not in out:
+                out.append(value)
+        return out[:limit]
+    return {
+        "attached": True,
+        "series_id": str(series.get("series_id", "")),
+        "series_name": str(series.get("name", "")),
+        "central_mythology": str(series.get("central_mythology", "")),
+        "core_premise": str(series.get("core_premise", "")),
+        "canon_rules": names(series.get("canon_rules", []), 12),
+        "established_facts": names(series.get("established_facts", []), 16),
+        "open_mysteries": names(series.get("open_mysteries", []), 12),
+        "reveals": [
+            str(x.get("reveal", "")).strip() for x in (series.get("reveals", []) or [])
+            if isinstance(x, dict) and str(x.get("reveal", "")).strip()
+        ][:12],
+        "creatures": names(series.get("creatures", []), 16),
+        "locations": names(series.get("locations", []), 16),
+        "future_hooks": names(series.get("future_hooks", []), 12),
+    }
+
+
+def cb16_select_lore_terms(snapshot, n):
+    """Deterministically rotate canon references so 30 prompts do not read alike."""
+    pools = [
+        snapshot.get("creatures", []),
+        snapshot.get("locations", []),
+        snapshot.get("established_facts", []),
+        snapshot.get("open_mysteries", []),
+        snapshot.get("future_hooks", []),
+    ]
+    terms=[]
+    for offset, pool in enumerate(pools):
+        if pool:
+            terms.append(pool[(n - 1 + offset) % len(pool)])
+    return terms[:2]
+
+
+def cb16_prompt_archetype(n):
+    archetypes = [
+        ("signature portrait", "front-facing or three-quarter character portrait with distinctive anatomy and a memorable facial expression"),
+        ("full-body stance", "full-body standing pose with the silhouette completely readable and the feet clearly visible"),
+        ("predatory crouch", "low crouched pose with tense anatomy, claws or grasping limbs emphasized"),
+        ("movement", "dynamic running, lunging, climbing, or twisting action while keeping the silhouette readable"),
+        ("environmental interaction", "the subject physically interacting with a recognizable environmental object"),
+        ("discovery", "the subject discovering a disturbing object, clue, doorway, nest, or relic"),
+        ("threshold", "the subject framed at a doorway, arch, tunnel, gate, or other threshold"),
+        ("landmark", "the subject positioned at a distinctive landmark that can recur elsewhere in the series"),
+        ("secondary entity encounter", "the main subject confronting or observing one secondary creature or entity"),
+        ("object focus", "a large eerie story object as the visual focus with the creature incorporated into the composition"),
+        ("anatomical detail", "a highly detailed close view of unusual anatomy, texture, teeth, eyes, horns, limbs, or costume"),
+        ("symbolic scene", "a visually symbolic arrangement of the subject with recurring series motifs"),
+        ("aftermath", "the quiet aftermath of an unseen disturbing event with evidence left in the environment"),
+        ("surveillance", "the subject caught in a tense moment as if watched from an unseen position"),
+        ("ritual", "a strange non-graphic ritual-like arrangement using props and recurring symbols"),
+    ]
+    return archetypes[(n - 1) % len(archetypes)]
+
+
+def cb16_make_image_prompt(blueprint, n, archetype, lore_terms):
+    title = blueprint["title"]
+    idea = blueprint["concept"]
+    world = blueprint.get("world", {}) or {}
+    loc = blueprint.get("primary_location", {}) or {}
+    series = blueprint.get("series", {}) or {}
+    context = []
+    if world.get("name"): context.append(f"world: {world['name']}")
+    if loc.get("path"): context.append(f"location: {loc['path']}")
+    if series.get("central_mythology"): context.append(f"central mythology: {series['central_mythology']}")
+    if lore_terms: context.append("canon references: " + "; ".join(lore_terms))
+    setting = " | ".join(context)
+    return (
+        f"Adult horror coloring book illustration, '{title}', illustration {n:02d}. "
+        f"Core book concept: {idea}. Composition archetype: {archetype[0]}. "
+        f"Design direction: {archetype[1]}. "
+        + (f"Series continuity: {setting}. " if setting else "")
+        + "Create one dominant subject with a strong readable silhouette and a clear visual hierarchy. "
+        "Use intricate original horror details, believable anatomy, expressive shapes, and purposeful environmental props. "
+        "Keep the composition printable as a coloring page: generous white negative space around the outer edge, "
+        "clean closed contours where practical, varied line weight, crisp black ink linework, no muddy textures. "
+        "Do not add captions, lettering, logos, borders, frames, watermarks, or decorative text. "
+        "FINAL COLORING-PAGE CONSTRAINTS: black-and-white adult horror coloring page, bold clean outlines, intricate detail, "
+        "no color, no shading, no grayscale, no crosshatching, no stippling, no solid black fills, no glow, no mist, no fog."
+    )
+
+
+def cb16_build_prompt_manifest(blueprint):
+    """Build distinct, lore-aware prompt records with stable image IDs."""
+    count = int(blueprint.get("image_count", 30))
+    snapshot = blueprint.get("lore_context", {}) or {}
+    records=[]
+    seen=set()
+    for n in range(1, count + 1):
+        archetype=cb16_prompt_archetype(n)
+        lore_terms=cb16_select_lore_terms(snapshot, n)
+        prompt=cb16_make_image_prompt(blueprint, n, archetype, lore_terms)
+        # A deterministic uniqueness guard prevents accidental duplicate prompts.
+        if prompt in seen:
+            prompt += f" Variation constraint: change the pose, camera angle, and prop arrangement for illustration {n:02d}."
+        seen.add(prompt)
+        records.append({
+            "image_id": f"IMG-{n:03d}",
+            "sequence": n,
+            "status": "PLANNED",
+            "title": f"{blueprint['title']} — Illustration {n:02d}",
+            "archetype": archetype[0],
+            "composition_direction": archetype[1],
+            "lore_references": lore_terms,
+            "world_id": blueprint.get("world", {}).get("world_id", ""),
+            "world_name": blueprint.get("world", {}).get("name", ""),
+            "location_id": blueprint.get("primary_location", {}).get("id", ""),
+            "location_name": blueprint.get("primary_location", {}).get("name", ""),
+            "location_path": blueprint.get("primary_location", {}).get("path", ""),
+            "series_id": blueprint.get("series", {}).get("series_id", ""),
+            "series_name": blueprint.get("series", {}).get("name", ""),
+            "book_number": blueprint.get("series", {}).get("book_number"),
+            "prompt": prompt,
+            "negative_prompt": blueprint["style"]["negative_prompt"],
+            "output_spec": {"width_px":2550,"height_px":3300,"dpi":300,"color_mode":"RGB","background":"white","border_pixels":150},
+            "continuity": {
+                "reuse_world": bool(blueprint.get("world", {}).get("attached")),
+                "reuse_primary_location": bool(blueprint.get("primary_location", {}).get("attached")),
+                "stable_world_id": blueprint.get("world", {}).get("world_id", ""),
+                "stable_location_id": blueprint.get("primary_location", {}).get("id", ""),
+                "stable_series_id": blueprint.get("series", {}).get("series_id", ""),
+            },
+        })
+    return records
+
+
+def cb16_prompt_qa(manifest):
+    """Deterministic QA for prompt completeness and continuity before artwork."""
+    images=manifest.get("images", []) if isinstance(manifest, dict) else []
+    errors=[]; warnings=[]; ids=set(); prompts=set()
+    required=["black", "line", "white", "coloring page"]
+    required_negative = ["no color", "no shading", "no grayscale", "no crosshatching", "no stippling", "no solid black fills", "no glow", "no mist", "no fog"]
+    for i, rec in enumerate(images, 1):
+        iid=str(rec.get("image_id", "")); prompt=str(rec.get("prompt", "")).lower()
+        if not iid or iid in ids: errors.append(f"Image {i}: missing or duplicate image_id")
+        ids.add(iid)
+        if prompt in prompts: errors.append(f"{iid}: duplicate prompt")
+        prompts.add(prompt)
+        missing=[x for x in required if x not in prompt]
+        if missing: errors.append(f"{iid}: prompt missing {', '.join(missing)}")
+        negative = str(rec.get("negative_prompt", "")).lower()
+        if not negative: errors.append(f"{iid}: missing negative_prompt")
+        else:
+            missing_negative = [term for term in required_negative if term not in negative]
+            if missing_negative: errors.append(f"{iid}: negative_prompt missing {', '.join(missing_negative)}")
+        if manifest.get("series_id") and not rec.get("series_name"):
+            errors.append(f"{iid}: canonical series name missing")
+        if manifest.get("world_id") and not rec.get("world_name"):
+            errors.append(f"{iid}: canonical world name missing")
+        if not rec.get("continuity", {}).get("stable_series_id") and manifest.get("series_id"):
+            errors.append(f"{iid}: series continuity ID missing")
+        if not rec.get("lore_references") and manifest.get("series_id"):
+            warnings.append(f"{iid}: no rotating lore reference available")
+    expected=[f"IMG-{n:03d}" for n in range(1,len(images)+1)]
+    if [x.get("image_id") for x in images] != expected:
+        errors.append("Image IDs are not sequential IMG-001..IMG-N")
+    return {"status":"PASS" if not errors else "FAIL","errors":errors,"warnings":warnings,"checked":len(images)}
+
+
+
+def cb162_canonicalize_blueprint(project, blueprint):
+    """Refresh an existing blueprint from authoritative Series/World canon.
+
+    This is a non-destructive creation-context repair: it updates only the
+    blueprint/prompt-generation context and never rewrites legacy project
+    metadata or silently reassigns the project to a different World.
+    """
+    project = Path(project)
+    bp = dict(blueprint or {})
+    ownership = canonical_ownership_for_project(project)
+    series = ownership.get("series") or {}
+    book = ownership.get("book") or {}
+    world = ownership.get("world") or {}
+
+    if ownership.get("status") != "PASS":
+        return bp, ownership
+
+    world_id = str(world.get("world_id", ""))
+    world_name = str(world.get("name", ""))
+    series_id = str(series.get("series_id", ""))
+    series_name = str(series.get("name", ""))
+
+    bp["engine_version"] = BOOK_CREATION_ENGINE_VERSION
+    bp["canonical_context"] = {
+        "status": "PASS",
+        "resolution": ownership.get("reason", "Explicit Series Bible attachment is canonical."),
+        "legacy_world_ignored": ownership.get("legacy_world", ""),
+    }
+    bp["world"] = {
+        "attached": bool(world),
+        "world_id": world_id,
+        "name": world_name,
+        "genre": world.get("genre", ""),
+        "tone": world.get("tone", ""),
+        "description": world.get("description", ""),
+    }
+    bp["series"] = {
+        "attached": bool(series),
+        "series_id": series_id,
+        "name": series_name,
+        "book_number": book.get("book_number", bp.get("series", {}).get("book_number")),
+        "central_mythology": series.get("central_mythology", ""),
+        "core_premise": series.get("core_premise", ""),
+    }
+
+    # Resolve the canonical book location without inventing a new hierarchy.
+    location_name = str(book.get("primary_location", "") or "").strip()
+    location = None
+    if location_name and world_id:
+        world_record = load_world(world_id) or world
+        for item in (world_record.get("locations", []) or []):
+            if isinstance(item, dict) and str(item.get("name", "")).strip().casefold() == location_name.casefold():
+                location = item
+                break
+    old_loc = bp.get("primary_location") or {}
+    if location is None and location_name and str(old_loc.get("name", "")).strip().casefold() == location_name.casefold():
+        location = old_loc
+    bp["primary_location"] = {
+        "attached": bool(location or location_name),
+        "id": str((location or {}).get("id", old_loc.get("id", ""))),
+        "name": location_name or str((location or {}).get("name", old_loc.get("name", ""))),
+        "path": str((location or {}).get("path", old_loc.get("path", ""))),
+        "level": str((location or {}).get("level", old_loc.get("level", ""))),
+        "location_type": str((location or {}).get("location_type", old_loc.get("location_type", ""))),
+        "description": str((location or {}).get("description", old_loc.get("description", ""))),
+    }
+    bp["lore_context"] = cb16_lore_snapshot(series)
+    return bp, ownership
+
+
+def cb162_reset_stale_production_state(project):
+    """Remove stale serialized production claims after a canonical prompt rebuild."""
+    project = Path(project)
+    for name in (ARTWORK_QUEUE_FILENAME, ARTWORK_QA_FILENAME):
+        path = project / name
+        if path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+    bp_path = project / BOOK_BLUEPRINT_FILENAME
+    if bp_path.exists():
+        bp = load_json(bp_path)
+        plan = bp.setdefault("artwork_plan", {})
+        total = int(bp.get("image_count", 30) or 30)
+        plan.update({"total": total, "planned": total, "generated": 0, "passed_qa": 0, "failed_qa": 0})
+        bp["creation_status"] = "PROMPTS_READY"
+        save_json(bp_path, bp)
+
+
+def cb162_real_artwork_counts(project, queue=None):
+    """Count only actual image files and current QA status; never trust old counters."""
+    project = Path(project)
+    source = project / ARTWORK_QUEUE_DIRNAME / "SOURCE"
+    approved = project / ARTWORK_QUEUE_DIRNAME / "APPROVED"
+    review_dir = project / ARTWORK_QUEUE_DIRNAME / "REVIEW"
+    failed_dir = project / ARTWORK_QUEUE_DIRNAME / "FAILED"
+    image_exts = {".png", ".jpg", ".jpeg", ".webp"}
+    def ids(folder):
+        if not folder.exists(): return set()
+        return {p.stem.upper() for p in folder.iterdir() if p.is_file() and p.suffix.lower() in image_exts}
+    src, appr, rev, fail = map(ids, (source, approved, review_dir, failed_dir))
+    generated_ids = appr | rev | fail
+    passed = len(appr)
+    return {"generated": len(generated_ids), "passed": passed, "review": len(rev), "failed": len(fail), "source": len(src)}
+
+def cb16_lore_prompt_studio(project=None):
+    project = Path(project) if project else (v12_active_project() or choose_project())
+    if not project: return
+    bp_path = project / BOOK_BLUEPRINT_FILENAME
+    if not bp_path.exists():
+        print("No BOOK_BLUEPRINT.json exists. Create a blueprint first."); return
+    blueprint = load_json(bp_path)
+    blueprint, ownership = cb162_canonicalize_blueprint(project, blueprint)
+    print("\n" + "=" * 78)
+    print("LORE + PROMPT STUDIO v16.2")
+    print("=" * 78)
+    print(f"Project: {project.name}")
+    print(f"Series:  {blueprint.get('series', {}).get('name') or 'Standalone'}")
+    print(f"World:   {blueprint.get('world', {}).get('name') or 'Standalone'}")
+    print(f"Location:{blueprint.get('primary_location', {}).get('name') or 'World-level'}")
+    print(f"Myth:    {blueprint.get('lore_context', {}).get('central_mythology') or 'None'}")
+    if ownership.get("legacy_world"):
+        print(f"Legacy:  {ownership['legacy_world']} (ignored)")
+    print(f"Canon:   {ownership.get('status', 'REVIEW')}")
+    if ownership.get("status") != "PASS":
+        print("\nBLOCKED: canonical ownership is not PASS. Resolve the Series/World attachment first.")
+        print("\n4. Back")
+        input("Press Enter to return...")
+        return
+    print("\n1. Rebuild canonical lore-aware prompt manifest")
+    print("2. Run prompt + continuity QA")
+    print("3. Open prompts folder")
+    print("4. Back")
+    c = input("Choose: ").strip()
+    if c == "1":
+        # Save corrected creation context first, then generate from that exact snapshot.
+        save_json(bp_path, blueprint)
+        prompts = cb16_build_prompt_manifest(blueprint)
+        manifest = {
+            "schema_version": 3,
+            "engine_version": BOOK_CREATION_ENGINE_VERSION,
+            "project_id": project.name,
+            "book_title": blueprint.get("title", project.name),
+            "series_id": blueprint.get("series", {}).get("series_id", ""),
+            "world_id": blueprint.get("world", {}).get("world_id", ""),
+            "primary_location_id": blueprint.get("primary_location", {}).get("id", ""),
+            "lore_context": blueprint.get("lore_context", {}),
+            "canonical_context": blueprint.get("canonical_context", {}),
+            "images": prompts,
+        }
+        manifest["qa"] = cb16_prompt_qa(manifest)
+        save_json(project / PROMPT_MANIFEST_FILENAME, manifest)
+        cb13_write_prompt_jobs(project, prompts)
+        blueprint["artwork_plan"] = {
+            "total": len(prompts), "planned": len(prompts),
+            "generated": 0, "passed_qa": 0, "failed_qa": 0,
+        }
+        blueprint["prompt_qa"] = manifest["qa"]
+        blueprint["prompt_manifest_schema"] = 3
+        blueprint["creation_status"] = "PROMPTS_READY"
+        save_json(bp_path, blueprint)
+        cb162_reset_stale_production_state(project)
+        print(f"\nPROMPTS REBUILT: {len(prompts)}")
+        print(f"Prompt QA: {manifest['qa']['status']}")
+        print("Production state reset: 0 generated / 0 QA passed until real artwork is supplied.")
+    elif c == "2":
+        if not (project / PROMPT_MANIFEST_FILENAME).exists():
+            print("Prompt manifest missing.")
+        else:
+            manifest = load_json(project / PROMPT_MANIFEST_FILENAME)
+            qa = cb16_prompt_qa(manifest)
+            manifest["qa"] = qa
+            save_json(project / PROMPT_MANIFEST_FILENAME, manifest)
+            print(f"\nPROMPT QA: {qa['status']} | Checked: {qa['checked']} | Errors: {len(qa['errors'])} | Warnings: {len(qa['warnings'])}")
+            for e in qa["errors"][:20]: print("  ERROR:", e)
+            for w in qa["warnings"][:10]: print("  WARNING:", w)
+    elif c == "3":
+        v12_open_folder(project / "ARTWORK_QUEUE" / "PROMPTS")
+
+def cb13_create_project(title, author, genre, theme, image_count):
+    base = cb13_safe_name(title)
+    folder = PROJECTS / base
+    counter = 2
+    while folder.exists():
+        folder = PROJECTS / f"{base} ({counter})"
+        counter += 1
+    folder.mkdir(parents=True, exist_ok=True)
+    setup_project(folder)
+    settings = {
+        "title": title,
+        "author": author,
+        "genre": genre,
+        "theme": theme,
+        "trim_width": 8.5,
+        "trim_height": 11.0,
+        "dpi": 300,
+        "border_pixels": 150,
+        "number_of_images": image_count,
+        "min_source_width": 1500,
+        "min_source_height": 2000,
+        "kdp_ink_type": "black_white",
+        "kdp_auto_pad_minimum_pages": True,
+        "kdp_minimum_pages": 24,
+        "kdp_maximum_pages": 828,
+        "kdp_generate_cover": True,
+        "assembly_mode": "manual",
+        "universe_name": "",
+        "series_name": "",
+        "world_relationship": "standalone",
+        "world_canon": False,
+        "continuity_gate": True,
+        "auto_update_world_bible": True,
+        "auto_register_artwork_entities": True,
+        "production_profile_version": 2,
+        "book_creation_engine_version": BOOK_CREATION_ENGINE_VERSION,
+        "creation_status": "BLUEPRINT_CREATED",
+    }
+    save_json(folder / "project.json", settings)
+    save_json(folder / "book.json", {"pages": []})
+    return folder
+
+
+def cb13_attach_book_to_world(project, world, primary_location):
+    if not world:
+        return
+    settings = load_json(project / "project.json")
+    settings["world_id"] = world.get("world_id", "")
+    settings["universe_name"] = world.get("name", "")
+    settings["world_relationship"] = "canon"
+    settings["world_canon"] = True
+    if primary_location:
+        settings["primary_location_id"] = primary_location.get("id", "")
+        settings["primary_location_name"] = primary_location.get("name", "")
+        settings["primary_location_path"] = world_location_path(world, primary_location)
+    save_json(project / "project.json", settings)
+    world = world_v2_attach_book(
+        world,
+        project_id=project.name,
+        title=settings.get("title", project.name),
+        series_id="",
+        book_number=None,
+        canon=True,
+    )
+    # Keep an explicit book-to-primary-location reference without inventing lore.
+    if primary_location:
+        upgraded = world_v2_upgrade_record(world)
+        loc = world_v2_find(upgraded, "locations", primary_location.get("id", ""))
+        if loc is not None:
+            refs = loc.setdefault("books", [])
+            if project.name not in refs:
+                refs.append(project.name)
+            loc["last_updated"] = world_v2_now()
+        world_v2_save(upgraded)
+
+
+def ensure_canonical_series_world_registered(bible):
+    """Register a Series Bible's declared World in World Engine when explicitly requested.
+
+    This creates only the missing World record; it does not rewrite project metadata,
+    move files, or alter existing worlds. If the exact world already exists, it is reused.
+    """
+    if not isinstance(bible, dict):
+        return None, False, "No Series Bible supplied."
+    world_name = str(bible.get("world_name", "")).strip()
+    if not world_name:
+        return None, False, "Series has no canonical World name."
+
+    index = load_world_index()
+    worlds = index.setdefault("worlds", {})
+    for wid in list(worlds.keys()):
+        world = load_world(wid) or worlds.get(wid, {})
+        if str(world.get("name", wid)).strip().casefold() == world_name.casefold():
+            upgraded = world_v2_upgrade_record(world)
+            series_name = str(bible.get("name", "")).strip()
+            if series_name and not any(
+                str(item.get("name", "")).strip().casefold() == series_name.casefold()
+                for item in upgraded.get("series", []) if isinstance(item, dict)
+            ):
+                world_v2_upsert(upgraded, "series", {
+                    "name": series_name,
+                    "series_id": bible.get("series_id", ""),
+                    "canon": True,
+                })
+            return load_world(wid) or upgraded, False, "Existing canonical World reused."
+
+    # Create the exact World name declared by the Series Bible.
+    world = new_world_record(
+        world_name,
+        description=str(bible.get("core_premise", "")).strip(),
+        genre="Horror",
+        tone="Nightmare horror",
+    )
+    world["schema_version"] = WORLD_ENGINE_2_SCHEMA
+    world["engine_version"] = WORLD_ENGINE_2_VERSION
+    world["production_history"] = []
+    world["archived"] = False
+    world = world_v2_save(world)
+    series_name = str(bible.get("name", "")).strip()
+    if series_name:
+        world = world_v2_upsert(world, "series", {
+            "name": series_name,
+            "series_id": bible.get("series_id", ""),
+            "canon": True,
+        })
+    world_v2_write_bible(world)
+    return world, True, "Canonical World registered from Series Bible."
+
+
+def canonical_ownership_for_project(project):
+    """Resolve canonical World -> Series ownership without rewriting legacy metadata."""
+    project = Path(project)
+    rec = lore_extract_project_record(project)
+    project_name = project.name.casefold()
+    title = str(rec.get("title", "")).strip().casefold()
+    path_text = str(project).casefold()
+
+    matches = []
+    for bible in list_series_bibles():
+        for book in bible.get("books", []) or []:
+            if not isinstance(book, dict):
+                continue
+            bp = str(book.get("path", "")).strip().casefold()
+            bn = str(book.get("project", "")).strip().casefold()
+            bt = str(book.get("title", "")).strip().casefold()
+            explicit = bool(book.get("explicit_attachment"))
+            if explicit and (bp == path_text or bn == project_name or (title and bt == title)):
+                matches.append((bible, book))
+
+    # Explicit Series Bible attachment is authoritative for creation context.
+    if matches:
+        bible, book = matches[0]
+        world_name = str(bible.get("world_name", "")).strip()
+        world = next((w for w in cb13_world_choices() if str(w.get("name", "")).strip().casefold() == world_name.casefold()), None) if world_name else None
+        conflict_world = rec.get("world_name", "")
+        return {
+            "status": "PASS" if world else "REVIEW",
+            "project": project.name,
+            "world": world,
+            "series": bible,
+            "book": book,
+            "legacy_world": conflict_world if conflict_world and conflict_world.casefold() != world_name.casefold() else "",
+            "reason": "Explicit Series Bible attachment is canonical.",
+        }
+
+    # Explicit project metadata is second priority, but is not allowed to override
+    # a real Series Bible attachment discovered above.
+    series_id = str((load_json(project / "project.json") if (project / "project.json").exists() else {}).get("series_id", "")).strip()
+    if series_id:
+        bible = load_series_bible(series_id)
+        if bible:
+            world_name = str(bible.get("world_name", "")).strip()
+            world = next((w for w in cb13_world_choices() if str(w.get("name", "")).strip().casefold() == world_name.casefold()), None) if world_name else None
+            return {
+                "status": "PASS" if world else "REVIEW",
+                "project": project.name,
+                "world": world,
+                "series": bible,
+                "book": None,
+                "legacy_world": rec.get("world_name", "") if world_name and rec.get("world_name", "").casefold() != world_name.casefold() else "",
+                "reason": "Project series metadata resolves to the Series Bible.",
+            }
+
+    world_name = str(rec.get("world_name", "")).strip()
+    world = next((w for w in cb13_world_choices() if str(w.get("name", "")).strip().casefold() == world_name.casefold()), None) if world_name else None
+    return {
+        "status": "PASS" if world else "REVIEW",
+        "project": project.name,
+        "world": world,
+        "series": None,
+        "book": None,
+        "legacy_world": "",
+        "reason": "No explicit Series attachment; using project World metadata.",
+    }
+
+
+def canonical_ownership_check():
+    project = v12_active_project() or choose_project()
+    if not project:
+        return
+    result = canonical_ownership_for_project(project)
+    series = result.get("series") or {}
+    world = result.get("world") or {}
+    print("\n" + "=" * 78)
+    print("CANONICAL OWNERSHIP CHECK")
+    print("=" * 78)
+    print(f"Project:             {project.name}")
+    print(f"Book:                {lore_extract_project_record(project).get('title', project.name)}")
+    print(f"World:               {world.get('name') or 'UNRESOLVED'}")
+    print(f"Series:              {series.get('name') or 'Standalone / none'}")
+    print(f"Mythology:           {series.get('central_mythology') or 'None'}")
+    print(f"Status:              {result.get('status')}")
+    print(f"Resolution:          {result.get('reason')}")
+    if result.get("legacy_world"):
+        print(f"Legacy metadata:     {result['legacy_world']} (ignored for canonical context)")
+    if series and not world:
+        print("WARNING: Series declares a World that is not registered in World Engine.")
+        canonical_name = str(series.get("world_name", "")).strip()
+        if canonical_name:
+            answer = input(f"Register canonical World '{canonical_name}' now? [y/N]: ").strip().lower()
+            if answer in ("y", "yes"):
+                created_world, created, message = ensure_canonical_series_world_registered(series)
+                if created_world:
+                    result = canonical_ownership_for_project(project)
+                    world = result.get("world") or {}
+                    print(f"\n{message}")
+                    print(f"Canonical World: {world.get('name') or canonical_name}")
+                    print(f"Series: {series.get('name') or 'Standalone / none'}")
+                    print(f"Status: {result.get('status')}")
+    print("\nNo project metadata was changed by this check.")
+
+
+def cb13_create_book_blueprint_from_idea():
+    print("\n" + "=" * 78)
+    print(f"BOOK CREATION ENGINE v{FACTORY_VERSION} — IDEA -> BLUEPRINT")
+    print("=" * 78)
+    print("This creates the book plan and prompt manifest. It does NOT generate artwork yet.")
+
+    title = input("\nBook title: ").strip()
+    if not title:
+        print("Cancelled — a book title is required.")
+        return None
+    concept = input("Describe the book idea: ").strip()
+    if not concept:
+        print("Cancelled — a book idea is required.")
+        return None
+    author = input("Author [J.A.C.]: ").strip() or "J.A.C."
+    subtitle = input("Subtitle [A Horror Coloring Adventure]: ").strip() or "A Horror Coloring Adventure"
+    genre = input("Genre [Adult Horror Coloring Book]: ").strip() or "Adult Horror Coloring Book"
+    theme = input("Main theme / creature / subject: ").strip() or concept
+    raw_count = input("Number of coloring images [30]: ").strip() or "30"
+    try:
+        image_count = max(1, min(200, int(raw_count)))
+    except ValueError:
+        image_count = 30
+
+    # Series is selected BEFORE World. If a Series is attached, its canonical
+    # World controls the creation context; stale project metadata cannot override it.
+    series = lore_select_series_for_book()
+    if series:
+        canonical_world_name = str(series.get("world_name", "")).strip()
+        world = next((w for w in cb13_world_choices() if str(w.get("name", "")).strip().casefold() == canonical_world_name.casefold()), None) if canonical_world_name else None
+        if not world:
+            print(f"WARNING: Series '{series.get('name', '')}' has no registered canonical World '{canonical_world_name}'.")
+            world = None
+        primary_location = cb13_choose_location(world) if world else None
+    else:
+        world = cb13_choose_world()
+        primary_location = cb13_choose_location(world) if world else None
+    book_number = None
+    if series:
+        existing_numbers = [b.get("book_number") for b in series.get("books", []) if isinstance(b, dict) and isinstance(b.get("book_number"), int)]
+        suggested = max(existing_numbers) + 1 if existing_numbers else (len(series.get("books", [])) + 1)
+        raw_number = input(f"Book number [{suggested}]: ").strip() or str(suggested)
+        book_number = int(raw_number) if raw_number.isdigit() else suggested
+
+    print("\nCREATION SUMMARY")
+    print(f"Title:            {title}")
+    print(f"Subtitle:         {subtitle}")
+    print(f"Author:           {author}")
+    print(f"Images:           {image_count}")
+    print(f"World:            {world.get('name') if world else 'Standalone'}")
+    print(f"Primary location: {world_location_path(world, primary_location) if world and primary_location else 'World-level'}")
+    confirm = input("\nCreate blueprint? [Y/n]: ").strip().lower()
+    if confirm not in ("", "y", "yes"):
+        print("Cancelled.")
+        return None
+
+    project = cb13_create_project(title, author, genre, theme, image_count)
+    settings = load_json(project / "project.json")
+    settings["subtitle"] = subtitle
+    settings["description"] = concept
+    settings["creation_status"] = "BLUEPRINT_CREATED"
+    if series:
+        settings["series_name"] = series.get("name", "")
+        settings["series_id"] = series.get("series_id", "")
+        settings["series_canon"] = True
+        settings["book_number"] = book_number
+    save_json(project / "project.json", settings)
+    if series:
+        lore_attach_new_book_to_series(project, series, book_number)
+
+    blueprint = {
+        "schema_version": 1,
+        "engine_version": BOOK_CREATION_ENGINE_VERSION,
+        "created": datetime.now().isoformat(timespec="seconds"),
+        "project_id": project.name,
+        "project_path": str(project),
+        "title": title,
+        "subtitle": subtitle,
+        "author": author,
+        "genre": genre,
+        "theme": theme,
+        "concept": concept,
+        "image_count": image_count,
+        "format": {
+            "trim": "8.5x11",
+            "width_inches": 8.5,
+            "height_inches": 11.0,
+            "dpi": 300,
+            "interior_pixels": "2550x3300",
+            "border_pixels": 150,
+            "color_mode": "RGB",
+        },
+        "style": {
+            "art_style": BOOK_CREATION_DEFAULTS["art_style"],
+            "line_style": BOOK_CREATION_DEFAULTS["line_style"],
+            "negative_prompt": BOOK_CREATION_DEFAULTS["negative_prompt"],
+        },
+        "world": {
+            "attached": bool(world),
+            "world_id": world.get("world_id", "") if world else "",
+            "name": world.get("name", "") if world else "",
+            "genre": world.get("genre", "") if world else "",
+            "tone": world.get("tone", "") if world else "",
+            "description": world.get("description", "") if world else "",
+        },
+        "series": {
+            "attached": bool(series),
+            "series_id": series.get("series_id", "") if series else "",
+            "name": series.get("name", "") if series else "",
+            "book_number": book_number,
+            "central_mythology": series.get("central_mythology", "") if series else "",
+            "core_premise": series.get("core_premise", "") if series else "",
+        },
+        "primary_location": {
+            "attached": bool(primary_location),
+            "id": primary_location.get("id", "") if primary_location else "",
+            "name": primary_location.get("name", "") if primary_location else "",
+            "path": world_location_path(world, primary_location) if world and primary_location else "",
+            "level": primary_location.get("level", "") if primary_location else "",
+            "location_type": primary_location.get("location_type", "") if primary_location else "",
+            "description": primary_location.get("description", "") if primary_location else "",
+        },
+        "continuity_rules": [
+            "Reuse the selected world identity whenever the book is attached to a world.",
+            "Reuse the selected primary location instead of creating an untracked duplicate.",
+            "Keep stable world and location IDs in every artwork prompt record.",
+            "Do not invent canon changes silently; new entities must be explicitly added to World Engine.",
+        ],
+        "pipeline": [
+            "BLUEPRINT_CREATED",
+            "PROMPTS_READY",
+            "ARTWORK_GENERATION",
+            "ARTWORK_QA",
+            "BOOK_ASSEMBLY",
+            "PUBLISHING_ENGINE",
+            "RELEASE_AUDIT",
+        ],
+    }
+
+    # Capture a frozen lore snapshot before prompt generation so every prompt is traceable to canon.
+    blueprint["lore_context"] = cb16_lore_snapshot(series)
+
+    if world:
+        cb13_attach_book_to_world(project, world, primary_location)
+        # Refresh the saved world after attachment so the blueprint records the same IDs.
+        world = load_world(world.get("world_id", "")) or world
+    blueprint["world_record"] = {
+        "world_id": world.get("world_id", "") if world else "",
+        "name": world.get("name", "") if world else "",
+    }
+    blueprint["primary_location_record"] = {
+        "id": primary_location.get("id", "") if primary_location else "",
+        "name": primary_location.get("name", "") if primary_location else "",
+        "path": world_location_path(world, primary_location) if world and primary_location else "",
+    }
+
+    prompts = cb16_build_prompt_manifest(blueprint)
+    blueprint["prompt_manifest_file"] = PROMPT_MANIFEST_FILENAME
+    blueprint["artwork_plan"] = {
+        "total": len(prompts),
+        "planned": len(prompts),
+        "generated": 0,
+        "passed_qa": 0,
+        "failed_qa": 0,
+    }
+
+    save_json(project / BOOK_BLUEPRINT_FILENAME, blueprint)
+    save_json(project / PROMPT_MANIFEST_FILENAME, {
+        "schema_version": 1,
+        "engine_version": BOOK_CREATION_ENGINE_VERSION,
+        "project_id": project.name,
+        "book_title": title,
+        "world_id": blueprint["world"]["world_id"],
+        "primary_location_id": blueprint["primary_location"]["id"],
+        "images": prompts,
+    })
+    save_json(project / CREATION_MANIFEST_FILENAME, {
+        "schema_version": 1,
+        "engine_version": BOOK_CREATION_ENGINE_VERSION,
+        "project_id": project.name,
+        "title": title,
+        "status": "PROMPTS_READY",
+        "files": [BOOK_BLUEPRINT_FILENAME, PROMPT_MANIFEST_FILENAME],
+        "next_stage": "ARTWORK_GENERATION",
+    })
+
+    record_world_production_event(project, "BOOK_BLUEPRINT_CREATED", "READY", image_count, 0, 0)
+    print("\n" + "=" * 78)
+    print("BOOK BLUEPRINT CREATED")
+    print("=" * 78)
+    print(f"Project:          {project}")
+    print(f"Blueprint:        {project / BOOK_BLUEPRINT_FILENAME}")
+    print(f"Prompt manifest:  {project / PROMPT_MANIFEST_FILENAME}")
+    print(f"Images planned:   {len(prompts)}")
+    print(f"World continuity: {'ATTACHED' if world else 'STANDALONE'}")
+    print("Status:            PROMPTS_READY")
+    return project
+
+
+
+# ============================================================
+# 13.2 ARTWORK PRODUCTION / QA LAYER
+#
+# 13.2 turns the deterministic prompt manifest into a real artwork
+# production queue. The factory does not pretend to generate artwork
+# when no image-generation backend is connected. Instead it creates
+# stable per-image jobs, accepts generated artwork by image ID, and
+# performs measurable technical QA before assembly.
+# ============================================================
+
+ARTWORK_QUEUE_DIRNAME = "ARTWORK_QUEUE"
+ARTWORK_SOURCE_DIRNAME = "SOURCE"
+ARTWORK_APPROVED_DIRNAME = "APPROVED"
+ARTWORK_REVIEW_DIRNAME = "REVIEW"
+ARTWORK_FAILED_DIRNAME = "FAILED"
+ARTWORK_PROMPTS_DIRNAME = "PROMPTS"
+ARTWORK_QUEUE_FILENAME = "ARTWORK_QUEUE.json"
+ARTWORK_QA_FILENAME = "ARTWORK_QA.json"
+
+
+def cb13_artwork_dirs(project):
+    root = project / ARTWORK_QUEUE_DIRNAME
+    dirs = {
+        "root": root,
+        "source": root / ARTWORK_SOURCE_DIRNAME,
+        "approved": root / ARTWORK_APPROVED_DIRNAME,
+        "review": root / ARTWORK_REVIEW_DIRNAME,
+        "failed": root / ARTWORK_FAILED_DIRNAME,
+        "prompts": root / ARTWORK_PROMPTS_DIRNAME,
+    }
+    for folder in dirs.values():
+        folder.mkdir(parents=True, exist_ok=True)
+    return dirs
+
+
+def cb13_find_artwork_file(source_dir, image_id, sequence):
+    """Find generated artwork using stable IMG-### or numeric filenames."""
+    candidates = []
+    for stem in (image_id, image_id.lower(), f"{sequence:03d}", str(sequence), f"image_{sequence:03d}"):
+        for ext in (".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"):
+            candidates.append(source_dir / f"{stem}{ext}")
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    # Fallback: tolerate a filename containing the stable image ID.
+    for candidate in sorted(source_dir.iterdir() if source_dir.exists() else []):
+        if candidate.is_file() and image_id.lower() in candidate.stem.lower():
+            return candidate
+    return None
+
+
+def cb13_write_prompt_jobs(project, prompts):
+    dirs = cb13_artwork_dirs(project)
+    for record in prompts:
+        path = dirs["prompts"] / f"{record['image_id']}.txt"
+        text = (
+            f"TITLE: {record.get('title', '')}\n"
+            f"IMAGE ID: {record.get('image_id', '')}\n"
+            f"WORLD: {record.get('world_name', '')}\n"
+            f"LOCATION: {record.get('location_path', '')}\n"
+            f"\nPROMPT:\n{record.get('prompt', '')}\n"
+            f"\nNEGATIVE PROMPT:\n{record.get('negative_prompt', '')}\n"
+            f"\nOUTPUT: 2550x3300 px, 300 DPI, white background, RGB\n"
+        )
+        path.write_text(text, encoding="utf-8")
+
+
+def cb13_prepare_artwork_queue(project=None):
+    project = project or (v12_active_project() or choose_project())
+    if not project:
+        return None
+    manifest_path = project / PROMPT_MANIFEST_FILENAME
+    blueprint_path = project / BOOK_BLUEPRINT_FILENAME
+    if not manifest_path.exists() or not blueprint_path.exists():
+        print("\nNo v13.2-ready blueprint/prompt manifest exists for this project.")
+        print("Create the Book Blueprint first.")
+        return None
+    try:
+        manifest = load_json(manifest_path)
+        blueprint = load_json(blueprint_path)
+        prompts = manifest.get("images", [])
+    except Exception as error:
+        print(f"Could not load creation files: {error}")
+        return None
+    if not prompts:
+        print("Prompt manifest contains no artwork jobs.")
+        return None
+
+    dirs = cb13_artwork_dirs(project)
+    cb13_write_prompt_jobs(project, prompts)
+
+    jobs = []
+    for record in prompts:
+        job = dict(record)
+        job["status"] = "READY"
+        job["source_file"] = ""
+        job["qa_status"] = "NOT_CHECKED"
+        job["qa_errors"] = []
+        job["qa_warnings"] = []
+        job["approved_file"] = ""
+        jobs.append(job)
+
+    queue = {
+        "schema_version": 1,
+        "engine_version": BOOK_CREATION_ENGINE_VERSION,
+        "project_id": project.name,
+        "book_title": blueprint.get("title", project.name),
+        "created": datetime.now().isoformat(timespec="seconds"),
+        "source_directory": str(dirs["source"]),
+        "approved_directory": str(dirs["approved"]),
+        "jobs": jobs,
+    }
+    save_json(project / ARTWORK_QUEUE_FILENAME, queue)
+
+    blueprint["artwork_plan"] = {
+        "total": len(jobs),
+        "planned": len(jobs),
+        "generated": 0,
+        "passed_qa": 0,
+        "failed_qa": 0,
+        "review": 0,
+        "queue_ready": True,
+    }
+    save_json(blueprint_path, blueprint)
+
+    creation = load_json(project / CREATION_MANIFEST_FILENAME) if (project / CREATION_MANIFEST_FILENAME).exists() else {}
+    creation.update({
+        "schema_version": 1,
+        "engine_version": BOOK_CREATION_ENGINE_VERSION,
+        "project_id": project.name,
+        "title": blueprint.get("title", project.name),
+        "status": "ARTWORK_QUEUE_READY",
+        "files": [BOOK_BLUEPRINT_FILENAME, PROMPT_MANIFEST_FILENAME, ARTWORK_QUEUE_FILENAME],
+        "next_stage": "ARTWORK_GENERATION",
+    })
+    save_json(project / CREATION_MANIFEST_FILENAME, creation)
+
+    print("\n" + "=" * 78)
+    print("ARTWORK PRODUCTION QUEUE READY")
+    print("=" * 78)
+    print(f"Project:       {project.name}")
+    print(f"Jobs:          {len(jobs)}")
+    print(f"Prompt files:  {dirs['prompts']}")
+    print(f"Artwork input: {dirs['source']}")
+    print("\nPut generated artwork in SOURCE using names such as:")
+    print("  IMG-001.png")
+    print("  IMG-002.png")
+    print("  ...")
+    print("\nThe factory will match artwork by stable image ID and never by list position alone.")
+    return project
+
+
+def cb13_validate_artwork_file(path, expected_width=2550, expected_height=3300):
+    errors = []
+    warnings = []
+    try:
+        from PIL import Image
+        with Image.open(path) as img:
+            width, height = img.size
+            mode = img.mode
+            info = dict(img.info)
+            dpi = info.get("dpi")
+            if width != expected_width or height != expected_height:
+                errors.append(f"Dimensions are {width}x{height}; expected {expected_width}x{expected_height}.")
+            if mode not in ("RGB", "L"):
+                errors.append(f"Color mode is {mode}; expected RGB or L for interior artwork.")
+            if dpi:
+                effective_dpi = min(float(dpi[0]), float(dpi[1])) if isinstance(dpi, tuple) else float(dpi)
+                # PNG stores DPI as pixels-per-meter, so Pillow commonly reads a
+                # file saved at exactly 300 DPI as 299.9994. Treat that as the
+                # intended 300-DPI production value rather than sending every
+                # normalized import to manual REVIEW.
+                if effective_dpi < 299.0:
+                    warnings.append(f"Embedded DPI is {effective_dpi:.1f}; target is 300 DPI.")
+            else:
+                # Pixel dimensions are authoritative for this normalized import.
+                # Missing metadata alone should not downgrade otherwise valid art.
+                pass
+            # Lightweight background sanity check. This is not artistic QA.
+            sample = img.convert("L").resize((64, 64))
+            extrema = sample.getextrema()
+            if extrema[0] > 250:
+                warnings.append("Image is nearly blank/white; inspect manually.")
+            return errors, warnings, {"width": width, "height": height, "mode": mode, "dpi": dpi}
+    except Exception as error:
+        return [f"Could not read image: {error}"], [], {}
+
+
+def cb13_scan_artwork_qa(project=None):
+    project = project or (v12_active_project() or choose_project())
+    if not project:
+        return None
+    queue_path = project / ARTWORK_QUEUE_FILENAME
+    if not queue_path.exists():
+        print("\nNo artwork queue exists. Run Prepare Artwork Queue first.")
+        return None
+    queue = load_json(queue_path)
+    dirs = cb13_artwork_dirs(project)
+    jobs = queue.get("jobs", [])
+    results = []
+    passed = failed = review = generated = 0
+
+    for job in jobs:
+        image_id = job.get("image_id", "")
+        sequence = int(job.get("sequence", 0) or 0)
+        source = cb13_find_artwork_file(dirs["source"], image_id, sequence)
+        job["qa_errors"] = []
+        job["qa_warnings"] = []
+        job["approved_file"] = ""
+        if not source:
+            job["status"] = "WAITING_FOR_ARTWORK"
+            job["qa_status"] = "NOT_CHECKED"
+            results.append({"image_id": image_id, "status": job["status"]})
+            continue
+
+        generated += 1
+        job["source_file"] = str(source)
+        errors, warnings, metadata = cb13_validate_artwork_file(source)
+        job["qa_errors"] = errors
+        job["qa_warnings"] = warnings
+        job["metadata"] = metadata
+
+        if errors:
+            job["status"] = "FAIL"
+            job["qa_status"] = "FAIL"
+            failed += 1
+            destination = dirs["failed"] / source.name
+        elif warnings:
+            job["status"] = "REVIEW"
+            job["qa_status"] = "REVIEW"
+            review += 1
+            destination = dirs["review"] / source.name
+        else:
+            job["status"] = "PASS"
+            job["qa_status"] = "PASS"
+            passed += 1
+            destination = dirs["approved"] / source.name
+            job["approved_file"] = str(destination)
+
+        try:
+            import shutil
+            shutil.copy2(source, destination)
+        except Exception as error:
+            job["qa_errors"].append(f"Could not copy QA result: {error}")
+            job["status"] = "FAIL"
+            job["qa_status"] = "FAIL"
+            failed += 1
+
+        results.append({
+            "image_id": image_id,
+            "status": job["status"],
+            "errors": errors,
+            "warnings": warnings,
+        })
+
+    queue["last_qa"] = datetime.now().isoformat(timespec="seconds")
+    queue["summary"] = {
+        "total": len(jobs),
+        "generated": generated,
+        "passed": passed,
+        "review": review,
+        "failed": failed,
+        "waiting": len(jobs) - generated,
+    }
+    save_json(queue_path, queue)
+    save_json(project / ARTWORK_QA_FILENAME, {
+        "schema_version": 1,
+        "engine_version": BOOK_CREATION_ENGINE_VERSION,
+        "project_id": project.name,
+        "timestamp": queue["last_qa"],
+        "summary": queue["summary"],
+        "results": results,
+    })
+
+    blueprint_path = project / BOOK_BLUEPRINT_FILENAME
+    if blueprint_path.exists():
+        blueprint = load_json(blueprint_path)
+        blueprint.setdefault("artwork_plan", {})
+        blueprint["artwork_plan"].update({
+            "total": len(jobs),
+            "generated": generated,
+            "passed_qa": passed,
+            "failed_qa": failed,
+            "review": review,
+            "queue_ready": True,
+        })
+        save_json(blueprint_path, blueprint)
+
+    print("\n" + "=" * 78)
+    print("ARTWORK QA RESULTS")
+    print("=" * 78)
+    print(f"Total jobs:      {len(jobs)}")
+    print(f"Artwork found:   {generated}")
+    print(f"PASS:            {passed}")
+    print(f"REVIEW:          {review}")
+    print(f"FAIL:            {failed}")
+    print(f"Waiting:         {len(jobs) - generated}")
+    print(f"QA report:       {project / ARTWORK_QA_FILENAME}")
+    return queue
+
+
+
+
+def cb13_import_artwork_from_existing_pdf(project=None):
+    """Import artwork from a complete interior PDF without requiring PyMuPDF.
+
+    Uses the Factory's universal PDF renderer (PDFium first, then installed CLI
+    renderers) and analyzes every page in the supplied interior.  The importer
+    ranks pages as coloring-art candidates, excludes text-heavy matter where
+    possible, selects exactly the planned number of artwork pages, normalizes
+    them to 2550x3300 RGB PNG at 300 DPI, and immediately runs the existing QA.
+    The source PDF is never modified.
+    """
+    project = project or (v12_active_project() or choose_project())
+    if not project:
+        return None
+
+    queue_path = project / ARTWORK_QUEUE_FILENAME
+    if not queue_path.exists():
+        cb13_prepare_artwork_queue(project)
+    queue = load_json(queue_path)
+    jobs = queue.get("jobs", [])
+    if not jobs:
+        print("\nNo artwork jobs exist. Prepare the Artwork Queue first.")
+        return None
+
+    print("\nSELECT FINISHED BOOK PDF")
+    print("Choose the COMPLETE interior PDF containing the coloring pages.")
+    pdf_path = choose_pdf_file("Finished book PDF")
+    if not pdf_path:
+        print("\nNo PDF selected.")
+        return None
+
+    dirs = cb13_artwork_dirs(project)
+    render_dir = project / ARTWORK_QUEUE_DIRNAME / "PDF_IMPORT_RENDER"
+    render_dir.mkdir(parents=True, exist_ok=True)
+    for old in render_dir.glob("*.png"):
+        try:
+            old.unlink()
+        except Exception:
+            pass
+
+    # Use PDFium / external renderers instead of PyMuPDF.  Render every page so
+    # a 30-page book is not limited by a sampling heuristic.
+    try:
+        info = inspect_pdf(pdf_path)
+        total_pages = int(info.get("page_count") or 0)
+    except Exception as error:
+        print(f"\nERROR: Could not inspect PDF: {error}")
+        return None
+
+    if total_pages <= 0:
+        print("\nERROR: PDF contains no pages.")
+        return None
+
+    pdfium, bootstrap_message = _try_import_pdfium(auto_install=True)
+    if pdfium is None:
+        print("\nERROR: No working PDF renderer is available.")
+        print(bootstrap_message or "Install pypdfium2 with: python -m pip install pypdfium2")
+        return None
+
+    print("\n" + "=" * 78)
+    print("FULL INTERIOR PDF IMPORT")
+    print("=" * 78)
+    print(f"Source PDF:       {pdf_path}")
+    print(f"PDF pages:        {total_pages}")
+    print(f"Artwork required: {len(jobs)}")
+    if bootstrap_message:
+        print(f"Renderer:         {bootstrap_message}")
+    else:
+        print("Renderer:         PDFium / pypdfium2")
+    print("Analyzing every PDF page for coloring artwork...")
+
+    candidates = []
+    document = None
+    try:
+        document = pdfium.PdfDocument(str(pdf_path))
+        if len(document) != total_pages:
+            total_pages = len(document)
+
+        # Render at a moderate resolution for detection.  The selected pages are
+        # rendered again at the exact production dimensions below.
+        for idx in range(total_pages):
+            try:
+                page = document[idx]
+                bitmap = page.render(scale=1.25, rev_byteorder=True)
+                preview = bitmap.to_pil().convert("RGB")
+                raw = render_dir / f"page-{idx + 1:04d}.png"
+                preview.save(raw, "PNG", optimize=True)
+                score = float(_pdf_preview_score(raw))
+                try:
+                    # pypdfium2 page text extraction is not consistently available;
+                    # use zero here and let the visual score drive ranking.
+                    text_chars = 0
+                except Exception:
+                    text_chars = 0
+                candidates.append({
+                    "page": idx + 1,
+                    "path": raw,
+                    "score": score,
+                    "text_chars": text_chars,
+                })
+                try:
+                    page.close()
+                except Exception:
+                    pass
+            except Exception as error:
+                print(f"  Page {idx + 1}: render failed — {error}")
+
+        if not candidates:
+            print("\nERROR: No PDF pages could be rendered.")
+            return None
+
+        target_count = min(len(jobs), len(candidates))
+
+        # Front/back matter is normally lighter than coloring pages.  Exclude a
+        # small front/back region only when doing so still leaves enough pages.
+        front_skip = 5 if total_pages > target_count + 7 else 0
+        back_skip = 2 if total_pages > target_count + 7 else 0
+        interior = [
+            c for c in candidates
+            if front_skip < int(c["page"]) <= total_pages - back_skip
+        ]
+        if len(interior) < target_count:
+            interior = candidates
+
+        # Prefer visibly inked pages.  If the scoring signal is weak, fall back
+        # to the strongest available pages rather than blocking the workflow.
+        interior.sort(key=lambda x: (float(x["score"]), -int(x["page"])), reverse=True)
+        usable = [c for c in interior if float(c["score"]) >= 0.02]
+        if len(usable) < target_count:
+            usable = interior
+
+        selected = sorted(usable[:target_count], key=lambda x: int(x["page"]))
+        if len(selected) < len(jobs):
+            print(f"\nERROR: Only {len(selected)} usable pages were found; {len(jobs)} are required.")
+            print("The PDF may not contain enough detectable coloring artwork pages.")
+            return None
+
+        # Clear previous test/import output so old images cannot contaminate QA.
+        for key in ("source", "approved", "review", "failed"):
+            for old in dirs[key].glob("IMG-*.png"):
+                try:
+                    old.unlink()
+                except Exception:
+                    pass
+
+        target_w, target_h, target_dpi = 2550, 3300, 300
+        imported = []
+        print(f"Selected artwork pages: {len(selected)}")
+        print("Normalizing selected pages to 2550x3300 @ 300 DPI...")
+
+        # Re-render selected pages directly to the target canvas.  PDF page sizes
+        # can vary, so fit-within-canvas preserves the original line art without
+        # distortion or cropping.
+        for n, candidate in enumerate(selected, start=1):
+            destination = dirs["source"] / f"IMG-{n:03d}.png"
+            page_index = int(candidate["page"]) - 1
+            page = document[page_index]
+            bitmap = page.render(scale=3.0, rev_byteorder=True)
+            image = bitmap.to_pil().convert("RGB")
+            if image.size != (target_w, target_h):
+                canvas_img = Image.new("RGB", (target_w, target_h), "white")
+                fitted = ImageOps.contain(image, (target_w, target_h), Image.Resampling.LANCZOS)
+                x = (target_w - fitted.width) // 2
+                y = (target_h - fitted.height) // 2
+                canvas_img.paste(fitted, (x, y))
+                image = canvas_img
+            image.save(destination, "PNG", optimize=True, dpi=(target_dpi, target_dpi))
+            try:
+                page.close()
+            except Exception:
+                pass
+            imported.append({
+                "image_id": f"IMG-{n:03d}",
+                "source_pdf_page": int(candidate["page"]),
+                "artwork_score": float(candidate["score"]),
+                "text_chars": 0,
+                "file": str(destination),
+            })
+            if n == 1 or n == len(selected) or n % 5 == 0:
+                print(f"  Imported {n}/{len(selected)}")
+
+        queue["source_pdf"] = str(pdf_path)
+        queue["source_pdf_pages"] = imported
+        queue["imported_from_pdf"] = True
+        queue["import_timestamp"] = datetime.now().isoformat(timespec="seconds")
+        save_json(queue_path, queue)
+        save_json(project / "PDF_ARTWORK_IMPORT.json", {
+            "schema_version": 2,
+            "engine_version": BOOK_CREATION_ENGINE_VERSION,
+            "project_id": project.name,
+            "source_pdf": str(pdf_path),
+            "source_page_count": total_pages,
+            "renderer": "PDFium/pypdfium2",
+            "selected_artwork_count": len(imported),
+            "selected_pages": imported,
+        })
+
+        print("\n" + "=" * 78)
+        print("PDF ARTWORK IMPORT COMPLETE")
+        print("=" * 78)
+        print(f"Source PDF:       {pdf_path}")
+        print(f"PDF pages:        {total_pages}")
+        print(f"Artwork imported: {len(imported)}")
+        print(f"Artwork SOURCE:   {dirs['source']}")
+        print("All imported pages were normalized to 2550x3300 pixels at 300 DPI.")
+        print("\nRunning technical QA now...")
+        return cb13_scan_artwork_qa(project)
+    except Exception as error:
+        print(f"\nERROR: PDF artwork import failed: {error}")
+        return None
+    finally:
+        try:
+            if document is not None:
+                document.close()
+        except Exception:
+            pass
+
+
+def cb13_build_and_publish_project(project=None):
+    """Assemble approved creation artwork, then hand the finished PDF to the v12 publishing engine."""
+    project = project or (v12_active_project() or choose_project())
+    if not project:
+        return None
+    queue_path = project / ARTWORK_QUEUE_FILENAME
+    if not queue_path.exists():
+        print("\nNo artwork queue exists. Prepare or import artwork first.")
+        return None
+    queue = load_json(queue_path)
+    jobs = queue.get("jobs", [])
+    passed = [j for j in jobs if j.get("status") == "PASS" and j.get("approved_file")]
+    if not passed:
+        print("\nBUILD BLOCKED: No artwork has passed QA yet.")
+        print("Use 'Import Artwork from Existing PDF' or place generated artwork in SOURCE, then run QA.")
+        return None
+    if len(passed) < len(jobs):
+        print(f"\nBUILD BLOCKED: {len(passed)} of {len(jobs)} artwork jobs have passed QA.")
+        print("All planned artwork must pass before the factory assembles the book.")
+        return None
+
+    settings_path = project / "project.json"
+    settings = load_json(settings_path) if settings_path.exists() else {}
+    settings["assembly_mode"] = "auto"
+    settings["number_of_images"] = len(passed)
+    settings["creation_status"] = "ARTWORK_QA_PASS"
+    save_json(settings_path, settings)
+
+    input_dir = project / "INPUT"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    # Replace the assembly INPUT with the immutable QA-approved set.
+    for old in input_dir.iterdir():
+        if old.is_file() and old.suffix.lower() in IMAGE_EXTENSIONS:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    for number, job in enumerate(passed, start=1):
+        source = Path(job["approved_file"])
+        destination = input_dir / f"{number:03d}_{job.get('image_id', f'IMG-{number:03d}')}.png"
+        shutil.copy2(source, destination)
+
+    print("\n" + "=" * 78)
+    print("BOOK ASSEMBLY + PUBLISH")
+    print("=" * 78)
+    print(f"Project:        {project.name}")
+    print(f"Approved art:   {len(passed)}")
+    print("Stage 1/3: Building finished PDF...")
+    build_book(project)
+
+    final_pdf = project / "FINAL" / f"{settings.get('title', project.name)}.pdf"
+    if not final_pdf.exists():
+        candidates = sorted((project / "FINAL").glob("*.pdf")) if (project / "FINAL").exists() else []
+        final_pdf = candidates[0] if candidates else None
+    if not final_pdf or not Path(final_pdf).exists():
+        print("\nBUILD FAILED: No finished PDF was produced.")
+        return None
+
+    print(f"\nStage 2/3: MASTER from finished PDF: {final_pdf}")
+    master = import_existing_pdf_to_master(project, final_pdf)
+    if not master:
+        print("\nPUBLISH BLOCKED: MASTER creation failed.")
+        return None
+
+    print("\nStage 3/3: Generating KDP / Gumroad / Etsy / Payhip packages...")
+    results = {}
+    for platform in ("KDP", "Gumroad", "Etsy", "Payhip"):
+        try:
+            result = generate_platform_package(project, platform, quiet=True)
+        except Exception as error:
+            result = {"status": "FAILED", "errors": [str(error)], "warnings": []}
+        results[platform] = result
+        print(f"  {platform:8s}: {result.get('status', 'UNKNOWN')}")
+
+    creation = load_json(project / CREATION_MANIFEST_FILENAME) if (project / CREATION_MANIFEST_FILENAME).exists() else {}
+    creation.update({
+        "engine_version": BOOK_CREATION_ENGINE_VERSION,
+        "status": "PUBLISH_PACKAGES_READY",
+        "finished_pdf": str(final_pdf),
+        "master_pdf": str(master),
+        "platform_results": {k: v.get("status") for k, v in results.items()},
+        "next_stage": "SELL_OR_UPDATE",
+    })
+    save_json(project / CREATION_MANIFEST_FILENAME, creation)
+
+    print("\n" + "=" * 78)
+    print("PRODUCTION COMPLETE")
+    print("=" * 78)
+    print(f"Finished PDF: {final_pdf}")
+    print(f"MASTER:       {master}")
+    print(f"Gumroad:      {results.get('Gumroad', {}).get('status', 'UNKNOWN')}")
+    print(f"KDP:          {results.get('KDP', {}).get('status', 'UNKNOWN')}")
+    print(f"Payhip:       {results.get('Payhip', {}).get('status', 'UNKNOWN')}")
+    print(f"Etsy:         {results.get('Etsy', {}).get('status', 'UNKNOWN')}")
+    print("\nYour Gumroad package is in the project's PLATFORM/GUMROAD folder.")
+    return results
+
+
+def cb13_artwork_production_center():
+    project = v12_active_project() or choose_project()
+    if not project:
+        return
+    while True:
+        print("\n" + "=" * 78)
+        print(f"ARTWORK PRODUCTION CENTER v{FACTORY_VERSION}")
+        print("=" * 78)
+        print(f"Project: {project.name}")
+        queue_path = project / ARTWORK_QUEUE_FILENAME
+        if queue_path.exists():
+            try:
+                q = load_json(queue_path)
+                summary = q.get("summary", {})
+                print(f"Jobs: {len(q.get('jobs', []))} | Found: {summary.get('generated', 0)} | PASS: {summary.get('passed', 0)} | REVIEW: {summary.get('review', 0)} | FAIL: {summary.get('failed', 0)}")
+            except Exception:
+                print("Queue: present (summary unavailable)")
+        else:
+            print("Queue: NOT PREPARED")
+        print("\n1. Prepare Artwork Queue")
+        print("2. Import Artwork From Existing PDF")
+        print("3. Scan Artwork + Run QA")
+        print("4. Build Book + Publish Packages")
+        print("5. Open Artwork Queue Folder")
+        print("6. Back")
+        choice = input("Choose: ").strip()
+        if choice == "1":
+            cb13_prepare_artwork_queue(project)
+        elif choice == "2":
+            cb13_import_artwork_from_existing_pdf(project)
+        elif choice == "3":
+            cb13_scan_artwork_qa(project)
+        elif choice == "4":
+            cb13_build_and_publish_project(project)
+        elif choice == "5":
+            v12_open_folder(project / ARTWORK_QUEUE_DIRNAME)
+        elif choice == "6":
+            return
+        else:
+            print("Invalid choice.")
+        input("\nPress Enter to continue...")
+
+def cb13_creation_dashboard():
+    project = v12_active_project() or choose_project()
+    if not project:
+        return
+    blueprint_path = project / BOOK_BLUEPRINT_FILENAME
+    manifest_path = project / PROMPT_MANIFEST_FILENAME
+    queue_path = project / ARTWORK_QUEUE_FILENAME
+    print("\n" + "=" * 78)
+    print(f"BOOK CREATION DASHBOARD v{FACTORY_VERSION}")
+    print("=" * 78)
+    print(f"Project: {project.name}")
+    if not blueprint_path.exists():
+        print("No blueprint exists for this project yet.")
+        return
+    try:
+        blueprint = load_json(blueprint_path)
+    except Exception as error:
+        print(f"Could not read blueprint: {error}")
+        return
+
+    # Canonical ownership is authoritative for creation context.  Do not let
+    # stale project/blueprint metadata display an obsolete World or Location.
+    ownership = canonical_ownership_for_project(project)
+    canonical_world = ownership.get("world") or {}
+    canonical_series = ownership.get("series") or {}
+    canonical_book = ownership.get("book") or {}
+    canonical_world_name = str(canonical_world.get("name", "")).strip()
+    canonical_series_name = str(canonical_series.get("name", "")).strip()
+    canonical_location = ""
+    if isinstance(canonical_book, dict):
+        canonical_location = str(canonical_book.get("primary_location", "") or "").strip()
+    if not canonical_location:
+        canonical_location = str((blueprint.get("primary_location") or {}).get("name", "") or "").strip()
+    if canonical_location and "/" not in canonical_location:
+        # Series Bible locations are often stored by leaf name; keep that name
+        # rather than inventing an AREA 420 hierarchy.
+        location_display = canonical_location
+    else:
+        location_display = canonical_location
+
+    plan = blueprint.get("artwork_plan", {})
+    print(f"Title:       {blueprint.get('title', project.name)}")
+    print(f"Concept:     {blueprint.get('concept', '')}")
+    print(f"World:       {canonical_world_name or 'UNRESOLVED'}")
+    print(f"Series:      {canonical_series_name or 'Standalone / none'}")
+    print(f"Location:    {location_display or 'World-level'}")
+    print(f"Images:      {blueprint.get('image_count', 0)}")
+    print(f"Prompts:     {'READY' if manifest_path.exists() else 'MISSING'}")
+    print(f"Artwork Q:   {'READY' if queue_path.exists() else 'NOT PREPARED'}")
+
+    # Production counts must come from the current artwork queue, not stale
+    # blueprint counters.  This prevents old/test QA values from masquerading
+    # as newly generated artwork.
+    counts = cb162_real_artwork_counts(project)
+    generated = counts["generated"]
+    passed = counts["passed"]
+    review = counts["review"]
+    failed = counts["failed"]
+    print(f"Generated:   {generated}")
+    print(f"QA PASS:     {passed}")
+    print(f"QA REVIEW:   {review}")
+    print(f"QA FAIL:     {failed}")
+
+    if ownership.get("legacy_world"):
+        print(f"Legacy metadata: {ownership['legacy_world']} (ignored for canonical creation context)")
+    if ownership.get("status") != "PASS":
+        print(f"Canonical ownership: {ownership.get('status', 'REVIEW')}")
+
+    print("\nFiles:")
+    print(f"  {blueprint_path.name}")
+    print(f"  {manifest_path.name}")
+    print(f"  {CREATION_MANIFEST_FILENAME}")
+    if queue_path.exists():
+        print(f"  {ARTWORK_QUEUE_FILENAME}")
+        print(f"  {ARTWORK_QA_FILENAME if (project / ARTWORK_QA_FILENAME).exists() else '(QA report not created yet)'}")
+
+
+def _project_stage_status(project):
+    project = Path(project)
+    if not project.exists():
+        return {"stage":"NO_PROJECT", "label":"No project", "next":"Start a New Book"}
+    blueprint = project / BOOK_BLUEPRINT_FILENAME
+    prompts = project / PROMPT_MANIFEST_FILENAME
+    queue = project / ARTWORK_QUEUE_FILENAME
+    qa = project / ARTWORK_QA_FILENAME
+    final_dir = project / "FINAL"
+    master_dir = project / "MASTER"
+    final_pdfs = list(final_dir.glob("*.pdf")) if final_dir.exists() else []
+    master_pdfs = list(master_dir.glob("*.pdf")) if master_dir.exists() else []
+    if not blueprint.exists() and not prompts.exists() and not queue.exists():
+        return {"stage":"PROJECT_CREATED", "label":"Project created", "next":"Start / configure the book"}
+    if blueprint.exists() and not prompts.exists():
+        return {"stage":"BLUEPRINT", "label":"Blueprint ready", "next":"Create prompts"}
+    if queue.exists() and qa.exists():
+        try:
+            q = load_json(queue); jobs = q.get("jobs", [])
+            passed = sum(1 for j in jobs if j.get("status") == "PASS" and j.get("approved_file"))
+            total = len(jobs); failed = sum(1 for j in jobs if j.get("status") == "FAIL"); review = sum(1 for j in jobs if j.get("status") == "REVIEW")
+            if total and passed == total and not final_pdfs:
+                return {"stage":"ARTWORK_QA_PASS", "label":f"Artwork QA PASS ({passed}/{total})", "next":"Build Book"}
+            if failed or review:
+                return {"stage":"ARTWORK_REVIEW", "label":f"Artwork needs review ({passed}/{total} PASS)", "next":"Review / fix artwork"}
+        except Exception:
+            pass
+    if queue.exists() and not qa.exists():
+        return {"stage":"ARTWORK_QUEUE", "label":"Artwork queue ready", "next":"Run Artwork QA"}
+    if prompts.exists() and not queue.exists():
+        return {"stage":"PROMPTS_READY", "label":"Prompts ready", "next":"Import / generate artwork"}
+    if final_pdfs and not master_pdfs:
+        return {"stage":"INTERIOR_BUILT", "label":"Interior built", "next":"Create MASTER / publish"}
+    if master_pdfs:
+        return {"stage":"MASTER_READY", "label":"MASTER ready", "next":"Publish / run release audit"}
+    return {"stage":"PROJECT", "label":"Project in progress", "next":"Open Project Dashboard"}
+
+
+def _print_project_status(project):
+    if not project:
+        print("Active project: None")
+        return
+    state = _project_stage_status(project)
+    print(f"Active project: {project.name}")
+    print(f"Status:         {state['label']}")
+    print(f"Next:           {state['next']}")
+
+
+def continue_active_book():
+    project = v12_active_project() or choose_project()
+    if not project: return
+    state = _project_stage_status(project)
+    print("\n" + "=" * 78)
+    print(f"CONTINUE ACTIVE BOOK — v{FACTORY_VERSION}")
+    print("=" * 78)
+    print(f"Project: {project.name}\nStatus:  {state['label']}\nNext:    {state['next']}")
+    choice = input("\nContinue now? [Y/n]: ").strip().lower()
+    if choice not in ("", "y", "yes"): return
+    stage = state["stage"]
+    # Creation and publishing are separate workflows.  Even when a project
+    # already has a MASTER PDF, Continue Active Book must open the creation
+    # engine so the user can inspect canon, rebuild prompts, or continue art.
+    # Publishing is available explicitly from main-menu option 6.
+    if stage == "ARTWORK_QA_PASS":
+        cb13_build_and_publish_project(project)
+    elif stage in ("ARTWORK_REVIEW", "ARTWORK_QUEUE", "PROMPTS_READY"):
+        cb13_artwork_production_center()
+    elif stage == "INTERIOR_BUILT":
+        pdfs = sorted((project / "FINAL").glob("*.pdf"))
+        if pdfs:
+            try: print(f"MASTER: {import_existing_pdf_to_master(project, pdfs[0])}")
+            except Exception as error: print(f"MASTER creation failed: {error}")
+        book_creation_engine_menu()
+    else:
+        book_creation_engine_menu()
+
+
+def start_new_book_menu():
+    while True:
+        print("\n" + "=" * 78); print(f"START A NEW BOOK — v{FACTORY_VERSION}"); print("=" * 78)
+        print("1. Create Book From Idea\n2. Create Basic Project\n3. Clone Existing Book Structure\n4. Back")
+        c=input("Choose: ").strip()
+        if c=="1": cb13_create_book_blueprint_from_idea()
+        elif c=="2": create_project()
+        elif c=="3": clone_project_from_template()
+        elif c=="4": return
+        else: print("Invalid choice.")
+        input("\nPress Enter to continue...")
+
+
+def import_existing_book_menu():
+    while True:
+        print("\n" + "=" * 78); print(f"IMPORT AN EXISTING BOOK — v{FACTORY_VERSION}"); print("=" * 78)
+        print("1. Finished PDF -> MASTER + Platforms\n2. Artwork Folder -> Create Book\n3. Finished PDF Into Active Project\n4. Back")
+        c=input("Choose: ").strip()
+        if c=="1": v12_quick_publish()
+        elif c=="2": import_artwork_folder()
+        elif c=="3":
+            project=v12_active_project() or choose_project()
+            if project:
+                raw=input("Finished interior PDF path: ").strip().strip('"')
+                if raw: cb13_import_artwork_from_existing_pdf(project, raw)
+        elif c=="4": return
+        else: print("Invalid choice.")
+        input("\nPress Enter to continue...")
+
+
+def import_artwork_menu():
+    while True:
+        print("\n" + "=" * 78); print(f"IMPORT ARTWORK — v{FACTORY_VERSION}"); print("=" * 78)
+        print("1. Import Artwork From Existing PDF\n2. Import Artwork Folder\n3. Scan Artwork + Run QA\n4. Artwork Production Center\n5. Open Artwork Queue Folder\n6. Back")
+        c=input("Choose: ").strip()
+        project=v12_active_project() or choose_project() if c in {"1","3","4","5"} else None
+        if c=="1" and project: cb13_import_artwork_from_existing_pdf(project)
+        elif c=="2": import_artwork_folder()
+        elif c=="3" and project: cb13_scan_artwork_qa(project)
+        elif c=="4": cb13_artwork_production_center()
+        elif c=="5" and project: v12_open_folder(project / ARTWORK_QUEUE_DIRNAME)
+        elif c=="6": return
+        elif c not in {"1","3","4","5"}: print("Invalid choice.")
+        input("\nPress Enter to continue...")
+
+
+def production_menu():
+    while True:
+        print("\n" + "=" * 78); print(f"PRODUCTION CENTER — v{FACTORY_VERSION}"); print("=" * 78)
+        print("1. Continue Active Book\n2. Production Center\n3. Build Current Book\n4. Production Queue\n5. Production Dashboard\n6. Artwork QA\n7. Back")
+        c=input("Choose: ").strip()
+        if c=="1": book_creation_engine_menu()
+        elif c=="2": production_center()
+        elif c=="3": cb13_build_and_publish_project()
+        elif c=="4": production_queue_menu()
+        elif c=="5": production_dashboard()
+        elif c=="6": cb13_artwork_production_center()
+        elif c=="7": return
+        else: print("Invalid choice.")
+        input("\nPress Enter to continue...")
+
+
+def publishing_menu():
+    while True:
+        print("\n" + "=" * 78); print(f"PUBLISH / EXPORT — v{FACTORY_VERSION}"); print("=" * 78)
+        print("1. Publish Current Book\n2. Platform & Publishing Center\n3. Rebuild One Platform\n4. Production Release Center\n5. Marketing Center\n6. Open Delivery Folder\n7. Back")
+        c=input("Choose: ").strip()
+        if c=="1": cb13_build_and_publish_project()
+        elif c=="2": platform_center()
+        elif c=="3": v12_rebuild_one_platform()
+        elif c=="4": production_release_center()
+        elif c=="5": marketing_center()
+        elif c=="6":
+            project=v12_active_project() or choose_project()
+            if project: v12_open_folder(project / "DELIVERY")
+        elif c=="7": return
+        else: print("Invalid choice.")
+        input("\nPress Enter to continue...")
+
+
+def worlds_projects_menu():
+    while True:
+        print("\n" + "=" * 78); print(f"WORLDS, SERIES & PROJECTS — v{FACTORY_VERSION}"); print("=" * 78)
+        print("1. Worlds & Universes\n2. Series & Lore Engine\n3. Recent Projects\n4. Set Active Project\n5. Active Project Dashboard\n6. Clone Project From Template\n7. Back")
+        c=input("Choose: ").strip()
+        if c=="1": world_engine_center_v9()
+        elif c=="2": series_engine_center()
+        elif c=="3": v12_recent_projects_menu()
+        elif c=="4": v12_set_active_project()
+        elif c=="5": v12_active_dashboard()
+        elif c=="6": clone_project_from_template()
+        elif c=="7": return
+        else: print("Invalid choice.")
+        input("\nPress Enter to continue...")
+
+
+def maintenance_menu():
+    while True:
+        print("\n" + "=" * 78); print(f"TOOLS / MAINTENANCE — v{FACTORY_VERSION}"); print("=" * 78)
+        print("1. Factory Health / Self-Test\n2. Safe Cleanup\n3. Set Active Project\n4. Back")
+        c=input("Choose: ").strip()
+        if c=="1": run_platform_self_test()
+        elif c=="2": v12_cleanup_menu()
+        elif c=="3": v12_set_active_project()
+        elif c=="4": return
+        else: print("Invalid choice.")
+        input("\nPress Enter to continue...")
+
+
+def factory_main_menu():
     PROJECTS.mkdir(exist_ok=True)
     while True:
-        active = v12_active_project()
-        print("\n" + "=" * 78)
-        print(f"        COLORING BOOK FACTORY v{FACTORY_VERSION} — FOLDER INTAKE")
-        print("=" * 78)
-        print(f"Active project: {active.name if active else 'None selected'}")
-        print("1. QUICK PUBLISH FINISHED BOOK")
-        print("2. Recent Projects")
-        print("3. Active Project Dashboard")
-        print("4. Build a book")
-        print("5. Create a new project")
-        print("6. Import Artwork Folder -> Create Book")
-        print("7. Build ALL books")
-        print("8. Production Queue")
-        print("9. Production Dashboard")
-        print("10. Worlds & Universes")
-        print("11. Production Center")
-        print("12. Platform & Publishing Center")
-        print("13. Clone a project from template")
-        print("14. PRODUCTION RELEASE CENTER")
-        print("15. Rebuild One Platform")
-        print("16. Safe Cleanup")
-        print("17. Factory Health / Self-Test")
-        print("18. Set Active Project")
-        print("19. Exit")
-        print("\nShortcuts: P=Quick Publish, R=Recent, A=Active, D=Delivery, H=Health, Q=Quit")
-        choice = input("\nChoose: ").strip().upper()
-        if choice == "P" or choice == "1": v12_quick_publish()
-        elif choice == "R" or choice == "2": v12_recent_projects_menu()
-        elif choice == "A" or choice == "3": v12_active_dashboard()
-        elif choice == "4":
-            project = choose_project()
-            if project: build_book(project)
-        elif choice == "5": create_project()
-        elif choice == "6": import_artwork_folder()
-        elif choice == "7": bulk_build()
-        elif choice == "8": production_queue_menu()
-        elif choice == "9": production_dashboard()
-        elif choice == "10": world_engine_center_v9()
-        elif choice == "11": production_center()
-        elif choice == "12": platform_center()
-        elif choice == "13": clone_project_from_template()
-        elif choice == "14": production_release_center()
-        elif choice == "15": v12_rebuild_one_platform()
-        elif choice == "16": v12_cleanup_menu()
-        elif choice == "17" or choice == "H": run_platform_self_test()
-        elif choice == "18": v12_set_active_project()
-        elif choice == "D":
-            project = v12_active_project() or choose_project()
-            if project: v12_open_folder(project / "DELIVERY")
-        elif choice == "Q" or choice == "19":
-            print("\nGoodbye."); break
+        active=v12_active_project()
+        print("\n" + "=" * 78); print(f"          COLORING BOOK FACTORY v{FACTORY_VERSION}"); print("=" * 78)
+        _print_project_status(active)
+        print("\nBOOK CREATION\n  1. Continue Active Book → Creation Engine\n  2. Start a New Book\n  3. Import an Existing Book\n  4. Import Artwork")
+        print("\nPRODUCTION\n  5. Production Center")
+        print("\nPUBLISHING\n  6. Publish / Export")
+        print("\nWORLDS & PROJECTS\n  7. Worlds & Projects")
+        print("\nDASHBOARDS\n  8. Book / Creation Dashboard")
+        print("\nTOOLS\n  9. Maintenance / Factory Health\n  0. Exit")
+        c=input("\nChoose: ").strip().upper()
+        if c=="1": continue_active_book()
+        elif c=="2": start_new_book_menu()
+        elif c=="3": import_existing_book_menu()
+        elif c=="4": import_artwork_menu()
+        elif c=="5": production_menu()
+        elif c=="6": publishing_menu()
+        elif c=="7": worlds_projects_menu()
+        elif c=="8": cb13_creation_dashboard()
+        elif c=="9" or c=="H": maintenance_menu()
+        elif c=="P": v12_quick_publish()
+        elif c=="R": v12_recent_projects_menu()
+        elif c=="A": v12_active_dashboard()
+        elif c in ("0","Q"): print("\nGoodbye."); break
         else: print("\nInvalid choice.")
         input("\nPress Enter to continue...")
+
+def book_creation_engine_menu():
+    while True:
+        print("\n" + "=" * 78)
+        print(f"BOOK CREATION ENGINE v{FACTORY_VERSION}")
+        print("=" * 78)
+        print("1. Create Book Blueprint from Idea")
+        print("2. Open Creation Dashboard")
+        print("3. Lore + Prompt Studio")
+        print("4. Artwork Production Center")
+        print("5. Build Current Book + Publish Packages")
+        print("6. Back")
+        choice = input("Choose: ").strip()
+        if choice == "1":
+            cb13_create_book_blueprint_from_idea()
+        elif choice == "2":
+            cb13_creation_dashboard()
+        elif choice == "3":
+            cb16_lore_prompt_studio()
+        elif choice == "4":
+            cb13_artwork_production_center()
+        elif choice == "5":
+            cb13_build_and_publish_project()
+        elif choice == "6":
+            return
+        else:
+            print("Invalid choice.")
+        input("\nPress Enter to continue...")
+
+def main():
+    factory_main_menu()
+
 
 if __name__ == "__main__":
     main()

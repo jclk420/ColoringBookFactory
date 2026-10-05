@@ -46,5 +46,9 @@
     "build_snapshots_enabled": true,
     "cache_by_artwork_identity": true,
     "metadata_export_enabled": true,
-    "readiness_gate": true
+    "readiness_gate": true,
+    "series_name": "Nightmare Series",
+    "series_id": "Nightmare Series",
+    "series_canon": true,
+    "world_relationship": "canon"
 }

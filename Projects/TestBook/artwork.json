@@ -1,5 +1,5 @@
 {
-    "version": "4.1",
+    "version": "13.1",
     "artworks": {
         "ART-125CCF604E9D3C86": {
             "artwork_id": "ART-125CCF604E9D3C86",
@@ -8,7 +8,7 @@
             "title": "Firefly Gemini Flash .A Nightmarish Unicorn Standing Within A Shattered Underground Gothic Realm, Its Body 110152",
             "first_seen": "2026-08-29T21:35:06",
             "last_seen": "2026-08-29T21:51:11",
-            "active": true
+            "active": false
         },
         "ART-3E83185BD85A38D7": {
             "artwork_id": "ART-3E83185BD85A38D7",
@@ -17,8 +17,8 @@
             "title": "Firefly Gemini Flash A Terrifying Supernatural Unicorn Emerging From A Haunted Graveyard Filled With Twist 110152",
             "first_seen": "2026-08-29T21:35:06",
             "last_seen": "2026-08-29T21:51:11",
-            "active": true
+            "active": false
         }
     },
-    "updated": "2026-08-29T21:51:11"
+    "updated": "2026-09-26T22:25:54"
 }

@@ -1,0 +1,103 @@
+{
+    "schema_version": 1,
+    "engine_version": "1.0",
+    "factory_version": "16.1",
+    "series_id": "Nightmare Series",
+    "name": "Nightmare Series",
+    "status": "ACTIVE",
+    "world_name": "Nightmare World",
+    "core_premise": "A connected horror coloring-book series whose nightmares trace back to the Hollow Stitch Nursery, with each book expanding the mythology while preserving established canon.",
+    "central_mythology": "Hollow Stitch Nursery",
+    "canon_rules": [
+        "The Hollow Stitch Nursery is the central mythology of the Nightmare Series.",
+        "Each new book must build on established lore instead of resetting the mythology.",
+        "Existing creatures, locations, events, and reveals remain canon unless deliberately marked for reconciliation.",
+        "New creatures and locations must have a logical connection to the existing world before becoming canon.",
+        "Mysteries may remain unresolved and should be tracked as future lore hooks.",
+        "No existing book is silently rewritten by the lore engine."
+    ],
+    "established_facts": [],
+    "open_mysteries": [
+        "What was the original purpose of the Hollow Stitch Nursery?",
+        "Who founded or controlled the Nursery?",
+        "What exists beneath or beyond the known Nursery areas?"
+    ],
+    "reveals": [],
+    "books": [
+        {
+            "project": "Monster Vending Machines",
+            "title": "Monster Vending Machines",
+            "book_number": null,
+            "canon": true,
+            "world_name": "",
+            "primary_location": "",
+            "concept": "",
+            "added": "2026-09-30T14:39:30",
+            "path": "C:\\ColoringBookFactory\\Projects\\Monster Vending Machines",
+            "explicit_attachment": true
+        },
+        {
+            "project": "Nightmare Cryptids",
+            "title": "Nightmare Cryptids",
+            "book_number": null,
+            "canon": true,
+            "world_name": "",
+            "primary_location": "Intake Wing",
+            "concept": "Nightmare Cryptids",
+            "added": "2026-09-30T14:39:30",
+            "path": "C:\\ColoringBookFactory\\Projects\\Nightmare Cryptids",
+            "explicit_attachment": true
+        },
+        {
+            "project": "Nightmare Teddy Bears A Horror Coloring Adventure",
+            "title": "Nightmare Teddy Bears A Horror Coloring Adventure",
+            "book_number": null,
+            "canon": true,
+            "world_name": "",
+            "primary_location": "",
+            "concept": "",
+            "added": "2026-09-30T14:39:31",
+            "path": "C:\\ColoringBookFactory\\Projects\\Nightmare Teddy Bears A Horror Coloring Adventure",
+            "explicit_attachment": true
+        },
+        {
+            "project": "Nightmare Unicorns A Horror Coloring Adventure",
+            "title": "NightmareUnicornsFinished",
+            "book_number": null,
+            "canon": true,
+            "world_name": "",
+            "primary_location": "",
+            "concept": "",
+            "added": "2026-09-30T14:39:32",
+            "path": "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns A Horror Coloring Adventure",
+            "explicit_attachment": true
+        },
+        {
+            "project": "nIGHTMAREllAMAS",
+            "title": "nIGHTMAREllAMAS",
+            "project_path": "C:\\Users\\J\\Desktop\\nIGHTMAREllAMAS",
+            "book_number": null,
+            "canon": true,
+            "world_name": "",
+            "primary_location": "",
+            "concept": "",
+            "added": "2026-09-30T14:50:14"
+        }
+    ],
+    "creatures": [],
+    "locations": [
+        {
+            "name": "Intake Wing",
+            "source_book": "Nightmare Cryptids"
+        }
+    ],
+    "future_hooks": [],
+    "continuity_notes": [
+        "Books may be attached manually through the popup project selector; manual selection overrides filename/metadata discovery.",
+        "Books may be attached manually through the popup project selector from any filesystem location; manual selection overrides filename/metadata discovery.",
+        "Manual series attachments retain the selected project's full filesystem path; originals are not moved or copied.",
+        "Some legacy Nightmare books do not have confirmed book numbers; assign the canonical order before creating the next numbered installment."
+    ],
+    "created": "2026-09-29T14:33:12",
+    "updated": "2026-09-30T20:27:32"
+}
