@@ -14,7 +14,7 @@ from datetime import datetime
 from hashlib import sha256
 
 # ============================================================
-# COLORING BOOK FACTORY v16.2
+# COLORING BOOK FACTORY v16.3
 # WORLD-AWARE PRODUCTION ENGINE + AUTOMATED ASSEMBLY + PAGE BUILDER + PDF/KDP PREFLIGHT + PRODUCTION CENTER
 # Release: v16.2 — creation-engine routing, canonical lore/prompt validation, and stale artwork-state safeguards.
 #
@@ -47,7 +47,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "16.2"
+FACTORY_VERSION = "16.4"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -10137,6 +10137,55 @@ def _v126_verify_master_unchanged(project, expected_hash):
     return True, "MASTER PDF unchanged (SHA-256 verified)."
 
 
+
+def _v163_split_release_warnings(project, results, audit):
+    """Separate advisory marketplace-profile notices from blocking warnings.
+
+    Advisory profile notices remain visible in platform manifests/audits,
+    but do not downgrade an otherwise clean production release. Other
+    warnings remain review-worthy.
+    """
+    profiles = load_platform_profiles()
+    advisory_messages = set()
+
+    for name, profile in profiles.items():
+        for message in _platform_profile_warning_list(profile):
+            advisory_messages.add((str(name).strip().lower(), str(message)))
+
+    advisory_items = []
+    blocking_warnings = []
+
+    def classify(platform_name, message, source):
+        platform_key = str(platform_name or "").strip().lower()
+        text = str(message or "")
+        if (platform_key, text) in advisory_messages:
+            advisory_items.append({
+                "platform": platform_name,
+                "message": text,
+                "source": source,
+            })
+        else:
+            blocking_warnings.append({
+                "platform": platform_name,
+                "message": text,
+                "source": source,
+            })
+
+    for name, result in results.items():
+        if not isinstance(result, dict):
+            continue
+        for message in result.get("warnings", []) or []:
+            classify(result.get("platform", name), message, "platform_result")
+
+    for name, entry in audit.items():
+        if not isinstance(entry, dict):
+            continue
+        for message in entry.get("warnings", []) or []:
+            classify(entry.get("platform", name), message, "delivery_audit")
+
+    return blocking_warnings, advisory_items
+
+
 def create_release_bundle_v126(project):
     """Integrity-aware replacement for the final production release workflow."""
     project = Path(project)
@@ -10186,11 +10235,11 @@ def create_release_bundle_v126(project):
                     "status": "BLOCKED", "integrity_error": master_message, "state": state_path}
 
         audit_errors = sum(len(v.get("errors", [])) for v in audit.values() if isinstance(v, dict))
-        audit_warnings = sum(len(v.get("warnings", [])) for v in audit.values() if isinstance(v, dict))
         result_errors = sum(len(r.get("errors", [])) for r in results.values() if isinstance(r, dict))
-        result_warnings = sum(len(r.get("warnings", [])) for r in results.values() if isinstance(r, dict))
         total_errors = audit_errors + result_errors
-        total_warnings = audit_warnings + result_warnings
+        blocking_warnings, advisory_items = _v163_split_release_warnings(project, results, audit)
+        total_warnings = len(blocking_warnings)
+        total_advisories = len(advisory_items)
         final_status = "BLOCKED" if total_errors else ("REVIEW" if total_warnings else "READY")
 
         snapshot = create_project_snapshot(project)
@@ -10215,11 +10264,15 @@ def create_release_bundle_v126(project):
             "final_status": final_status,
             "total_errors": total_errors,
             "total_warnings": total_warnings,
+            "total_advisories": total_advisories,
+            "blocking_warnings": blocking_warnings,
+            "advisories": advisory_items,
         })
         state_path = _v126_write_release_state(
             project, final_status, master_hash_before, source_hash_before,
             report=str(report), artifact_index=str(artifact_index),
             master_unchanged=True, total_errors=total_errors, total_warnings=total_warnings,
+            total_advisories=total_advisories,
         )
 
         print("\n" + "=" * 78)
@@ -10228,6 +10281,7 @@ def create_release_bundle_v126(project):
         print(f"Final status:   {final_status}")
         print(f"Errors:         {total_errors}")
         print(f"Warnings:       {total_warnings}")
+        print(f"Advisories:     {total_advisories}")
         print(f"MASTER:         VERIFIED UNCHANGED")
         print(f"Release report: {report}")
         print(f"Artifact index: {artifact_index}")
@@ -13716,23 +13770,55 @@ def factory_main_menu():
         active=v12_active_project()
         print("\n" + "=" * 78); print(f"          COLORING BOOK FACTORY v{FACTORY_VERSION}"); print("=" * 78)
         _print_project_status(active)
-        print("\nBOOK CREATION\n  1. Continue Active Book → Creation Engine\n  2. Start a New Book\n  3. Import an Existing Book\n  4. Import Artwork")
-        print("\nPRODUCTION\n  5. Production Center")
-        print("\nPUBLISHING\n  6. Publish / Export")
-        print("\nWORLDS & PROJECTS\n  7. Worlds & Projects")
-        print("\nDASHBOARDS\n  8. Book / Creation Dashboard")
-        print("\nTOOLS\n  9. Maintenance / Factory Health\n  0. Exit")
+        print("\nCREATE A NEW BOOK")
+        print("  1. New Book From Idea")
+        print("  2. New Book From Template")
+        print("  3. New Blank Project")
+        print("\nEXISTING / PART-FINISHED BOOKS")
+        print("  4. Continue Existing Book")
+        print("  5. Import Finished PDF")
+        print("  6. Import Artwork / Images")
+        print("  7. Recover / Repair Existing Project")
+        print("\nPRODUCTION")
+        print("  8. Production Center")
+        print("  9. Book / Creation Dashboard")
+        print("\nPUBLISH & SELL")
+        print(" 10. Publishing Center")
+        print(" 11. Production Release")
+        print(" 12. Platform Upload / Publishing")
+        print(" 13. Marketing Center")
+        print("\nWORLDS & SERIES")
+        print(" 14. Worlds & Projects")
+        print(" 15. Series & Lore")
+        print("\nTOOLS")
+        print(" 16. Maintenance / Factory Health")
+        print(" 17. Backups / Safety")
+        print("  0. Exit")
         c=input("\nChoose: ").strip().upper()
-        if c=="1": continue_active_book()
-        elif c=="2": start_new_book_menu()
-        elif c=="3": import_existing_book_menu()
-        elif c=="4": import_artwork_menu()
-        elif c=="5": production_menu()
-        elif c=="6": publishing_menu()
-        elif c=="7": worlds_projects_menu()
-        elif c=="8": cb13_creation_dashboard()
-        elif c=="9" or c=="H": maintenance_menu()
-        elif c=="P": v12_quick_publish()
+        if c=="1": start_new_book_menu()
+        elif c=="2": clone_project_from_template()
+        elif c=="3": create_project()
+        elif c=="4": continue_active_book()
+        elif c=="5": import_existing_book_menu()
+        elif c=="6": import_artwork_menu()
+        elif c=="7":
+            try: repair_reconcile_project_menu()
+            except NameError: import_existing_book_menu()
+        elif c=="8": production_menu()
+        elif c=="9": cb13_creation_dashboard()
+        elif c=="10": publishing_menu()
+        elif c=="11": production_release_center()
+        elif c=="12": platform_center()
+        elif c=="13": marketing_center()
+        elif c=="14": worlds_projects_menu()
+        elif c=="15":
+            try: series_lore_center()
+            except NameError: worlds_projects_menu()
+        elif c=="16" or c=="H": maintenance_menu()
+        elif c=="17":
+            try: safety_backup_menu()
+            except NameError: maintenance_menu()
+        elif c=="P": publishing_menu()
         elif c=="R": v12_recent_projects_menu()
         elif c=="A": v12_active_dashboard()
         elif c in ("0","Q"): print("\nGoodbye."); break
