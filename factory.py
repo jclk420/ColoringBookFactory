@@ -17,7 +17,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 17.7.
+# Current version: 17.8.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "17.7"
+FACTORY_VERSION = "17.8"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -9786,6 +9786,9 @@ def lore_ensure_series_world_link(bible):
         if len(matches) != 1:
             return "world_not_registered" if not matches else "ambiguous_world_name"
         world_id, _ = matches[0]
+        existing_world_id = str(bible.get("world_id") or "").strip()
+        if existing_world_id and existing_world_id != world_id:
+            return "series_world_id_mismatch"
         world_file = WORLDS_DIR / world_id / "world.json"
         if not world_file.exists():
             return "world_record_missing"
@@ -9795,17 +9798,24 @@ def lore_ensure_series_world_link(bible):
         existing = world.get("series", [])
         if not isinstance(existing, list):
             return "invalid_world_series_list"
+        already_linked = False
         for item in existing:
             existing_name = (
                 str(item.get("name") or item.get("series") or "").strip()
                 if isinstance(item, dict) else str(item).strip()
             )
             if existing_name.casefold() == series_name.casefold():
-                return "already_linked"
-        world["series"].append(series_name)
-        world["updated"] = datetime.now().isoformat(timespec="seconds")
-        save_json(world_file, world)
-        return "linked"
+                already_linked = True
+                break
+        if not already_linked:
+            world["series"].append(series_name)
+            world["updated"] = datetime.now().isoformat(timespec="seconds")
+            save_json(world_file, world)
+        if not existing_world_id:
+            bible["world_id"] = world_id
+            bible["updated"] = datetime.now().isoformat(timespec="seconds")
+            save_series_bible(bible)
+        return "already_linked" if already_linked else "linked"
     except Exception as error:
         print(f"WARNING: Could not link series '{series_name}' to world '{world_name}': {error}")
         return "link_failed"
@@ -10109,6 +10119,17 @@ def lore_validate_series_continuity(bible):
                 else:
                     world_id, world_meta = world_match
                     expected_world_id = str(world_id)
+                    series_world_id = str(bible.get("world_id") or "").strip()
+                    if not series_world_id:
+                        findings.append({
+                            "severity": "WARNING", "code": "SERIES_WORLD_ID_MISSING",
+                            "message": f"Series Bible has no world_id; explicit repair can bind it to '{expected_world_id}'.",
+                        })
+                    elif series_world_id != expected_world_id:
+                        findings.append({
+                            "severity": "ERROR", "code": "SERIES_WORLD_ID_MISMATCH",
+                            "message": f"Series Bible world_id '{series_world_id}' differs from registered world id '{expected_world_id}'.",
+                        })
                     world_file = WORLDS_DIR / str(world_id) / "world.json"
                     if not world_file.exists():
                         findings.append({
