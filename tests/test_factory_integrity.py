@@ -1,7 +1,10 @@
 """Fast, dependency-free integrity tests for the Coloring Book Factory source."""
 import ast
+import datetime
+import json
 import pathlib
 import re
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -288,6 +291,73 @@ class FactoryIntegrityTests(unittest.TestCase):
         segment = ast.get_source_segment(self.source, node) or ""
         self.assertGreaterEqual(segment.count("lore_repair_world_book_links(bible)"), 2)
         self.assertGreaterEqual(segment.count('"world_book_repair": world_book_repair'), 2)
+
+    def _run_world_book_repair_fixture(self, project_settings):
+        node = self.functions["lore_repair_world_book_links"][0]
+        module = ast.Module(body=[node], type_ignores=[])
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            projects = root / "Projects"
+            worlds = root / "Worlds"
+            project = projects / "Fixture Book"
+            world_dir = worlds / "Nightmare World"
+            project.mkdir(parents=True)
+            world_dir.mkdir(parents=True)
+            (worlds / "world_index.json").write_text(json.dumps({
+                "worlds": {"Nightmare World": {"name": "Nightmare World"}}
+            }), encoding="utf-8")
+            (world_dir / "world.json").write_text(json.dumps({
+                "world_id": "Nightmare World", "name": "Nightmare World",
+                "books": [], "series": ["Nightmare Series"]
+            }), encoding="utf-8")
+            (project / "project.json").write_text(json.dumps(project_settings), encoding="utf-8")
+
+            def load_json(path):
+                return json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+
+            def save_json(path, data):
+                pathlib.Path(path).write_text(json.dumps(data), encoding="utf-8")
+
+            namespace = {
+                "Path": pathlib.Path, "datetime": datetime.datetime,
+                "PROJECTS": projects, "WORLDS_DIR": worlds,
+                "WORLD_INDEX_FILENAME": "world_index.json",
+                "load_json": load_json, "save_json": save_json,
+            }
+            exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+            bible = {
+                "name": "Nightmare Series", "world_name": "Nightmare World",
+                "world_id": "Nightmare World",
+                "books": [{"project": "Fixture Book", "title": "Fixture Book"}],
+            }
+            result = namespace["lore_repair_world_book_links"](bible)
+            return result, load_json(project / "project.json"), load_json(world_dir / "world.json")
+
+    def test_world_book_repair_fills_only_missing_identity_and_preserves_flags(self):
+        result, settings, world = self._run_world_book_repair_fixture({
+            "title": "Fixture Book", "world_relationship": "non_canon",
+            "world_canon": False, "custom_setting": "keep",
+        })
+        self.assertEqual(result["status"], "repaired")
+        self.assertEqual(result["linked"], ["Fixture Book"])
+        self.assertEqual(settings["world_id"], "Nightmare World")
+        self.assertEqual(settings["universe_name"], "Nightmare World")
+        self.assertEqual(settings["world_relationship"], "non_canon")
+        self.assertIs(settings["world_canon"], False)
+        self.assertEqual(settings["custom_setting"], "keep")
+        self.assertEqual(world["books"][0]["relationship"], "non_canon")
+        self.assertIs(world["books"][0]["canon"], False)
+
+    def test_world_book_repair_preserves_conflicting_world_identity(self):
+        result, settings, world = self._run_world_book_repair_fixture({
+            "title": "Fixture Book", "world_id": "AREA 420",
+            "universe_name": "AREA 420", "world_relationship": "canon",
+            "world_canon": True,
+        })
+        self.assertEqual(settings["world_id"], "AREA 420")
+        self.assertEqual(settings["universe_name"], "AREA 420")
+        self.assertEqual(result["conflicts"][0]["code"], "PROJECT_WORLD_ID_CONFLICT")
+        self.assertEqual(world["books"], [])
 
 
 if __name__ == "__main__":
