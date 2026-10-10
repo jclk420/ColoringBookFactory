@@ -4,6 +4,12 @@ This roadmap separates shipped work from future candidates. Planned items are no
 
 ## Shipped on the current upgrade branch
 
+### v18.1 — Atomic JSON persistence
+- Writes JSON to a temporary file in the target directory, flushes it to disk, then replaces the destination.
+- Cleans up abandoned temporary files after failures.
+- Prevents an interrupted JSON write from truncating the existing file when the final replacement fails.
+- Adds runtime tests for successful writes and simulated replacement failure.
+
 ### v18.0 — Conflict-safe world-to-book reconciliation
 - Adds a deliberate repair step for books explicitly registered in a Series Bible.
 - Fills only missing project `world_id` and `universe_name` values when they agree with the canonical world.
