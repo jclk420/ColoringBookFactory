@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "20.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "21.0"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -195,7 +195,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "20.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "21.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -519,6 +519,45 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"READ_ONLY_PREFLIGHT"', self.source)
         self.assertIn('"restore_performed": False', self.source)
         self.assertIn('"FACTORY_DIAGNOSTICS.json"', self.source)
+
+    def test_v21_canon_tools_are_unique_and_wired(self):
+        required = (
+            "v21_series_bibles", "v21_choose_bible", "v21_load_approved_registry",
+            "v21_entity_rows", "v21_entity_key", "v21_entity_conflicts",
+            "v21_import_preview", "v21_append_canon_changelog",
+            "v21_import_approved_lore", "v21_conflict_resolution_queue",
+            "v21_entity_reuse_report", "v21_book_series_coverage_report",
+            "v21_canon_tools_menu",
+        )
+        for name in required:
+            with self.subTest(function=name):
+                self.assertEqual(len(self.functions.get(name, [])), 1)
+        self.assertIn('FACTORY_VERSION = "21.0"', self.source)
+        self.assertIn('elif c=="20": v21_canon_tools_menu()', self.source)
+
+    def test_v21_import_preview_is_read_only_and_blocks_unsupported_shapes(self):
+        node = self.functions["v21_import_preview"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertNotIn("save_json(", segment)
+        self.assertNotIn("shutil.copy", segment)
+        self.assertIn('"world"', segment)
+        self.assertIn("unsupported schema", segment.casefold())
+        self.assertIn('"blocked"', segment)
+
+    def test_v21_canon_import_requires_explicit_confirmation_and_backup(self):
+        node = self.functions["v21_import_approved_lore"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        for token in ('Type IMPORT', 'confirm != "IMPORT"', "shutil.copy2", "v21_append_canon_changelog"):
+            with self.subTest(token=token):
+                self.assertIn(token, segment)
+
+    def test_v21_diagnostics_do_not_mutate_series_bible(self):
+        for name in ("v21_entity_reuse_report", "v21_book_series_coverage_report"):
+            node = self.functions[name][0]
+            segment = ast.get_source_segment(self.source, node) or ""
+            with self.subTest(function=name):
+                self.assertNotIn("save_json(bible_path", segment)
+                self.assertNotIn("bible[", segment)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

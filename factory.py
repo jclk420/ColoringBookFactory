@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 20.0.
+# Current version: 21.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "20.0"
+FACTORY_VERSION = "21.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14869,6 +14869,423 @@ def v20_release_lore_diagnostics_menu():
         else: print("Invalid choice.")
 
 
+
+# ============================================================
+# v21.0 — APPROVED LORE IMPORT, CONFLICTS, REUSE & COVERAGE
+# ============================================================
+
+def v21_series_bibles():
+    """Return existing Series Bible paths only; never creates a series or world."""
+    root = Path(SERIES_DIR)
+    if not root.exists():
+        return []
+    return sorted(root.glob(f"*/{SERIES_BIBLE_FILENAME}"), key=lambda p: p.parent.name.casefold())
+
+
+def v21_choose_bible():
+    """Ask the user to select an existing Series Bible."""
+    bibles = v21_series_bibles()
+    if not bibles:
+        print(f"No existing Series Bibles found under {SERIES_DIR}.")
+        return None
+    print("\nEXISTING SERIES BIBLES")
+    for index, path in enumerate(bibles, 1):
+        print(f"{index}. {path.parent.name} — {path}")
+    raw = input("Choose a Series Bible number (0 cancels): ").strip()
+    if raw == "0" or not raw:
+        return None
+    try:
+        selected = bibles[int(raw) - 1]
+    except (ValueError, IndexError):
+        print("Invalid Series Bible selection.")
+        return None
+    return selected
+
+
+def v21_load_approved_registry():
+    """Load only explicitly approved intake records; pending items are never imported."""
+    path = Path(INTAKE_DIR) / "APPROVED_LORE.json"
+    if not path.exists():
+        return path, {"schema_version": 1, "entities": []}
+    data = load_json(path)
+    if not isinstance(data, dict) or not isinstance(data.get("entities"), list):
+        raise ValueError(f"Approved lore registry has an unsupported schema: {path}")
+    return path, data
+
+
+def v21_entity_rows(bible):
+    """Extract known entity rows from the Series Bible without changing its schema."""
+    rows = []
+    for key, kind in (("creatures", "creature"), ("locations", "location"), ("books", "book")):
+        value = bible.get(key, [])
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    name = item.get("name") or item.get("title") or item.get("project") or ""
+                    rows.append({"kind": kind, "name": str(name), "record": item, "container": key})
+    return rows
+
+
+def v21_entity_key(kind, name):
+    return (str(kind or "").casefold().strip(), lore_intake_normalize(name))
+
+
+def v21_entity_conflicts(bible, incoming):
+    """Find same-kind/name collisions where context differs; never resolves them automatically."""
+    existing = v21_entity_rows(bible)
+    key = v21_entity_key(incoming.get("kind"), incoming.get("name"))
+    found = []
+    for row in existing:
+        if v21_entity_key(row.get("kind"), row.get("name")) != key:
+            continue
+        old = row["record"]
+        old_world = str(old.get("world") or old.get("world_name") or "").strip()
+        old_location = str(old.get("location") or old.get("primary_location") or "").strip()
+        new_world = str(incoming.get("world") or "").strip()
+        new_location = str(incoming.get("location") or "").strip()
+        if (lore_intake_normalize(old_world) != lore_intake_normalize(new_world)
+                or lore_intake_normalize(old_location) != lore_intake_normalize(new_location)):
+            found.append({"existing": row, "existing_world": old_world,
+                          "existing_location": old_location, "incoming_world": new_world,
+                          "incoming_location": new_location})
+        else:
+            found.append({"existing": row, "duplicate": True})
+    return found
+
+
+def v21_import_preview(bible_path):
+    """Build a schema-aware, read-only before/after import preview."""
+    bible_path = Path(bible_path)
+    bible = load_json(bible_path)
+    if not isinstance(bible, dict):
+        raise ValueError("Series Bible root must be a JSON object.")
+    registry_path, registry = v21_load_approved_registry()
+    actions, blocked = [], []
+    allowed_shapes = {"creature": ("creatures", "name"), "location": ("locations", "name")}
+    for item in registry.get("entities", []):
+        if (not isinstance(item, dict) or str(item.get("status", "")).upper() != "APPROVED"
+                or item.get("conflict_resolution")):
+            continue
+        kind = str(item.get("kind") or "").casefold().strip()
+        name = str(item.get("name") or "").strip()
+        if not name:
+            blocked.append({"name": name, "reason": "Missing entity name"})
+            continue
+        if kind not in allowed_shapes:
+            blocked.append({"name": name, "kind": kind,
+                            "reason": "Only creature/location records have a safe known Series Bible schema; books/worlds need explicit project/world registration."})
+            continue
+        container, name_field = allowed_shapes[kind]
+        current = bible.get(container, [])
+        if not isinstance(current, list):
+            blocked.append({"name": name, "kind": kind,
+                            "reason": f"Unsupported schema: Series Bible field {container!r} is not a list"})
+            continue
+        conflicts = v21_entity_conflicts(bible, item)
+        if conflicts:
+            blocked.append({"name": name, "kind": kind, "reason": "Existing same-name entity or context conflict",
+                            "conflicts": [{"existing": x.get("existing", {}).get("record", {}),
+                                           "duplicate": x.get("duplicate", False)} for x in conflicts]})
+            continue
+        after = {name_field: name}
+        if item.get("world"):
+            after["world"] = item["world"]
+        if item.get("location") and kind == "creature":
+            after["location"] = item["location"]
+        if item.get("source_path"):
+            after["source_path"] = item["source_path"]
+        if item.get("source_hash"):
+            after["source_hash"] = item["source_hash"]
+        actions.append({"kind": kind, "name": name, "container": container,
+                        "before": None, "after": after, "source_hash": item.get("source_hash", "")})
+    return {"schema_version": 1, "series_bible": str(bible_path), "registry": str(registry_path),
+            "actions": actions, "blocked": blocked,
+            "note": "Preview only. No Series Bible or canon files were changed."}
+
+
+def v21_append_canon_changelog(bible_path, entries):
+    """Append an auditable before/after record for each explicitly approved canon change."""
+    path = Path(bible_path).parent / "CANON_CHANGELOG.json"
+    data = {"schema_version": 1, "entries": []}
+    if path.exists():
+        loaded = load_json(path)
+        if not isinstance(loaded, dict) or not isinstance(loaded.get("entries"), list):
+            raise ValueError(f"Unsupported canon changelog schema: {path}")
+        data = loaded
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    for entry in entries:
+        data["entries"].append({
+            "timestamp": timestamp, "factory_version": FACTORY_VERSION,
+            "action": entry.get("action", "IMPORT_APPROVED_LORE"),
+            "kind": entry.get("kind"), "name": entry.get("name"),
+            "source_hash": entry.get("source_hash", ""),
+            "before": entry.get("before"), "after": entry.get("after"),
+            "series_bible": str(bible_path),
+            "note": "Recorded by an explicit user-approved lore operation."
+        })
+    save_json(path, data)
+    return path
+
+
+def v21_import_approved_lore():
+    """Preview, back up, and explicitly import approved creature/location records."""
+    bible_path = v21_choose_bible()
+    if not bible_path:
+        return {"applied": 0, "cancelled": True}
+    try:
+        preview = v21_import_preview(bible_path)
+    except Exception as error:
+        print(f"Import preview failed safely: {error}")
+        return {"applied": 0, "error": str(error)}
+    print("\nSCHEMA-AWARE CANON IMPORT PREVIEW")
+    print(f"Series Bible: {bible_path.parent.name}")
+    print(f"Safe proposed additions: {len(preview['actions'])}")
+    print(f"Blocked for review: {len(preview['blocked'])}")
+    for action in preview["actions"]:
+        print(f"  + {action['kind']}: {action['name']} -> {action['container']}")
+    for item in preview["blocked"]:
+        print(f"  ! {item.get('kind', 'unknown')}: {item.get('name', '(unnamed)')} — {item['reason']}")
+    print("No existing records will be overwritten.")
+    if not preview["actions"]:
+        print("Nothing safe to import. Resolve the blocked records first.")
+        return preview
+    confirm = input('Type IMPORT to back up the Bible and apply these additions: ').strip()
+    if confirm != "IMPORT":
+        print("Cancelled. No canon changes made.")
+        return {"applied": 0, "cancelled": True, "preview": preview}
+    bible = load_json(bible_path)
+    # A timestamped byte-for-byte backup is made before any canon write.
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup = bible_path.with_name(f"{bible_path.stem}.pre_v21_{stamp}.json.bak")
+    if backup.exists():
+        raise FileExistsError(f"Refusing to overwrite existing backup: {backup}")
+    shutil.copy2(bible_path, backup)
+    applied = []
+    for action in preview["actions"]:
+        container = action["container"]
+        if not isinstance(bible.get(container), list):
+            raise ValueError(f"Series Bible schema changed during import: {container}")
+        # Recheck before append in case a prior action created an equivalent record.
+        if v21_entity_conflicts(bible, {"kind": action["kind"], "name": action["name"],
+                                       "world": action["after"].get("world", ""),
+                                       "location": action["after"].get("location", "")}):
+            continue
+        bible[container].append(action["after"])
+        applied.append({**action, "action": "IMPORT_APPROVED_LORE"})
+    if applied:
+        bible["updated"] = datetime.now().isoformat(timespec="seconds")
+        save_json(bible_path, bible)
+        changelog = v21_append_canon_changelog(bible_path, applied)
+    else:
+        changelog = None
+    print(f"Imported {len(applied)} approved lore record(s).")
+    print(f"Safety backup: {backup}")
+    if changelog:
+        print(f"Canon changelog: {changelog}")
+    print("No book project files or world registry were changed.")
+    return {"applied": len(applied), "backup": str(backup),
+            "changelog": str(changelog) if changelog else None, "preview": preview}
+
+
+def v21_conflict_resolution_queue():
+    """Review approved-registry collisions; preserve canon unless a choice is explicit."""
+    bible_path = v21_choose_bible()
+    if not bible_path:
+        return {"reviewed": 0}
+    try:
+        bible = load_json(bible_path)
+        registry_path, registry = v21_load_approved_registry()
+    except Exception as error:
+        print(f"Cannot open conflict queue: {error}")
+        return {"reviewed": 0, "error": str(error)}
+    queue = []
+    for item in registry.get("entities", []):
+        if (not isinstance(item, dict) or str(item.get("status", "")).upper() != "APPROVED"
+                or item.get("conflict_resolution")):
+            continue
+        conflicts = v21_entity_conflicts(bible, item)
+        if conflicts:
+            queue.append((item, conflicts))
+    report_path = Path(INTAKE_DIR) / "LORE_CONFLICT_QUEUE.json"
+    save_json(report_path, {"schema_version": 1, "generated_at": datetime.now().isoformat(timespec="seconds"),
+                            "series_bible": str(bible_path),
+                            "items": [{"incoming": item, "conflicts": conflicts} for item, conflicts in queue],
+                            "note": "Queue generation is read-only; resolution requires a deliberate choice."})
+    if not queue:
+        print("No approved intake records currently collide with this Series Bible.")
+        print(f"Queue report: {report_path}")
+        return {"reviewed": 0, "report": str(report_path)}
+    reviewed = kept = imported = skipped = 0
+    for item, conflicts in queue:
+        reviewed += 1
+        print("\n" + "-" * 72)
+        print(f"{item.get('kind')}: {item.get('name')}")
+        print(f"Incoming context: world={item.get('world') or '(unspecified)'}; location={item.get('location') or '(unspecified)'}")
+        for conflict in conflicts:
+            old = conflict.get("existing", {}).get("record", {})
+            print(f"Existing: {old.get('name') or old.get('title') or old.get('project')} "
+                  f"| world={old.get('world') or old.get('world_name') or '(unspecified)'} "
+                  f"| location={old.get('location') or old.get('primary_location') or '(unspecified)'}")
+        choice = input("[K]eep canon unchanged / [I]mport as separate entry / [S]kip: ").strip().casefold()
+        if choice == "k":
+            item["conflict_resolution"] = "KEEP_CANONICAL"
+            item["conflict_reviewed_at"] = datetime.now().isoformat(timespec="seconds")
+            kept += 1
+        elif choice == "i":
+            kind = str(item.get("kind") or "").casefold()
+            container = {"creature": "creatures", "location": "locations"}.get(kind)
+            if not container or not isinstance(bible.get(container), list):
+                print("This entity type has no supported Series Bible schema; left unresolved.")
+                skipped += 1
+                continue
+            after = {"name": str(item.get("name") or "").strip()}
+            if item.get("world"): after["world"] = item["world"]
+            if item.get("location") and kind == "creature": after["location"] = item["location"]
+            if item.get("source_hash"): after["source_hash"] = item["source_hash"]
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup = bible_path.with_name(f"{bible_path.stem}.pre_v21_conflict_{stamp}.json.bak")
+            if not backup.exists():
+                shutil.copy2(bible_path, backup)
+            bible[container].append(after)
+            bible["updated"] = datetime.now().isoformat(timespec="seconds")
+            save_json(bible_path, bible)
+            v21_append_canon_changelog(bible_path, [{
+                "action": "IMPORT_CONFLICT_AS_DISTINCT_ENTRY", "kind": kind,
+                "name": after["name"], "before": None, "after": after,
+                "source_hash": item.get("source_hash", "")
+            }])
+            item["conflict_resolution"] = "IMPORTED_AS_DISTINCT"
+            item["conflict_reviewed_at"] = datetime.now().isoformat(timespec="seconds")
+            imported += 1
+        else:
+            skipped += 1
+    save_json(registry_path, registry)
+    print(f"Conflict review: {reviewed} examined; {kept} kept unchanged; {imported} imported as separate entries; {skipped} skipped.")
+    print(f"Queue report: {report_path}")
+    return {"reviewed": reviewed, "kept": kept, "imported": imported, "skipped": skipped,
+            "report": str(report_path)}
+
+
+def v21_entity_reuse_report():
+    """Report exact and near-duplicate entity names; never merges or renames records."""
+    from difflib import SequenceMatcher
+    bible_path = v21_choose_bible()
+    if not bible_path:
+        return {"matches": 0}
+    try:
+        bible = load_json(bible_path)
+        _, registry = v21_load_approved_registry()
+    except Exception as error:
+        print(f"Could not build reuse report: {error}")
+        return {"matches": 0, "error": str(error)}
+    rows = []
+    for row in v21_entity_rows(bible):
+        rows.append({"kind": row["kind"], "name": row["name"], "source": "Series Bible"})
+    for item in registry.get("entities", []):
+        if isinstance(item, dict) and str(item.get("status", "")).upper() == "APPROVED":
+            rows.append({"kind": str(item.get("kind") or "").casefold(),
+                         "name": str(item.get("name") or ""), "source": "Approved intake registry"})
+    matches = []
+    for index, left in enumerate(rows):
+        for right in rows[index + 1:]:
+            if left["kind"] != right["kind"] or not left["name"] or not right["name"]:
+                continue
+            if left["source"] == right["source"] and left["source"] == "Series Bible":
+                continue
+            a, b = lore_intake_normalize(left["name"]), lore_intake_normalize(right["name"])
+            if not a or not b:
+                continue
+            ratio = SequenceMatcher(None, a, b).ratio()
+            if a == b or (min(len(a), len(b)) >= 5 and ratio >= 0.86):
+                matches.append({"kind": left["kind"], "left": left["name"], "left_source": left["source"],
+                                "right": right["name"], "right_source": right["source"],
+                                "match_type": "EXACT" if a == b else "POSSIBLE_NEAR_DUPLICATE",
+                                "similarity": round(ratio, 3)})
+    report = {"schema_version": 1, "generated_at": datetime.now().isoformat(timespec="seconds"),
+              "series_bible": str(bible_path), "matches": matches,
+              "note": "Suggestions only; records were not merged, renamed, or deleted."}
+    path = Path(bible_path).parent / "ENTITY_REUSE_REPORT.json"
+    save_json(path, report)
+    print(f"\nENTITY REUSE CHECK — {len(matches)} possible reuse match(es)")
+    for match in matches[:100]:
+        print(f"  {match['match_type']} {match['kind']}: {match['left']} <-> {match['right']} ({match['similarity']:.0%})")
+    if not matches:
+        print("No exact or near-duplicate names found in the checked records.")
+    print(f"Report: {path}")
+    return report
+
+
+def v21_book_series_coverage_report():
+    """Report attached-book metadata coverage without modifying the Series Bible."""
+    bible_path = v21_choose_bible()
+    if not bible_path:
+        return {"books": 0}
+    try:
+        bible = load_json(bible_path)
+    except Exception as error:
+        print(f"Could not read Series Bible: {error}")
+        return {"books": 0, "error": str(error)}
+    books = bible.get("books", [])
+    if not isinstance(books, list):
+        print("Unsupported Series Bible schema: books must be a list.")
+        return {"books": 0, "error": "unsupported_schema"}
+    required = ("project", "title", "book_number", "world_name", "primary_location", "concept")
+    results = []
+    for book in books:
+        if not isinstance(book, dict):
+            results.append({"title": "(invalid record)", "missing": list(required), "status": "REVIEW"})
+            continue
+        missing = [key for key in required if book.get(key) in (None, "", [], {})]
+        path_text = book.get("path") or book.get("project_path") or ""
+        project_exists = bool(path_text and Path(path_text).exists())
+        if not project_exists:
+            project_name = str(book.get("project") or "")
+            project_exists = bool(project_name and (Path(PROJECTS) / project_name).exists())
+        results.append({"title": book.get("title") or book.get("project") or "(untitled)",
+                        "project": book.get("project"), "missing_fields": missing,
+                        "project_path_present": bool(path_text), "project_exists": project_exists,
+                        "explicit_attachment": bool(book.get("explicit_attachment")),
+                        "canon": book.get("canon", None),
+                        "status": "READY" if not missing and project_exists else "REVIEW"})
+    report = {"schema_version": 1, "generated_at": datetime.now().isoformat(timespec="seconds"),
+              "series_bible": str(bible_path), "book_count": len(results),
+              "ready_count": sum(1 for row in results if row["status"] == "READY"),
+              "review_count": sum(1 for row in results if row["status"] == "REVIEW"),
+              "books": results,
+              "note": "Coverage diagnostics only. No book numbering, project metadata, or canon was changed."}
+    path = Path(bible_path).parent / "BOOK_SERIES_COVERAGE.json"
+    save_json(path, report)
+    print(f"\nBOOK-TO-SERIES COVERAGE — {report['ready_count']} ready / {report['book_count']} total")
+    for row in results:
+        missing_text = ", ".join(row.get("missing_fields", [])) or "no missing metadata"
+        print(f"  [{row['status']}] {row['title']} — {missing_text}; project exists: {row['project_exists']}")
+    print(f"Report: {path}")
+    return report
+
+
+def v21_canon_tools_menu():
+    while True:
+        print("\n" + "=" * 72)
+        print(f"CANON REGISTRY & CONTINUITY TOOLS v{FACTORY_VERSION}")
+        print("1. Preview / import approved lore into a Series Bible")
+        print("2. Review canon conflict queue")
+        print("3. Entity reuse / duplicate-name report")
+        print("4. Book-to-series coverage report")
+        print("0. Back")
+        choice = input("Choose: ").strip()
+        if choice == "0":
+            return
+        if choice == "1":
+            v21_import_approved_lore()
+        elif choice == "2":
+            v21_conflict_resolution_queue()
+        elif choice == "3":
+            v21_entity_reuse_report()
+        elif choice == "4":
+            v21_book_series_coverage_report()
+        else:
+            print("Invalid choice.")
+
 def factory_main_menu():
     PROJECTS.mkdir(exist_ok=True)
     while True:
@@ -14897,6 +15314,7 @@ def factory_main_menu():
         print(" 15. Series & Lore")
         print(" 18. Lore Intake / Auto-Sort PDFs & Images")
         print(" 19. Release Safety & Lore Diagnostics")
+        print(" 20. Canon Registry & Continuity Tools")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -14923,6 +15341,7 @@ def factory_main_menu():
             except NameError: worlds_projects_menu()
         elif c=="18": lore_intake_menu()
         elif c=="19": v20_release_lore_diagnostics_menu()
+        elif c=="20": v21_canon_tools_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
