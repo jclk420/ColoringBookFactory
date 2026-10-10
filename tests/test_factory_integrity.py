@@ -409,7 +409,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(match["confidence"], "LOW")
 
     def test_lore_intake_uses_review_staging_and_is_menu_connected(self):
-        for token in ("INTAKE_DIR = FACTORY / \\"INTAKE\\"", "INTAKE_MANIFEST_FILENAME",
+        for token in ('INTAKE_DIR = FACTORY / "INTAKE"', "INTAKE_MANIFEST_FILENAME",
                       "STAGED_FOR_REVIEW", "lore_intake_collect_records",
                       "No source files or canon records were changed"):
             self.assertIn(token, self.source)
