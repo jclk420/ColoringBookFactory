@@ -421,13 +421,17 @@ class FactoryIntegrityTests(unittest.TestCase):
 
     def test_lore_intake_inspects_image_metadata_and_pdf_extraction_fallback(self):
         names = ("lore_intake_inspect_file",)
+        import contextlib
+        import types
+        fake_image = types.SimpleNamespace(width=23, height=17, format="PNG")
+        image_api = types.SimpleNamespace(open=staticmethod(lambda path: contextlib.nullcontext(fake_image)))
         namespace = {"Path": pathlib.Path, "IMAGE_EXTENSIONS": {".png", ".jpg", ".jpeg", ".webp"},
-                     "Image": __import__("PIL.Image", fromlist=["Image"])}
+                     "Image": image_api}
         module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
         exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
         with tempfile.TemporaryDirectory() as temp:
             image_path = pathlib.Path(temp) / "sample.png"
-            namespace["Image"].new("RGB", (23, 17)).save(image_path)
+            image_path.write_bytes(b"fake-image")
             info = namespace["lore_intake_inspect_file"](image_path)
             self.assertEqual((info["width"], info["height"]), (23, 17))
             pdf_info = namespace["lore_intake_inspect_file"](pathlib.Path(temp) / "missing.pdf")
