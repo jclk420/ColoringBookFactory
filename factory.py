@@ -10177,12 +10177,20 @@ def lore_manual_select_projects(bible):
         filtered = []
 
         def remember_visible_selection():
+            visible_projects = {
+                str(rec.get("project", "")).casefold() for rec in filtered
+            }
+            selected_projects.difference_update(visible_projects)
             for index in listbox.curselection():
                 if 0 <= index < len(filtered):
                     selected_projects.add(str(filtered[index].get("project", "")).casefold())
 
         def update_selection_status():
             selection_status.config(text=f"Selected: {len(selected_projects)}")
+
+        def selection_changed(_event=None):
+            remember_visible_selection()
+            update_selection_status()
 
         def refresh(*_):
             remember_visible_selection()
@@ -10226,7 +10234,7 @@ def lore_manual_select_projects(bible):
             chosen.clear()
             root.destroy()
 
-        listbox.bind("<<ListboxSelect>>", lambda _e: update_selection_status())
+        listbox.bind("<<ListboxSelect>>", selection_changed)
         filter_var.trace_add("write", refresh)
         refresh()
 
