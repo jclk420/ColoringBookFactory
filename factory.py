@@ -17,7 +17,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 18.0.
+# Current version: 18.1.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "18.0"
+FACTORY_VERSION = "18.1"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -68,12 +68,29 @@ def load_json(path):
 
 
 def save_json(path, data):
-    """Write JSON safely, including Windows Path objects produced by release workflows."""
+    """Atomically write JSON so an interrupted write cannot truncate the previous file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False, default=str)
-
+    temp_path = None
+    try:
+        # Keep the temporary file on the same volume for atomic replacement.
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=str(path.parent),
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as stream:
+            temp_path = Path(stream.name)
+            json.dump(data, stream, indent=4, ensure_ascii=False, default=str)
+            stream.write(chr(10))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(str(temp_path), str(path))
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 def load_optional_book_config(source_folder):
     """Load optional _book.json from an imported artwork folder."""
