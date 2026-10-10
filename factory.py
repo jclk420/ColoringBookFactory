@@ -17,7 +17,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 17.4.
+# Current version: 17.5.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "17.4"
+FACTORY_VERSION = "17.5"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -10576,21 +10576,14 @@ def lore_manual_select_projects(bible):
         rec["path"] = str(PROJECTS / rec["project"])
         lore_register_book(bible, rec, True)
 
-        project = PROJECTS / rec["project"]
-        metadata = project / "project.json"
-        if metadata.exists():
-            try:
-                settings = load_json(metadata)
-                settings["series_name"] = bible.get("name", "")
-                settings["series_id"] = bible.get("series_id", "")
-                settings["series_canon"] = True
-                settings["world_relationship"] = settings.get("world_relationship", "canon")
-                if book_number is not None:
-                    settings["book_number"] = book_number
-                save_json(metadata, settings)
-            except Exception as error:
-                print(f"WARNING: Could not update {project.name}/project.json: {error}")
         count += 1
+
+    # Run all metadata writes through the conflict-aware sync. The creator's
+    # explicit book number is stored in the Series Bible, while conflicting
+    # pre-existing project identity/number/world fields remain intact and are
+    # reported instead of being silently overwritten.
+    synced = lore_sync_explicit_series_attachments(bible)
+    print(f"Safe metadata sync updated {synced} project.json file(s).")
 
     bible["continuity_notes"] = list(dict.fromkeys(
         bible.get("continuity_notes", []) + [
