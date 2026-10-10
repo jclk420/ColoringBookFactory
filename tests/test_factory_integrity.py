@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "18.1"', self.source)
+        self.assertIn('FACTORY_VERSION = "18.2"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -377,6 +377,50 @@ class FactoryIntegrityTests(unittest.TestCase):
         segment = ast.get_source_segment(self.source, node) or ""
         self.assertIn("os.fsync(stream.fileno())", segment)
         self.assertIn("os.replace(str(temp_path), str(path))", segment)
+
+
+    def test_lore_intake_helpers_match_registered_creature_and_safe_path(self):
+        names = ("lore_intake_normalize", "lore_intake_safe_folder", "lore_intake_classify", "lore_intake_destination")
+        namespace = {"re": re, "Path": pathlib.Path}
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        records = [{"kind": "creature", "name": "Stitched Deer", "world": "Nightmare World",
+                    "location": "Intake Wing", "bible": "Nightmare Series"}]
+        match = namespace["lore_intake_classify"](pathlib.Path("Stitched_Deer.png"), records)
+        self.assertEqual(match["kind"], "creature")
+        self.assertEqual(match["world"], "Nightmare World")
+        self.assertEqual(match["location"], "Intake Wing")
+        destination = namespace["lore_intake_destination"](
+            pathlib.Path("review"), pathlib.Path("Stitched_Deer.png"), match)
+        self.assertEqual(destination.parts[-4:], ("Nightmare World", "Intake Wing", "Stitched Deer", "Stitched_Deer.png"))
+        self.assertNotIn("Worlds", destination.parts)
+
+    def test_lore_intake_does_not_guess_ambiguous_names(self):
+        names = ("lore_intake_normalize", "lore_intake_classify")
+        namespace = {"re": re, "Path": pathlib.Path}
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        records = [
+            {"kind": "creature", "name": "Nightmare Crow", "world": "World A", "location": "Tower"},
+            {"kind": "creature", "name": "Nightmare Crow", "world": "World B", "location": "Forest"},
+        ]
+        match = namespace["lore_intake_classify"](pathlib.Path("Nightmare_Crow.jpg"), records)
+        self.assertEqual(match["kind"], "ambiguous")
+        self.assertEqual(match["confidence"], "LOW")
+
+    def test_lore_intake_uses_review_staging_and_is_menu_connected(self):
+        for token in ("INTAKE_DIR = FACTORY / \\"INTAKE\\"", "INTAKE_MANIFEST_FILENAME",
+                      "STAGED_FOR_REVIEW", "lore_intake_collect_records",
+                      "No source files or canon records were changed"):
+            self.assertIn(token, self.source)
+        menu = self.functions["factory_main_menu"][0]
+        segment = ast.get_source_segment(self.source, menu) or ""
+        self.assertIn('c=="18"', segment)
+        self.assertIn("lore_intake_menu()", segment)
+
+    def test_atomic_json_writer_has_tempfile_import(self):
+        self.assertRegex(self.source, r"^import tempfile$", re.M)
+        self.assertIn("os.replace(str(temp_path), str(path))", self.source)
 
     def test_save_json_replace_failure_preserves_original(self):
         node = self.functions["save_json"][0]
