@@ -77,6 +77,9 @@ class FactoryIntegrityTests(unittest.TestCase):
             "WORLD_NAME_MISMATCH",
             "WORLD_ID_MISMATCH",
             "PROJECT_WORLD_ID_MISSING",
+            "PROJECT_NOT_LINKED_TO_WORLD",
+            "WORLD_BOOKS_LIST_INVALID",
+            "WORLD_BOOK_REGISTRY_UNREADABLE",
         ):
             with self.subTest(code=code):
                 self.assertIn(code, segment)
@@ -187,7 +190,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "17.8"', self.source)
+        self.assertIn('FACTORY_VERSION = "17.9"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
