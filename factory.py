@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 19.0.
+# Current version: 20.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "19.0"
+FACTORY_VERSION = "20.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14633,6 +14633,242 @@ def lore_intake_menu():
         print("No action selected.")
 
 
+
+# ============================================================
+# v20.0 RELEASE SAFETY & LORE DIAGNOSTICS
+# ============================================================
+
+def v20_release_preflight(project):
+    """Read-only release preflight; never rebuilds or modifies production artifacts."""
+    project = Path(project)
+    settings = load_project_settings_safe(project)
+    master = find_master_pdf(project)
+    master_hash = file_hash(master) if master and master.is_file() else None
+    platforms, blockers = {}, []
+    for name, profile in load_platform_profiles().items():
+        if not profile.get("enabled", False):
+            continue
+        root = project / PLATFORM_DIRNAME / profile.get("output_dir", name.upper())
+        manifest = root / "PACKAGE_MANIFEST.json"
+        files = sorted(p for p in root.rglob("*") if p.is_file()) if root.exists() else []
+        errors = []
+        if not root.exists():
+            errors.append("PACKAGE_DIRECTORY_MISSING")
+        elif not manifest.is_file():
+            errors.append("PACKAGE_MANIFEST_MISSING")
+        for path in files:
+            if path.stat().st_size <= 0:
+                errors.append("ZERO_BYTE_FILE:" + str(path.relative_to(project)))
+        blockers.extend({"code": item.split(":")[0], "platform": name, "detail": item} for item in errors)
+        platforms[name] = {"status": "BLOCKED" if errors else "PREFLIGHT_PASS",
+            "output_destination": str(root), "manifest": str(manifest), "file_count": len(files),
+            "files": [{"path": str(p.relative_to(project)), "size_bytes": p.stat().st_size,
+                       "sha256": file_hash(p)} for p in files], "blockers": errors}
+    if not master:
+        blockers.insert(0, {"code": "MASTER_MISSING", "platform": None, "detail": "No MASTER PDF found"})
+    result = {"schema_version": 1, "factory_version": FACTORY_VERSION, "mode": "READ_ONLY_PREFLIGHT",
+        "project": project.name, "title": settings.get("title", project.name),
+        "master": {"path": str(master) if master else None, "sha256": master_hash},
+        "platforms": platforms, "blockers": blockers, "ready": not blockers,
+        "note": "No production files were changed by this preflight."}
+    print("\nRELEASE PREFLIGHT — READ ONLY")
+    print(f"Project: {project.name} | MASTER: {'FOUND' if master else 'MISSING'}")
+    for name, info in platforms.items():
+        print(f"{name}: {info['status']} | files={info['file_count']} | destination={info['output_destination']}")
+        for item in info["blockers"]:
+            print(f"  BLOCKER [{item}]")
+    print("Result:", "PREFLIGHT PASS" if result["ready"] else f"BLOCKED ({len(blockers)} blocker(s))")
+    print("No production files were changed.")
+    return result
+
+
+def v20_release_change_summary(project):
+    """Compare current package files with the last saved delivery audit."""
+    project = Path(project)
+    baseline_path = project / "REPORTS" / "FINAL_DELIVERY_AUDIT.json"
+    try:
+        data = load_json(baseline_path) if baseline_path.is_file() else {}
+        baseline = data.get("platforms", {}) if isinstance(data, dict) else {}
+    except Exception:
+        baseline = {}
+    changes = []
+    for name, profile in load_platform_profiles().items():
+        if not profile.get("enabled", False):
+            continue
+        root = project / PLATFORM_DIRNAME / profile.get("output_dir", name.upper())
+        old_rows = baseline.get(name, {}).get("files", []) if isinstance(baseline.get(name, {}), dict) else []
+        old = {str(row.get("relative_path")): row.get("sha256") for row in old_rows if isinstance(row, dict)}
+        now = {}
+        if root.exists():
+            for path in sorted(root.rglob("*")):
+                if path.is_file():
+                    now[str(path.relative_to(root))] = file_hash(path)
+        for rel in sorted(set(old) | set(now)):
+            if rel not in old: status = "ADDED"
+            elif rel not in now: status = "REMOVED"
+            elif old[rel] != now[rel]: status = "CHANGED"
+            else: continue
+            changes.append({"platform": name, "path": rel, "status": status,
+                "previous_sha256": old.get(rel), "current_sha256": now.get(rel)})
+    summary = {s: sum(1 for row in changes if row["status"] == s) for s in ("ADDED", "CHANGED", "REMOVED")}
+    result = {"schema_version": 1, "factory_version": FACTORY_VERSION, "project": project.name,
+        "baseline": str(baseline_path) if baseline else None, "baseline_available": bool(baseline),
+        "changes": changes, "summary": summary,
+        "note": "Compared with the last saved FINAL_DELIVERY_AUDIT.json. Run a delivery audit to establish a baseline."}
+    print("\nRELEASE CHANGE SUMMARY")
+    if not result["baseline_available"]:
+        print("No previous delivery audit found; historical changes cannot be determined yet.")
+    print("Added:", summary["ADDED"], "| Changed:", summary["CHANGED"], "| Removed:", summary["REMOVED"])
+    for row in changes[:80]:
+        print(f"{row['status']:<7} {row['platform']}: {row['path']}")
+    if len(changes) > 80: print(f"... {len(changes)-80} more change(s) in the returned result.")
+    return result
+
+
+def v20_verified_restore_drill(project):
+    """Validate safety ZIPs without extracting or restoring any files."""
+    project = Path(project)
+    candidates = []
+    for root in (project / "_FACTORY_BACKUPS", project.parent / "_FACTORY_BACKUPS", Path("_FACTORY_BACKUPS")):
+        if root.is_dir(): candidates.extend(p for p in root.glob("*.zip") if p.is_file())
+    candidates = sorted(set(candidates), key=lambda p: p.stat().st_mtime, reverse=True)
+    checked = []
+    for archive in candidates[:20]:
+        row = {"path": str(archive), "size_bytes": archive.stat().st_size, "valid_zip": False,
+            "crc_pass": False, "unsafe_paths": [], "contains_master": False, "errors": []}
+        try:
+            with zipfile.ZipFile(archive, "r") as zf:
+                names = zf.namelist()
+                row["valid_zip"] = True
+                row["crc_pass"] = zf.testzip() is None
+                row["unsafe_paths"] = [n for n in names if Path(n).is_absolute() or ".." in Path(n).parts]
+                row["contains_master"] = any(Path(n).suffix.lower() == ".pdf" and "MASTER" in Path(n).name.upper() for n in names)
+                if not row["crc_pass"]: row["errors"].append("ZIP_CRC_FAILURE")
+                if row["unsafe_paths"]: row["errors"].append("UNSAFE_ARCHIVE_PATHS")
+                if not row["contains_master"]: row["errors"].append("MASTER_NOT_FOUND_IN_ARCHIVE")
+        except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+            row["errors"].append("UNREADABLE_ARCHIVE:" + str(exc))
+        row["verified"] = row["valid_zip"] and row["crc_pass"] and not row["unsafe_paths"]
+        checked.append(row)
+    result = {"schema_version": 1, "factory_version": FACTORY_VERSION, "project": project.name,
+        "archives_checked": len(checked), "archives": checked, "restore_performed": False,
+        "note": "Validation only. No files were extracted, restored, or overwritten."}
+    print("\nVERIFIED RESTORE DRILL — VALIDATION ONLY")
+    if not checked: print("No candidate safety ZIPs found in standard backup locations.")
+    for row in checked:
+        print(f"{'PASS' if row['verified'] else 'REVIEW'}: {row['path']}")
+        for error in row["errors"]: print("  " + error)
+    print("No restore was performed.")
+    return result
+
+
+def v20_machine_diagnostics(project):
+    """Write standardized diagnostics to REPORTS without changing production artifacts."""
+    project = Path(project)
+    diagnostics = []
+    master = find_master_pdf(project)
+    if not master:
+        diagnostics.append({"code": "MASTER_MISSING", "severity": "error",
+            "message": "No MASTER PDF was found.", "path": str(project)})
+    elif not master.is_file() or master.stat().st_size <= 0:
+        diagnostics.append({"code": "MASTER_UNREADABLE", "severity": "error",
+            "message": "MASTER PDF is missing or zero bytes.", "path": str(master)})
+    try:
+        load_project_settings_safe(project)
+    except Exception as exc:
+        diagnostics.append({"code": "PROJECT_METADATA_UNREADABLE", "severity": "error",
+            "message": str(exc), "path": str(project / "project.json")})
+    for name, profile in load_platform_profiles().items():
+        if not profile.get("enabled", False): continue
+        root = project / PLATFORM_DIRNAME / profile.get("output_dir", name.upper())
+        manifest = root / "PACKAGE_MANIFEST.json"
+        if not root.is_dir():
+            diagnostics.append({"code": "PACKAGE_DIRECTORY_MISSING", "severity": "warning",
+                "message": f"Enabled platform package directory is missing: {name}", "path": str(root)})
+        elif not manifest.is_file():
+            diagnostics.append({"code": "PACKAGE_MANIFEST_MISSING", "severity": "warning",
+                "message": f"Package manifest is missing: {name}", "path": str(manifest)})
+        elif manifest.stat().st_size == 0:
+            diagnostics.append({"code": "PACKAGE_MANIFEST_EMPTY", "severity": "error",
+                "message": f"Package manifest is zero bytes: {name}", "path": str(manifest)})
+    report = {"schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"), "project": project.name,
+        "diagnostics": diagnostics,
+        "counts": {level: sum(1 for d in diagnostics if d["severity"] == level)
+                   for level in ("error", "warning", "info")}}
+    path = project / "REPORTS" / "FACTORY_DIAGNOSTICS.json"
+    save_json(path, report)
+    print(f"\nDiagnostics: {report['counts']['error']} error(s), {report['counts']['warning']} warning(s)")
+    print(f"Machine-readable report saved: {path}")
+    for item in diagnostics: print(f"{item['severity'].upper()} [{item['code']}] {item['message']}")
+    return report
+
+
+def v20_lore_consistency_matrix(project):
+    """Read-only evidence matrix for project identity versus registered lore."""
+    project = Path(project)
+    try:
+        settings = load_project_settings_safe(project)
+        metadata_error = None
+    except Exception as exc:
+        settings, metadata_error = {}, str(exc)
+    records = lore_intake_collect_records()
+    title = str(settings.get("title") or project.name)
+    world = str(settings.get("world_id") or settings.get("universe_name") or "").strip()
+    location = str(settings.get("location") or settings.get("location_name") or "").strip()
+    checks = []
+    if metadata_error:
+        checks.append({"check": "project_metadata", "status": "ERROR", "expected": "Readable project settings",
+            "actual": metadata_error, "severity": "error"})
+    else:
+        checks.extend([
+            {"check": "project_title", "status": "PRESENT" if title else "MISSING", "expected": "Non-empty title",
+             "actual": title, "severity": "info" if title else "warning"},
+            {"check": "world_identity", "status": "PRESENT" if world else "UNASSIGNED",
+             "expected": "Explicit world_id or universe_name", "actual": world or None,
+             "severity": "info" if world else "warning"},
+            {"check": "location_identity", "status": "PRESENT" if location else "UNASSIGNED",
+             "expected": "Explicit location when applicable", "actual": location or None,
+             "severity": "info" if location else "warning"}])
+    if world:
+        matches = sorted({str(r.get("world")) for r in records if r.get("world") and
+            lore_intake_normalize(r.get("world")) == lore_intake_normalize(world)})
+        checks.append({"check": "registered_world_match", "status": "MATCH" if matches else "NO_MATCH",
+            "expected": world, "actual": matches, "severity": "info" if matches else "warning"})
+    result = {"schema_version": 1, "factory_version": FACTORY_VERSION, "project": project.name,
+        "title": title, "world": world or None, "location": location or None,
+        "registered_lore_records_considered": len(records), "checks": checks,
+        "note": "Read-only diagnostic; no project, Series Bible, world, or canon files are changed."}
+    print("\nLORE CONSISTENCY MATRIX — READ ONLY")
+    for row in checks: print(f"{row['status']:<12} {row['check']}: {row['actual']}")
+    print("No lore or canon files were changed.")
+    return result
+
+
+def v20_release_lore_diagnostics_menu():
+    while True:
+        print("\n" + "=" * 72)
+        print(f"RELEASE SAFETY & LORE DIAGNOSTICS v{FACTORY_VERSION}")
+        print("1. Read-only release preflight")
+        print("2. Release change summary")
+        print("3. Verify safety ZIPs (no restore)")
+        print("4. Machine-readable diagnostics report")
+        print("5. Read-only lore consistency matrix")
+        print("0. Back")
+        choice = input("Choose: ").strip()
+        if choice == "0": return
+        project = v12_active_project() or choose_project()
+        if not project:
+            print("No project selected.")
+            continue
+        if choice == "1": v20_release_preflight(project)
+        elif choice == "2": v20_release_change_summary(project)
+        elif choice == "3": v20_verified_restore_drill(project)
+        elif choice == "4": v20_machine_diagnostics(project)
+        elif choice == "5": v20_lore_consistency_matrix(project)
+        else: print("Invalid choice.")
+
+
 def factory_main_menu():
     PROJECTS.mkdir(exist_ok=True)
     while True:
@@ -14660,6 +14896,7 @@ def factory_main_menu():
         print(" 14. Worlds & Projects")
         print(" 15. Series & Lore")
         print(" 18. Lore Intake / Auto-Sort PDFs & Images")
+        print(" 19. Release Safety & Lore Diagnostics")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -14685,6 +14922,7 @@ def factory_main_menu():
             try: series_lore_center()
             except NameError: worlds_projects_menu()
         elif c=="18": lore_intake_menu()
+        elif c=="19": v20_release_lore_diagnostics_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
