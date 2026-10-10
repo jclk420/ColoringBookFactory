@@ -81,6 +81,13 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertNotIn("save_json(", segment)
         self.assertNotIn("save_series_bible(", segment)
 
+    def test_manual_attachment_prevents_duplicate_book_numbers(self):
+        node = self.functions["lore_manual_select_projects"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertIn("reserved_numbers", segment)
+        self.assertIn("already assigned in this Series Bible", segment)
+        self.assertIn("reserved_numbers.add(parsed)", segment)
+
     def test_legacy_repair_does_not_force_overwrite_metadata(self):
         node = self.functions["lore_repair_series"][0]
         forced_keys = set()
@@ -118,7 +125,7 @@ class FactoryIntegrityTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, segment)
         self.assertIn(
-            'FACTORY_VERSION = "16.9"',
+            'FACTORY_VERSION = "17.0"',
             self.source,
             "Meaningful factory changes must update the version declaration",
         )
