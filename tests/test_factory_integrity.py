@@ -81,6 +81,25 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertNotIn("save_json(", segment)
         self.assertNotIn("save_series_bible(", segment)
 
+    def test_sync_preserves_existing_canon_conflicts(self):
+        node = self.functions["lore_sync_explicit_series_attachments"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        for token in (
+            "current_missing",
+            "elif current != expected",
+            '"universe_name"',
+            '"book_number"',
+            "CONFLICT:",
+            "preserved existing metadata",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, segment)
+        self.assertIn(
+            'FACTORY_VERSION = "16.8"',
+            self.source,
+            "Meaningful factory changes must update the version declaration",
+        )
+
     def test_analysis_runs_continuity_audit(self):
         node = self.functions["lore_analyze_series"][0]
         calls = {
