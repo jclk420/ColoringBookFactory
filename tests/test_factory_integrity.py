@@ -453,7 +453,7 @@ class FactoryIntegrityTests(unittest.TestCase):
 
     def test_approved_registry_deduplicates_without_touching_series_bible(self):
         names = ("lore_intake_normalize", "lore_intake_approved_registry_add")
-        namespace = {"Path": pathlib.Path, "json": json, "datetime": datetime,
+        namespace = {"Path": pathlib.Path, "json": json, "datetime": datetime.datetime,
                      "lore_intake_normalize": lambda value: re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip(),
                      "save_json": lambda path, data: pathlib.Path(path).write_text(json.dumps(data), encoding="utf-8")}
         module = ast.Module(body=[self.functions["lore_intake_approved_registry_add"][0]], type_ignores=[])
