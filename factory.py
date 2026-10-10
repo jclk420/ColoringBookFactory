@@ -14077,8 +14077,8 @@ def lore_intake_normalize(value):
 
 def lore_intake_safe_folder(value, fallback="Unassigned"):
     """Turn a lore label into a safe, readable folder name."""
-    cleaned = re.sub(r'[<>:"/\\\\|?*\\x00-\\x1f]', "_", str(value or "").strip())
-    cleaned = re.sub(r"\\s+", " ", cleaned).strip(" .")
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(value or "").strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
     if not cleaned or cleaned in {".", ".."}:
         return fallback
     return cleaned[:100]
