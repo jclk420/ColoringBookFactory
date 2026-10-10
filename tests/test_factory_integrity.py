@@ -187,7 +187,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "17.7"', self.source)
+        self.assertIn('FACTORY_VERSION = "17.8"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -197,6 +197,8 @@ class FactoryIntegrityTests(unittest.TestCase):
             "world_not_registered",
             "ambiguous_world_name",
             "world_record_missing",
+            "series_world_id_mismatch",
+            'bible["world_id"] = world_id',
             "already_linked",
             'world["series"].append(series_name)',
             "save_json(world_file, world)",
@@ -224,6 +226,8 @@ class FactoryIntegrityTests(unittest.TestCase):
             "WORLD_NOT_REGISTERED",
             "WORLD_RECORD_MISSING",
             "SERIES_NOT_LINKED_TO_WORLD",
+            "SERIES_WORLD_ID_MISSING",
+            "SERIES_WORLD_ID_MISMATCH",
             "UNREADABLE_WORLD_INDEX",
             "UNREADABLE_WORLD_RECORD",
         ):
