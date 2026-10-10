@@ -14963,7 +14963,8 @@ def v21_import_preview(bible_path):
     actions, blocked = [], []
     allowed_shapes = {"creature": ("creatures", "name"), "location": ("locations", "name")}
     for item in registry.get("entities", []):
-        if not isinstance(item, dict) or str(item.get("status", "")).upper() != "APPROVED":
+        if (not isinstance(item, dict) or str(item.get("status", "")).upper() != "APPROVED"
+                or item.get("conflict_resolution")):
             continue
         kind = str(item.get("kind") or "").casefold().strip()
         name = str(item.get("name") or "").strip()
@@ -15152,6 +15153,8 @@ def v21_conflict_resolution_queue():
                 "name": after["name"], "before": None, "after": after,
                 "source_hash": item.get("source_hash", "")
             }])
+            item["conflict_resolution"] = "IMPORTED_AS_DISTINCT"
+            item["conflict_reviewed_at"] = datetime.now().isoformat(timespec="seconds")
             imported += 1
         else:
             skipped += 1
