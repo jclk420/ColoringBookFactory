@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 21.0.
+# Current version: 22.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "21.0"
+FACTORY_VERSION = "22.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15286,6 +15286,275 @@ def v21_canon_tools_menu():
         else:
             print("Invalid choice.")
 
+
+# ============================================================
+# v22.0 — PLATFORM LISTING PACKAGE BUILDER
+# Generates platform-specific listing fields from verified project data.
+# Never invents prices, categories, sales claims, or unverified page counts.
+# ============================================================
+
+def v22_listing_text(data):
+    """Render a platform listing record into a paste-ready text document."""
+    lines = [
+        f"PLATFORM LISTING PACKAGE — {data.get('platform', 'Unknown')}",
+        f"Product: {data.get('title') or '(title needed)'}",
+        f"Readiness: {data.get('status', 'REVIEW')}",
+        "",
+        "FIELDS TO ENTER",
+    ]
+    for key, value in data.get("fields", {}).items():
+        lines += ["", f"=== {key.upper().replace('_', ' ')} ==="]
+        if isinstance(value, list):
+            lines.append(", ".join(str(x) for x in value) if value else "(not set)")
+        elif isinstance(value, dict):
+            lines.extend(f"{k}: {v}" for k, v in value.items())
+        else:
+            lines.append(str(value) if value not in (None, "") else "(not set — fill in on the platform)")
+    lines += ["", "FILES / ASSETS"]
+    lines.extend(f"- {item}" for item in data.get("assets", []))
+    if not data.get("assets"):
+        lines.append("- Build the platform package to discover delivery files and images.")
+    lines += ["", "READINESS NOTES"]
+    lines.extend(f"- {item}" for item in data.get("warnings", []))
+    if not data.get("warnings"):
+        lines.append("- No missing required listing fields detected by the factory's local checks.")
+    lines += ["", "Important: this is a prepared listing, not an uploaded or published product."]
+    return "\n".join(lines) + "\n"
+
+
+def v22_build_platform_listing(project, platform_name, settings=None):
+    """Build a grounded platform-specific listing and readiness report for one project."""
+    project = Path(project)
+    settings = settings if isinstance(settings, dict) else load_project_settings_safe(project)
+    title = str(settings.get("title") or project.name).strip()
+    author = str(settings.get("author") or "").strip()
+    subtitle = str(settings.get("subtitle") or settings.get("cover_subtitle") or "").strip()
+    raw_description = ""
+    for key in ("long_description", "description", "cover_blurb"):
+        value = str(settings.get(key) or "").strip()
+        if value:
+            raw_description = value
+            break
+    keywords = _gl_clean_list(settings.get("keywords", []))
+    warnings = []
+    master = None
+    try:
+        master = find_master_pdf(project)
+    except Exception:
+        master = None
+    pages = pdf_page_count(master) if master else None
+    trim = ""
+    width, height = settings.get("trim_width"), settings.get("trim_height")
+    if not (width and height) and master:
+        try:
+            sizes = (inspect_pdf(master).get("sizes") or [])
+            if sizes:
+                width, height = sizes[0].get("width"), sizes[0].get("height")
+        except Exception:
+            pass
+    if width and height:
+        trim = f"{_gl_num(width)} x {_gl_num(height)} in"
+    if not author:
+        warnings.append("Author/byline is missing from project settings.")
+    if not master or not Path(master).exists():
+        warnings.append("Finished/master PDF was not found; confirm the product file before listing.")
+    if pages is None:
+        warnings.append("Page count could not be verified from the current master PDF.")
+    if not trim:
+        warnings.append("Trim/page dimensions could not be verified.")
+    if not raw_description:
+        warnings.append("No project description was provided; the generated copy uses only the book title and verified facts.")
+        raw_description = f"{title} is a digital coloring-book product."
+    facts = []
+    if pages is not None:
+        facts.append(f"{pages}-page PDF")
+    else:
+        facts.append("PDF format; page count not verified")
+    if trim:
+        facts.append(f"page size {trim}")
+    if author:
+        facts.append(f"by {author}")
+    feature_text = " • ".join(facts)
+    description = raw_description
+    if feature_text and feature_text not in description:
+        description = description.rstrip() + "\n\nPRODUCT DETAILS\n" + feature_text + "."
+    assets = []
+    if master and Path(master).exists():
+        assets.append(f"Master PDF: {Path(master).name}")
+    cover = _platform_cover(project)
+    if cover:
+        assets.append(f"Cover image: {cover.name}")
+    profile = load_platform_profiles().get(platform_name, {})
+    profile_enabled = profile.get("enabled", platform_name in {"KDP", "Gumroad", "Payhip", "Digital PDF"})
+    status = "READY_FOR_REVIEW"
+    fields = {}
+    if platform_name == "Gumroad":
+        listing = gumroad_build_listing(project, settings)
+        overrides = gumroad_load_overrides(project)
+        fields = {
+            "name": listing.get("name", title),
+            "price": listing.get("price", ""),
+            "summary": listing.get("summary", ""),
+            "description": listing.get("description", description),
+            "tags": listing.get("tags", keywords),
+            "additional_details": dict(listing.get("details", [])),
+            "content_note": str(overrides.get("content_note") or ""),
+            "license_terms": str(overrides.get("license") or GUMROAD_DEFAULT_LICENSE),
+        }
+        warnings.extend(listing.get("warnings", []))
+        assets.extend(f"{label}: {name}" for label, name in listing.get("files", []))
+    elif platform_name == "KDP":
+        fields = {
+            "book_title": title,
+            "subtitle": subtitle,
+            "author": author,
+            "description": description,
+            "keywords": keywords[:7],
+            "categories": "",
+            "language": str(settings.get("language") or ""),
+            "print_options": {
+                "trim_size": trim,
+                "interior": "Black-and-white" if settings.get("kdp_ink_type", "black_white") == "black_white" else str(settings.get("kdp_ink_type")),
+                "page_count": pages if pages is not None else "",
+            },
+            "list_price": "",
+        }
+        warnings.append("Choose KDP categories in the KDP dashboard; the factory will not guess them.")
+        warnings.append("Set the paperback list price in KDP; no price was invented.")
+        if len(keywords) > 7:
+            warnings.append("KDP listing exports the first seven supplied keywords; review for relevance and KDP policy.")
+    elif platform_name == "Payhip":
+        fields = {
+            "product_name": title,
+            "subtitle": subtitle,
+            "description": description,
+            "price": "",
+            "tags": keywords,
+            "delivery_format": "Digital PDF",
+            "buyer_instructions": "Download the supplied PDF after purchase. Open it in a PDF reader or print it for personal use, subject to the license terms.",
+            "license_terms": str(settings.get("license_terms") or GUMROAD_DEFAULT_LICENSE),
+        }
+        warnings.append("Set the product price and confirm Payhip's current product settings before publishing.")
+    elif platform_name == "Digital PDF":
+        fields = {
+            "product_title": title,
+            "short_summary": _gl_first_sentences(raw_description, 200),
+            "full_description": description,
+            "price": "",
+            "format": "PDF digital download",
+            "author": author,
+            "keywords": keywords,
+            "license_terms": str(settings.get("license_terms") or GUMROAD_DEFAULT_LICENSE),
+        }
+        warnings.append("Choose the selling price and destination storefront before publishing.")
+    else:
+        fields = {
+            "title": title,
+            "subtitle": subtitle,
+            "description": description,
+            "tags_or_keywords": keywords,
+            "price": "",
+            "author": author,
+            "format": "Digital PDF",
+        }
+        warnings.append("Confirm this platform's current field limits, eligibility, fees, and required settings.")
+        warnings.append("Price and platform-specific fields are left blank rather than guessed.")
+    if not keywords:
+        warnings.append("No keywords/tags are configured; add relevant terms before publishing.")
+    if not subtitle and platform_name in {"KDP", "Payhip"}:
+        warnings.append("Subtitle is blank; this may be optional, but review the listing.")
+    if not profile_enabled:
+        warnings.append("This platform profile is currently disabled; listing is prepared as a draft/template only.")
+    if not master or not Path(master).exists():
+        status = "BLOCKED_MISSING_MASTER"
+    elif not author or not raw_description:
+        status = "REVIEW"
+    return {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "platform": platform_name,
+        "profile_enabled": bool(profile_enabled),
+        "project": str(project),
+        "title": title,
+        "author": author,
+        "master_pdf": str(master) if master else "",
+        "verified_page_count": pages,
+        "verified_trim_size": trim,
+        "status": status,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "fields": fields,
+        "assets": assets,
+        "warnings": list(dict.fromkeys(warnings)),
+        "published": False,
+        "note": "Prepared locally from project data. The factory has not uploaded or published this listing."
+    }
+
+
+def v22_build_all_platform_listings(project=None):
+    """Create JSON, text, and readiness files for all configured platform profiles."""
+    project = Path(project) if project else choose_project()
+    if not project:
+        return {"status": "CANCELLED", "platforms": []}
+    profiles = load_platform_profiles()
+    preferred = ["KDP", "Gumroad", "Payhip", "Digital PDF"]
+    platform_names = preferred + [name for name in profiles if name not in preferred]
+    root = project / MARKETING_DIR_NAME / "LISTINGS"
+    root.mkdir(parents=True, exist_ok=True)
+    results = []
+    settings = load_project_settings_safe(project)
+    for platform_name in platform_names:
+        data = v22_build_platform_listing(project, platform_name, settings)
+        folder = root / _platform_sanitized_filename(platform_name, 40)
+        folder.mkdir(parents=True, exist_ok=True)
+        save_json(folder / "LISTING.json", data)
+        (folder / "LISTING.txt").write_text(v22_listing_text(data), encoding="utf-8")
+        results.append({
+            "platform": platform_name,
+            "status": data["status"],
+            "profile_enabled": data["profile_enabled"],
+            "warnings": len(data["warnings"]),
+            "folder": str(folder),
+        })
+    report = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "project": str(project),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "listing_count": len(results),
+        "ready_for_review": sum(1 for row in results if row["status"] == "READY_FOR_REVIEW"),
+        "review": sum(1 for row in results if row["status"] == "REVIEW"),
+        "blocked": sum(1 for row in results if row["status"] == "BLOCKED_MISSING_MASTER"),
+        "platforms": results,
+        "note": "Listing drafts only. Nothing was uploaded or published; prices, categories, and final claims require user review."
+    }
+    save_json(root / "LISTING_READINESS.json", report)
+    print("\n" + "=" * 72)
+    print(f"PLATFORM LISTING BUILDER v{FACTORY_VERSION} — {project.name}")
+    print("=" * 72)
+    for row in results:
+        print(f"[{row['status']}] {row['platform']} — {row['warnings']} warning(s)" +
+              (" [PROFILE DISABLED]" if not row["profile_enabled"] else ""))
+    print(f"Listing files: {root}")
+    print("Prepared drafts only — no platform was uploaded or published.")
+    return report
+
+
+def v22_platform_listing_menu():
+    while True:
+        print("\n" + "=" * 72)
+        print(f"PLATFORM LISTING BUILDER v{FACTORY_VERSION}")
+        print("1. Build listings for all platform profiles")
+        print("0. Back")
+        choice = input("Choose: ").strip()
+        if choice == "0":
+            return
+        if choice == "1":
+            project = choose_project()
+            if project:
+                v22_build_all_platform_listings(project)
+        else:
+            print("Invalid choice.")
+
 def factory_main_menu():
     PROJECTS.mkdir(exist_ok=True)
     while True:
@@ -15315,6 +15584,7 @@ def factory_main_menu():
         print(" 18. Lore Intake / Auto-Sort PDFs & Images")
         print(" 19. Release Safety & Lore Diagnostics")
         print(" 20. Canon Registry & Continuity Tools")
+        print(" 21. Platform Listing Builder")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -15342,6 +15612,7 @@ def factory_main_menu():
         elif c=="18": lore_intake_menu()
         elif c=="19": v20_release_lore_diagnostics_menu()
         elif c=="20": v21_canon_tools_menu()
+        elif c=="21": v22_platform_listing_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
