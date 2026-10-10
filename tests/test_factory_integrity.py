@@ -187,7 +187,33 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "17.6"', self.source)
+        self.assertIn('FACTORY_VERSION = "17.7"', self.source)
+
+    def test_world_series_link_repair_is_explicit_and_non_creating(self):
+        node = self.functions["lore_ensure_series_world_link"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        for token in (
+            "world_index_missing",
+            "world_not_registered",
+            "ambiguous_world_name",
+            "world_record_missing",
+            "already_linked",
+            'world["series"].append(series_name)',
+            "save_json(world_file, world)",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, segment)
+        self.assertNotIn("mkdir(", segment)
+        self.assertNotIn("new_world_record(", segment)
+
+    def test_repair_links_series_to_world_and_reports_status(self):
+        node = self.functions["lore_repair_series"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertGreaterEqual(segment.count("lore_ensure_series_world_link(bible)"), 2)
+        self.assertIn('"world_link_status": world_link_status', segment)
+        self.assertIn("World-to-series link:", segment)
+        self.assertIn('"error_count"', segment)
+        self.assertIn('"warning_count"', segment)
 
     def test_continuity_audit_checks_world_to_series_hierarchy(self):
         node = self.functions["lore_validate_series_continuity"][0]
