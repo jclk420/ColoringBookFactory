@@ -14748,7 +14748,7 @@ def v20_verified_restore_drill(project):
                 if not row["contains_master"]: row["errors"].append("MASTER_NOT_FOUND_IN_ARCHIVE")
         except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
             row["errors"].append("UNREADABLE_ARCHIVE:" + str(exc))
-        row["verified"] = row["valid_zip"] and row["crc_pass"] and not row["unsafe_paths"]
+        row["verified"] = row["valid_zip"] and row["crc_pass"] and not row["unsafe_paths"] and row["contains_master"]
         checked.append(row)
     result = {"schema_version": 1, "factory_version": FACTORY_VERSION, "project": project.name,
         "archives_checked": len(checked), "archives": checked, "restore_performed": False,
