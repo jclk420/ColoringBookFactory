@@ -9948,6 +9948,122 @@ def lore_bootstrap_nightmare_series():
     print("Existing book PDFs/artwork were NOT modified.")
     return bible
 
+def lore_validate_series_continuity(bible):
+    """Return non-mutating continuity findings for registered series books."""
+    if not isinstance(bible, dict):
+        return [{"severity": "ERROR", "code": "INVALID_BIBLE", "message": "Series Bible is not a dictionary."}]
+
+    findings = []
+    books = [book for book in bible.get("books", []) if isinstance(book, dict)]
+    seen_projects = {}
+    seen_numbers = {}
+    expected_series = str(bible.get("name", "")).strip()
+    expected_series_id = str(bible.get("series_id", "")).strip()
+    expected_world = str(bible.get("world_name", "")).strip()
+
+    for book in books:
+        title = str(book.get("title") or book.get("project") or "Untitled book").strip()
+        project_name = str(book.get("project", "")).strip()
+        number = book.get("book_number")
+
+        if not project_name:
+            findings.append({
+                "severity": "ERROR", "code": "MISSING_PROJECT_NAME",
+                "message": f"{title}: no project-folder name is registered.",
+            })
+            continue
+
+        project_key = project_name.casefold()
+        if project_key in seen_projects:
+            findings.append({
+                "severity": "ERROR", "code": "DUPLICATE_PROJECT",
+                "message": f"{title}: project '{project_name}' is also registered as '{seen_projects[project_key]}'.",
+            })
+        else:
+            seen_projects[project_key] = title
+
+        if isinstance(number, int) and not isinstance(number, bool) and number > 0:
+            if number in seen_numbers:
+                findings.append({
+                    "severity": "ERROR", "code": "DUPLICATE_BOOK_NUMBER",
+                    "message": f"Book number {number} is assigned to both '{seen_numbers[number]}' and '{title}'.",
+                })
+            else:
+                seen_numbers[number] = title
+        elif number is None:
+            findings.append({
+                "severity": "WARNING", "code": "UNASSIGNED_BOOK_NUMBER",
+                "message": f"{title}: canonical book number is unassigned.",
+            })
+        else:
+            findings.append({
+                "severity": "ERROR", "code": "INVALID_BOOK_NUMBER",
+                "message": f"{title}: book number '{number}' must be a positive integer or unassigned.",
+            })
+
+        saved_path = str(book.get("path", "")).strip()
+        project = Path(saved_path) if saved_path else (PROJECTS / project_name)
+        if not project.exists() or not project.is_dir():
+            project = PROJECTS / project_name
+        if not project.exists() or not project.is_dir():
+            findings.append({
+                "severity": "ERROR", "code": "MISSING_PROJECT_FOLDER",
+                "message": f"{title}: project folder '{project_name}' cannot be found.",
+            })
+            continue
+
+        metadata_path = project / "project.json"
+        if not metadata_path.exists():
+            findings.append({
+                "severity": "WARNING", "code": "MISSING_PROJECT_METADATA",
+                "message": f"{title}: project.json is missing; metadata cannot be cross-checked.",
+            })
+            continue
+        try:
+            metadata = load_json(metadata_path)
+        except Exception as error:
+            findings.append({
+                "severity": "ERROR", "code": "UNREADABLE_PROJECT_METADATA",
+                "message": f"{title}: project.json could not be read ({error}).",
+            })
+            continue
+        if not isinstance(metadata, dict):
+            findings.append({
+                "severity": "ERROR", "code": "INVALID_PROJECT_METADATA",
+                "message": f"{title}: project.json must contain a JSON object.",
+            })
+            continue
+
+        project_series = str(metadata.get("series_name", "")).strip()
+        project_series_id = str(metadata.get("series_id", "")).strip()
+        if expected_series and project_series and project_series.casefold() != expected_series.casefold():
+            findings.append({
+                "severity": "WARNING", "code": "SERIES_NAME_MISMATCH",
+                "message": f"{title}: project.json names series '{project_series}', but the Bible is '{expected_series}'.",
+            })
+        if expected_series_id and project_series_id and project_series_id.casefold() != expected_series_id.casefold():
+            findings.append({
+                "severity": "WARNING", "code": "SERIES_ID_MISMATCH",
+                "message": f"{title}: project.json series_id '{project_series_id}' differs from Bible id '{expected_series_id}'.",
+            })
+
+        project_number = metadata.get("book_number")
+        if isinstance(number, int) and not isinstance(number, bool) and project_number != number:
+            findings.append({
+                "severity": "WARNING", "code": "BOOK_NUMBER_MISMATCH",
+                "message": f"{title}: Series Bible says book {number}, but project.json says {project_number!r}.",
+            })
+
+        project_world = str(metadata.get("universe_name") or "").strip()
+        if expected_world and project_world and project_world.casefold() != expected_world.casefold():
+            findings.append({
+                "severity": "WARNING", "code": "WORLD_NAME_MISMATCH",
+                "message": f"{title}: project.json world '{project_world}' differs from Series Bible world '{expected_world}'.",
+            })
+
+    return findings
+
+
 def lore_analyze_series(bible=None):
     if bible is None:
         bibles = list_series_bibles()
@@ -9988,6 +10104,14 @@ def lore_analyze_series(bible=None):
     print(f"Project folders missing for registered books: {len(missing_books)}")
     print(f"Project metadata independently identifies as this series: {len(records)}")
     print(f"Possible legacy/unattached matches: {len(candidates)}")
+    findings = lore_validate_series_continuity(bible)
+    errors = sum(1 for item in findings if item.get("severity") == "ERROR")
+    warnings = sum(1 for item in findings if item.get("severity") == "WARNING")
+    print(f"Continuity audit: {errors} error(s), {warnings} warning(s)")
+    for finding in findings:
+        print(f"  [{finding.get('severity', 'INFO')}] {finding.get('code', 'FINDING')}: {finding.get('message', '')}")
+    if not findings:
+        print("  No registered-book continuity conflicts detected.")
     for book in attached_books:
         title = str(book.get("title") or book.get("project") or "Untitled book")
         print(f"  ✓ {title}" + (f" — Book {book['book_number']}" if book.get("book_number") else ""))
