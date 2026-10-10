@@ -10136,7 +10136,11 @@ def lore_manual_select_projects(bible):
             except (ValueError, IndexError):
                 pass
     else:
-        selected_indices = []
+        # Keep selections by project-folder identity, not listbox row number.
+        # Rebuilding the list when the filter changes otherwise silently clears
+        # prior selections, which made multi-filter series attachment unreliable.
+        selected_projects = set()
+        chosen = []
         root = tk.Tk()
         root.title(f"Add Books to {bible.get('name', 'Series')}")
         root.geometry("820x620")
@@ -10147,7 +10151,8 @@ def lore_manual_select_projects(bible):
             text=(
                 "MANUAL SERIES BOOK SELECTOR\n"
                 "Choose the actual project folders that belong to this series.\n"
-                "The factory will NOT try to infer membership from the name."
+                "Selections are kept when you change the filter.\n"
+                "The factory will NOT infer membership from the name."
             ),
             justify="left",
         )
@@ -10157,6 +10162,9 @@ def lore_manual_select_projects(bible):
         ttk.Label(root, text="Filter projects:").pack(anchor="w", padx=14)
         filter_entry = ttk.Entry(root, textvariable=filter_var)
         filter_entry.pack(fill="x", padx=14, pady=(2, 8))
+
+        selection_status = ttk.Label(root, text="Selected: 0")
+        selection_status.pack(anchor="w", padx=14, pady=(0, 6))
 
         frame = ttk.Frame(root)
         frame.pack(fill="both", expand=True, padx=14)
@@ -10168,7 +10176,16 @@ def lore_manual_select_projects(bible):
 
         filtered = []
 
+        def remember_visible_selection():
+            for index in listbox.curselection():
+                if 0 <= index < len(filtered):
+                    selected_projects.add(str(filtered[index].get("project", "")).casefold())
+
+        def update_selection_status():
+            selection_status.config(text=f"Selected: {len(selected_projects)}")
+
         def refresh(*_):
+            remember_visible_selection()
             query = filter_var.get().strip().casefold()
             filtered.clear()
             listbox.delete(0, tk.END)
@@ -10181,23 +10198,35 @@ def lore_manual_select_projects(bible):
                 if rec.get("series_name"):
                     label += f"    series={rec['series_name']}"
                 listbox.insert(tk.END, label)
+                if str(rec.get("project", "")).casefold() in selected_projects:
+                    listbox.selection_set(tk.END)
+            update_selection_status()
 
         def select_all():
-            if filtered:
-                listbox.selection_set(0, tk.END)
+            for rec in filtered:
+                selected_projects.add(str(rec.get("project", "")).casefold())
+            for index in range(len(filtered)):
+                listbox.selection_set(index)
+            update_selection_status()
 
         def clear_all():
+            selected_projects.clear()
             listbox.selection_clear(0, tk.END)
+            update_selection_status()
 
         def attach():
-            selected_indices.clear()
-            selected_indices.extend(listbox.curselection())
+            remember_visible_selection()
+            chosen.extend(
+                rec for rec in available
+                if str(rec.get("project", "")).casefold() in selected_projects
+            )
             root.destroy()
 
         def cancel():
-            selected_indices.clear()
+            chosen.clear()
             root.destroy()
 
+        listbox.bind("<<ListboxSelect>>", lambda _e: update_selection_status())
         filter_var.trace_add("write", refresh)
         refresh()
 
@@ -10210,9 +10239,9 @@ def lore_manual_select_projects(bible):
 
         root.bind("<Escape>", lambda _e: cancel())
         root.bind("<Control-a>", lambda _e: select_all())
+        root.protocol("WM_DELETE_WINDOW", cancel)
         filter_entry.focus_set()
         root.mainloop()
-        chosen = [filtered[i] for i in selected_indices if 0 <= i < len(filtered)]
 
     if not chosen:
         print("\nNo books selected. Existing projects were NOT modified.")
