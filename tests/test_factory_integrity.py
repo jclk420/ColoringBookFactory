@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "18.2"', self.source)
+        self.assertIn('FACTORY_VERSION = "19.0"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -195,7 +195,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "18.2"', self.source)
+        self.assertIn('FACTORY_VERSION = "19.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -417,6 +417,68 @@ class FactoryIntegrityTests(unittest.TestCase):
         segment = ast.get_source_segment(self.source, menu) or ""
         self.assertIn('c=="18"', segment)
         self.assertIn("lore_intake_menu()", segment)
+
+
+    def test_lore_intake_inspects_image_metadata_and_pdf_extraction_fallback(self):
+        names = ("lore_intake_inspect_file",)
+        namespace = {"Path": pathlib.Path, "IMAGE_EXTENSIONS": {".png", ".jpg", ".jpeg", ".webp"},
+                     "Image": __import__("PIL.Image", fromlist=["Image"])}
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            image_path = pathlib.Path(temp) / "sample.png"
+            namespace["Image"].new("RGB", (23, 17)).save(image_path)
+            info = namespace["lore_intake_inspect_file"](image_path)
+            self.assertEqual((info["width"], info["height"]), (23, 17))
+            pdf_info = namespace["lore_intake_inspect_file"](pathlib.Path(temp) / "missing.pdf")
+            self.assertEqual(pdf_info["media_type"], "pdf")
+
+    def test_lore_intake_detects_hashes_in_previous_batches(self):
+        names = ("lore_intake_existing_hashes",)
+        namespace = {"Path": pathlib.Path, "json": json}
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp) / "INTAKE"
+            batch = root / "Batches" / "old" / "INTAKE_BATCH.json"
+            batch.parent.mkdir(parents=True)
+            batch.write_text(json.dumps({"batch": "old", "items": [
+                {"sha256": "abc", "source": "old.png", "staged_path": "review/old.png"}
+            ]}), encoding="utf-8")
+            manifest = root / "INTAKE_MANIFEST.json"
+            manifest.write_text(json.dumps({"batches": [{"record": str(batch)}]}), encoding="utf-8")
+            found = namespace["lore_intake_existing_hashes"](manifest)
+            self.assertIn("abc", found)
+            self.assertEqual(found["abc"]["batch"], "old")
+
+    def test_approved_registry_deduplicates_without_touching_series_bible(self):
+        names = ("lore_intake_normalize", "lore_intake_approved_registry_add")
+        namespace = {"Path": pathlib.Path, "json": json, "datetime": datetime,
+                     "lore_intake_normalize": lambda value: re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip(),
+                     "save_json": lambda path, data: pathlib.Path(path).write_text(json.dumps(data), encoding="utf-8")}
+        module = ast.Module(body=[self.functions["lore_intake_approved_registry_add"][0]], type_ignores=[])
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        item = {"classification": {"kind": "creature", "name": "Stitched Deer",
+                 "world": "Nightmare World", "location": "Intake Wing"}, "sha256": "abc", "staged_path": "x.png"}
+        with tempfile.TemporaryDirectory() as temp:
+            path = pathlib.Path(temp) / "APPROVED_LORE.json"
+            first = namespace["lore_intake_approved_registry_add"](path, item)
+            second = namespace["lore_intake_approved_registry_add"](path, item)
+            registry = json.loads(path.read_text(encoding="utf-8"))
+            self.assertTrue(first["added"])
+            self.assertTrue(second["duplicate"])
+            self.assertEqual(len(registry["entities"]), 1)
+            self.assertIn("not yet written into a Series Bible", registry["entities"][0]["note"])
+
+    def test_lore_intake_review_and_metadata_are_wired_into_menu(self):
+        for token in ("lore_intake_inspect_file(source)", "lore_intake_existing_hashes(manifest_path)",
+                      "lore_intake_review_pending()", "APPROVED_LORE.json", "APPROVED_FOR_LORE_REGISTRY",
+                      "DUPLICATE_PRIOR_INTAKE", "No selectable text found"):
+            self.assertIn(token, self.source)
+        menu = self.functions["lore_intake_menu"][0]
+        segment = ast.get_source_segment(self.source, menu) or ""
+        self.assertIn("Review / correct / approve staged files", segment)
+        self.assertIn("Show approved intake registry", segment)
 
     def test_atomic_json_writer_has_tempfile_import(self):
         self.assertIn("import tempfile", self.source.splitlines())
