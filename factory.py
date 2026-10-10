@@ -10348,6 +10348,10 @@ def lore_repair_series():
         print("\nNightmare Series manual reconciliation")
         print("The popup lets you choose exactly which existing project folders belong to the series.")
         lore_manual_select_projects(bible)
+        print("\nSyncing metadata for books already registered in this Series Bible...")
+        changed = lore_sync_explicit_series_attachments(bible)
+        print(f"Series metadata sync complete. Updated {changed} project.json file(s).")
+        print("Existing PDFs and artwork were NOT modified.")
         return
     records = lore_find_series_projects(bible.get("name", ""))
     candidates = lore_candidate_projects(bible.get("name", ""))
