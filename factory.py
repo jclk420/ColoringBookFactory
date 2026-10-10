@@ -9961,10 +9961,9 @@ def lore_analyze_series(bible=None):
         except (ValueError, IndexError):
             print("Invalid selection.")
             return None
-    # The Series Bible is authoritative for explicit book registration.
-    # Project metadata is a separate sync/discovery signal and must not make
-    # a registered book appear unattached merely because project.json is old.
-    lore_sync_explicit_series_attachments(bible)
+    # Read-only analysis: never repair the Series Bible or project.json here.
+    # Explicit attachment/metadata synchronization belongs in a deliberate
+    # attach or repair action, not in a diagnostic screen.
     books = [b for b in bible.get("books", []) if isinstance(b, dict)]
     attached_books = []
     missing_books = []
