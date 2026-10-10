@@ -419,7 +419,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn("lore_intake_menu()", segment)
 
     def test_atomic_json_writer_has_tempfile_import(self):
-        self.assertRegex(self.source, r"^import tempfile$", re.M)
+        self.assertIn("import tempfile", self.source.splitlines())
         self.assertIn("os.replace(str(temp_path), str(path))", self.source)
 
     def test_save_json_replace_failure_preserves_original(self):
