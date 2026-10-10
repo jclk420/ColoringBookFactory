@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "16.9"
+FACTORY_VERSION = "17.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -6955,7 +6955,7 @@ def import_finished_pdf_v111():
 
 
 # ============================================================
-# COLORING BOOK FACTORY v16.9 — UNIVERSAL PDF PREVIEW ENGINE
+# COLORING BOOK FACTORY v17.0 — UNIVERSAL PDF PREVIEW ENGINE
 #   - Automatically bootstraps PyMuPDF when vector PDF rendering is required.
 #   - Renders a broad interior-page sample at publishing-quality resolution.
 #   - Scores pages to favor real coloring artwork over title/copyright/text pages.
@@ -10435,18 +10435,36 @@ def lore_manual_select_projects(bible):
         print(f"  {i}. {rec['title']} <- {rec['project']}")
 
     count = 0
+    reserved_numbers = {
+        book.get("book_number")
+        for book in bible.get("books", [])
+        if isinstance(book, dict)
+        and isinstance(book.get("book_number"), int)
+        and not isinstance(book.get("book_number"), bool)
+        and book.get("book_number") > 0
+    }
     for rec in chosen:
-        raw_number = input(
-            f"Book number for '{rec['title']}' (blank = unassigned): "
-        ).strip()
         book_number = None
-        if raw_number:
+        while True:
+            raw_number = input(
+                f"Book number for '{rec['title']}' (blank = unassigned): "
+            ).strip()
+            if not raw_number:
+                break
             try:
                 parsed = int(raw_number)
-                if parsed > 0:
-                    book_number = parsed
             except ValueError:
-                print("  Invalid book number; leaving it unassigned.")
+                print("  Enter a positive whole number, or blank to leave unassigned.")
+                continue
+            if parsed <= 0:
+                print("  Book numbers must be positive. Try again or leave blank.")
+                continue
+            if parsed in reserved_numbers:
+                print(f"  Book {parsed} is already assigned in this Series Bible. Choose another number.")
+                continue
+            book_number = parsed
+            reserved_numbers.add(parsed)
+            break
 
         rec = dict(rec)
         rec["book_number"] = book_number
