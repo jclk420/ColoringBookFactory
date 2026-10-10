@@ -17,7 +17,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 17.3.
+# Current version: 17.4.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "17.3"
+FACTORY_VERSION = "17.4"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -9772,6 +9772,23 @@ def lore_sync_explicit_series_attachments(bible):
     series_name = str(bible.get("name", "")).strip()
     series_id = str(bible.get("series_id", "")).strip()
     world_name = str(bible.get("world_name", "")).strip()
+    world_id = ""
+    # Resolve a stable world_id from the existing index without creating or
+    # repairing any world files as a side effect of a series sync.
+    world_index_path = WORLDS_DIR / WORLD_INDEX_FILENAME
+    if world_name and world_index_path.exists():
+        try:
+            world_index = load_json(world_index_path)
+            registered_worlds = world_index.get("worlds", {}) if isinstance(world_index, dict) else {}
+            for candidate_id, metadata in registered_worlds.items():
+                if (
+                    isinstance(metadata, dict)
+                    and str(metadata.get("name") or candidate_id).strip().casefold() == world_name.casefold()
+                ):
+                    world_id = str(candidate_id)
+                    break
+        except Exception as error:
+            print(f"WARNING: Could not resolve world_id for '{world_name}': {error}")
     for book in bible.get("books", []):
         if not isinstance(book, dict):
             continue
@@ -9804,6 +9821,7 @@ def lore_sync_explicit_series_attachments(bible):
                 ("series_id", series_id),
                 ("book_number", book.get("book_number")),
                 ("universe_name", world_name),
+                ("world_id", world_id),
             )
             conflicts = lore_safe_metadata_updates(settings, expected_fields)
             # Explicit registration establishes canon status, but does not
