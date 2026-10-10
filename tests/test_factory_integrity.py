@@ -31,6 +31,7 @@ class FactoryIntegrityTests(unittest.TestCase):
             "lore_manual_select_projects",
             "lore_sync_explicit_series_attachments",
             "lore_register_book",
+            "lore_repair_world_book_links",
         )
         for name in critical:
             with self.subTest(function=name):
@@ -190,7 +191,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "17.9"', self.source)
+        self.assertIn('FACTORY_VERSION = "18.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -262,6 +263,31 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn("difference_update(visible_projects)", source_segment)
         self.assertIn("filter_var.trace_add", source_segment)
         self.assertIn("Add Selected Books", source_segment)
+
+    def test_world_book_repair_is_explicit_conflict_safe_and_non_creating(self):
+        node = self.functions["lore_repair_world_book_links"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        for token in (
+            "world_index_missing", "world_not_registered", "ambiguous_world_name",
+            "world_record_missing", "world_books_list_invalid",
+            "PROJECT_WORLD_ID_CONFLICT", "PROJECT_WORLD_NAME_CONFLICT",
+            'settings["world_id"] = world_id',
+            'settings["universe_name"] = world_name',
+            '"world_relationship"', '"world_canon"',
+            'world["books"] = world_books', '"linked"', '"metadata_filled"',
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, segment)
+        self.assertNotIn("mkdir(", segment)
+        self.assertNotIn("new_world_record(", segment)
+        self.assertNotIn('settings["world_relationship"] =', segment)
+        self.assertNotIn('settings["world_canon"] =', segment)
+
+    def test_repair_report_includes_world_book_repair(self):
+        node = self.functions["lore_repair_series"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertGreaterEqual(segment.count("lore_repair_world_book_links(bible)"), 2)
+        self.assertGreaterEqual(segment.count('"world_book_repair": world_book_repair'), 2)
 
 
 if __name__ == "__main__":
