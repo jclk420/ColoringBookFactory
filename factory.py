@@ -9751,9 +9751,16 @@ def lore_sync_explicit_series_attachments(bible):
         project_name = str(book.get("project", "")).strip()
         project_path = str(book.get("path", "")).strip()
         project = Path(project_path) if project_path else (PROJECTS / project_name)
+        # Older Bible entries may contain paths from another machine or an
+        # archived working copy. Prefer the named project folder when the
+        # saved path no longer resolves, but never guess by title alone.
+        if (not project.exists() or not project.is_dir()) and project_name:
+            project = PROJECTS / project_name
         if not project_name or not project.exists() or not project.is_dir():
+            book["attachment_status"] = "missing_project_folder"
             continue
         book["path"] = str(project)
+        book["attachment_status"] = "attached"
         book["explicit_attachment"] = True
         metadata = project / "project.json"
         if metadata.exists():
@@ -9954,20 +9961,41 @@ def lore_analyze_series(bible=None):
         except (ValueError, IndexError):
             print("Invalid selection.")
             return None
-    # Reconcile explicit manual registrations with the actual project metadata
-    # before reporting attachment status. Manual registration is authoritative.
+    # The Series Bible is authoritative for explicit book registration.
+    # Project metadata is a separate sync/discovery signal and must not make
+    # a registered book appear unattached merely because project.json is old.
     lore_sync_explicit_series_attachments(bible)
+    books = [b for b in bible.get("books", []) if isinstance(b, dict)]
+    attached_books = []
+    missing_books = []
+    for book in books:
+        project_name = str(book.get("project", "")).strip()
+        project_path = str(book.get("path", "")).strip()
+        project = Path(project_path) if project_path else (PROJECTS / project_name)
+        if (not project.exists() or not project.is_dir()) and project_name:
+            project = PROJECTS / project_name
+        if project_name and project.exists() and project.is_dir():
+            attached_books.append(book)
+        else:
+            missing_books.append(book)
     records = lore_find_series_projects(bible.get("name", ""))
     candidates = lore_candidate_projects(bible.get("name", ""))
     print("\n" + "=" * 78)
     print(f"SERIES LORE ANALYSIS — {bible.get('name', '')}")
     print("=" * 78)
     print(f"Central mythology: {bible.get('central_mythology') or 'Not defined'}")
-    print(f"Recorded books: {len(bible.get('books', []))}")
-    print(f"Projects explicitly attached: {len(records)}")
+    print(f"Books recorded in Series Bible: {len(books)}")
+    print(f"Registered books with existing project folders: {len(attached_books)}")
+    print(f"Project folders missing for registered books: {len(missing_books)}")
+    print(f"Project metadata independently identifies as this series: {len(records)}")
     print(f"Possible legacy/unattached matches: {len(candidates)}")
-    for rec in records:
-        print(f"  ✓ {rec['title']}" + (f" — Book {rec['book_number']}" if rec.get('book_number') else ""))
+    for book in attached_books:
+        title = str(book.get("title") or book.get("project") or "Untitled book")
+        print(f"  ✓ {title}" + (f" — Book {book['book_number']}" if book.get("book_number") else ""))
+    if missing_books:
+        print("\nREGISTERED BOOKS WITH MISSING PROJECT FOLDERS")
+        for book in missing_books:
+            print(f"  ! {book.get('title') or book.get('project') or 'Untitled book'} — {book.get('path') or book.get('project') or 'no path recorded'}")
     if candidates:
         print("\nPOSSIBLE LEGACY BOOKS")
         for i, rec in enumerate(candidates, 1):
