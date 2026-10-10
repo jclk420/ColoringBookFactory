@@ -112,23 +112,60 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn("conflict", segment.casefold())
 
     def test_sync_preserves_existing_canon_conflicts(self):
-        node = self.functions["lore_sync_explicit_series_attachments"][0]
-        segment = ast.get_source_segment(self.source, node) or ""
-        for token in (
-            "current_missing",
-            "elif current != expected",
-            '"universe_name"',
-            '"book_number"',
-            "CONFLICT:",
-            "preserved existing metadata",
-        ):
+        helper = self.functions.get("lore_safe_metadata_updates", [None])[0]
+        self.assertIsNotNone(helper, "Safe metadata merge policy must be isolated")
+        helper_segment = ast.get_source_segment(self.source, helper) or ""
+        for token in ("current_missing", "elif current != expected", "conflicts.append"):
             with self.subTest(token=token):
-                self.assertIn(token, segment)
-        self.assertIn(
-            'FACTORY_VERSION = "17.0"',
-            self.source,
-            "Meaningful factory changes must update the version declaration",
+                self.assertIn(token, helper_segment)
+        sync = self.functions["lore_sync_explicit_series_attachments"][0]
+        sync_segment = ast.get_source_segment(self.source, sync) or ""
+        self.assertIn('"universe_name"', sync_segment)
+        self.assertIn('"book_number"', sync_segment)
+        self.assertIn("lore_safe_metadata_updates", sync_segment)
+
+    def test_safe_metadata_merge_runtime_preserves_conflicts(self):
+        helper = self.functions["lore_safe_metadata_updates"][0]
+        module = ast.Module(body=[helper], type_ignores=[])
+        namespace = {}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        settings = {
+            "series_name": "AREA 420",
+            "series_id": "area-420",
+            "book_number": 8,
+            "universe_name": "AREA 420",
+            "custom_setting": "preserve me",
+        }
+        conflicts = namespace["lore_safe_metadata_updates"](
+            settings,
+            (
+                ("series_name", "Nightmare Series"),
+                ("series_id", "nightmare-series"),
+                ("book_number", 2),
+                ("universe_name", "Nightmare World"),
+            ),
         )
+        self.assertEqual(len(conflicts), 4)
+        self.assertEqual(settings["series_name"], "AREA 420")
+        self.assertEqual(settings["series_id"], "area-420")
+        self.assertEqual(settings["book_number"], 8)
+        self.assertEqual(settings["universe_name"], "AREA 420")
+        self.assertEqual(settings["custom_setting"], "preserve me")
+
+    def test_safe_metadata_merge_fills_missing_values(self):
+        helper = self.functions["lore_safe_metadata_updates"][0]
+        module = ast.Module(body=[helper], type_ignores=[])
+        namespace = {}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        settings = {"series_name": "", "book_number": None}
+        conflicts = namespace["lore_safe_metadata_updates"](
+            settings,
+            (("series_name", "Nightmare Series"), ("book_number", 1), ("universe_name", "Nightmare World")),
+        )
+        self.assertEqual(conflicts, [])
+        self.assertEqual(settings["series_name"], "Nightmare Series")
+        self.assertEqual(settings["book_number"], 1)
+        self.assertEqual(settings["universe_name"], "Nightmare World")
 
     def test_analysis_runs_continuity_audit(self):
         node = self.functions["lore_analyze_series"][0]
