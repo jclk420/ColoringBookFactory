@@ -4,6 +4,15 @@ This roadmap separates shipped work from future candidates. Planned items are no
 
 ## Shipped on the current upgrade branch
 
+### v21.0 — Canon Registry & Continuity Tools
+- Adds a schema-aware preview/import for explicitly approved creature and location records from `INTAKE/APPROVED_LORE.json`; unsupported world/book shapes and name/context conflicts remain blocked for review.
+- Requires the user to type `IMPORT` before changes, creates a timestamped Series Bible backup, and records before/after changes in `CANON_CHANGELOG.json`.
+- Adds an interactive conflict-resolution queue; keeping canon is the default-safe option, while importing a conflicting entity as distinct requires an explicit choice.
+- Adds exact and near-duplicate entity reuse suggestions without automatic merging or renaming.
+- Adds a book-to-series coverage report for missing metadata, attachment state, and project-path existence.
+- Adds menu wiring, version updates, and regression checks; diagnostics remain read-only unless the user explicitly confirms an import.
+
+
 ### v20.0 — Release Safety & Lore Diagnostics
 - Adds a read-only release preflight listing MASTER integrity, enabled package contents, blockers, hashes, and output destinations without rebuilding production artifacts.
 - Compares current package files against the last saved delivery audit and reports added, changed, and removed files.
