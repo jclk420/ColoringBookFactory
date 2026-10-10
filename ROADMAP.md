@@ -4,6 +4,15 @@ This roadmap separates shipped work from future candidates. Planned items are no
 
 ## Shipped on the current upgrade branch
 
+### v19.0 — Lore Intake Review & Metadata Workflow (draft PR)
+- Adds best-effort PDF title/page/text extraction through `pypdf` or `PyPDF2` when installed, and image dimensions/format metadata.
+- Detects SHA-256 duplicates against previous intake batches as well as duplicates in the current batch.
+- Adds an interactive review queue for correcting kind/name/world/location and approving or rejecting each staged file.
+- Moves a staged copy to the corrected review-tree path when the user edits its classification.
+- Writes approved records to `INTAKE/APPROVED_LORE.json`, de-duplicates approved records, and explicitly keeps that registry separate from Series Bible/world canon pending a later schema-aware import step.
+- Adds tests for image/PDF metadata behavior, cross-batch duplicate lookup, approved-registry de-duplication, and menu wiring.
+
+
 ### v18.2 — Lore Intake & Auto-Sorter
 - Adds a dedicated main-menu entry for batch intake of PDFs and images, including optional drag-and-drop when `tkinterdnd2` is installed and a multi-file picker fallback.
 - Matches filenames against registered world, location, creature, and book names; ambiguous and unmatched files are sent to `_Needs_Review` instead of being guessed into canon.
@@ -43,6 +52,7 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - **Machine-readable diagnostics:** standard error codes and a single health report for missing dependencies, unreadable metadata, bad paths, and failed packages.
 
 ### Priority 2 — Book and lore quality
+- **Schema-aware canon import:** map user-approved `APPROVED_LORE.json` entries into Series Bible/world records only after confirming each target schema and showing a before/after diff.
 - **Lore intake approval workflow:** review staged items, correct matches, then explicitly register approved creatures/locations and record their source files in the Series Bible.
 - **Lore consistency matrix:** compare each attached book against world rules, locations, entities, tone, and series canon, with evidence and severity.
 - **Canon change log:** record who/what changed a Series Bible or world record, before/after values, and timestamp.
