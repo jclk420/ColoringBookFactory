@@ -10,6 +10,7 @@ import subprocess
 import zipfile
 import re
 import os
+import tempfile
 from datetime import datetime
 from hashlib import sha256
 
@@ -17,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 18.1.
+# Current version: 18.2.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -30,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "18.1"
+FACTORY_VERSION = "18.2"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14059,6 +14060,335 @@ def gumroad_listing_studio(project):
             print("Saved. Use option 10 to put this into the Gumroad package.")
 
 
+
+# ============================================================
+# LORE INTAKE — safe artwork and document staging
+# ============================================================
+
+INTAKE_DIR = FACTORY / "INTAKE"
+INTAKE_MANIFEST_FILENAME = "INTAKE_MANIFEST.json"
+INTAKE_SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | {".pdf"}
+
+
+def lore_intake_normalize(value):
+    """Normalize names for conservative filename-to-lore matching."""
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+
+def lore_intake_safe_folder(value, fallback="Unassigned"):
+    """Turn a lore label into a safe, readable folder name."""
+    cleaned = re.sub(r'[<>:"/\\\\|?*\\x00-\\x1f]', "_", str(value or "").strip())
+    cleaned = re.sub(r"\\s+", " ", cleaned).strip(" .")
+    if not cleaned or cleaned in {".", ".."}:
+        return fallback
+    return cleaned[:100]
+
+
+def lore_intake_record_name(record):
+    if isinstance(record, str):
+        return record.strip()
+    if not isinstance(record, dict):
+        return ""
+    for key in ("name", "creature_name", "title", "location_name", "world_name", "book_title"):
+        value = str(record.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def lore_intake_collect_records():
+    """Read existing lore as matching hints; this function does not edit canon."""
+    records = []
+    index_path = WORLDS_DIR / WORLD_INDEX_FILENAME
+    if index_path.exists():
+        try:
+            index = load_json(index_path)
+            worlds = index.get("worlds", {}) if isinstance(index, dict) else {}
+            for world_id, meta in worlds.items():
+                if not isinstance(meta, dict):
+                    continue
+                world_name = str(meta.get("name") or world_id).strip()
+                records.append({"kind": "world", "name": world_name, "world": world_name, "location": ""})
+                world_file = WORLDS_DIR / str(world_id) / "world.json"
+                if world_file.exists():
+                    try:
+                        world = load_json(world_file)
+                        if isinstance(world, dict):
+                            locations = world.get("locations", [])
+                            if isinstance(locations, list):
+                                for item in locations:
+                                    name = lore_intake_record_name(item)
+                                    if name:
+                                        records.append({"kind": "location", "name": name, "world": world_name, "location": name})
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    try:
+        bibles = list_series_bibles()
+    except Exception:
+        bibles = []
+    for bible in bibles:
+        if not isinstance(bible, dict):
+            continue
+        world_name = str(bible.get("world_name") or "Unassigned World").strip()
+        bible_name = str(bible.get("name") or "").strip()
+        for item in bible.get("locations", []) if isinstance(bible.get("locations", []), list) else []:
+            name = lore_intake_record_name(item)
+            if name:
+                records.append({"kind": "location", "name": name, "world": world_name, "location": name, "bible": bible_name})
+        for item in bible.get("creatures", []) if isinstance(bible.get("creatures", []), list) else []:
+            name = lore_intake_record_name(item)
+            if not name:
+                continue
+            location = ""
+            if isinstance(item, dict):
+                location = str(item.get("location") or item.get("primary_location") or item.get("location_name") or "").strip()
+                if not location and isinstance(item.get("locations"), list) and item["locations"]:
+                    location = lore_intake_record_name(item["locations"][0])
+            records.append({"kind": "creature", "name": name, "world": world_name,
+                            "location": location or "Unassigned Location", "bible": bible_name})
+        for item in bible.get("books", []) if isinstance(bible.get("books", []), list) else []:
+            name = lore_intake_record_name(item)
+            if name:
+                records.append({"kind": "book", "name": name, "world": world_name,
+                                "location": "", "bible": bible_name})
+    # Keep exact records only once; do not merge similarly named entities.
+    unique = {}
+    for record in records:
+        key = (record["kind"], lore_intake_normalize(record["name"]),
+               lore_intake_normalize(record.get("world")), lore_intake_normalize(record.get("location")))
+        unique.setdefault(key, record)
+    return list(unique.values())
+
+
+def lore_intake_classify(path, records):
+    """Suggest a single conservative match from known names in the filename."""
+    path = Path(path)
+    stem = lore_intake_normalize(path.stem)
+    if not stem:
+        return {"kind": "unmatched", "name": "", "world": "Unassigned World",
+                "location": "Unassigned Location", "confidence": "LOW", "reason": "Empty filename"}
+    matches = []
+    for record in records or []:
+        name = lore_intake_normalize(record.get("name"))
+        if not name or len(name) < 3:
+            continue
+        # Match complete normalized phrases, never isolated short tokens.
+        if name == stem or re.search(r"(?<![a-z0-9])" + re.escape(name) + r"(?![a-z0-9])", stem):
+            matches.append(record)
+    if not matches:
+        return {"kind": "unmatched", "name": "", "world": "Unassigned World",
+                "location": "Unassigned Location", "confidence": "LOW",
+                "reason": "No registered world, location, creature, or book name found in filename"}
+    # Prefer the most specific registered entity; equal-specificity matches stay unresolved.
+    priority = {"creature": 4, "location": 3, "book": 2, "world": 1}
+    max_priority = max(priority.get(item.get("kind"), 0) for item in matches)
+    best = [item for item in matches if priority.get(item.get("kind"), 0) == max_priority]
+    names = {(lore_intake_normalize(x.get("name")), lore_intake_normalize(x.get("world")),
+              lore_intake_normalize(x.get("location"))) for x in best}
+    if len(names) != 1:
+        return {"kind": "ambiguous", "name": "", "world": "Unassigned World",
+                "location": "Unassigned Location", "confidence": "LOW",
+                "reason": "Filename matches multiple equally specific lore records"}
+    match = best[0]
+    return {"kind": match.get("kind", "unmatched"), "name": match.get("name", ""),
+            "world": match.get("world") or "Unassigned World",
+            "location": match.get("location") or "Unassigned Location",
+            "bible": match.get("bible", ""), "confidence": "HIGH",
+            "reason": "Exact registered lore name found in filename"}
+
+
+def lore_intake_destination(review_root, source, classification):
+    """Return a review-only destination; never returns a canon folder."""
+    kind = classification.get("kind", "unmatched")
+    world = lore_intake_safe_folder(classification.get("world"), "Unassigned World")
+    location = lore_intake_safe_folder(classification.get("location"), "Unassigned Location")
+    name = lore_intake_safe_folder(classification.get("name"), "")
+    if kind == "creature" and name:
+        relative = Path(world) / location / name / source.name
+    elif kind == "location" and name:
+        relative = Path(world) / name / "Unassigned Creature" / source.name
+    elif kind == "book" and name:
+        relative = Path(world) / "Books" / name / source.name
+    elif kind == "world" and name:
+        relative = Path(name) / "Unassigned Location" / "Unassigned Creature" / source.name
+    else:
+        relative = Path("_Needs_Review") / source.name
+    return Path(review_root) / relative
+
+
+def lore_intake_sha256(path):
+    digest = sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def lore_intake_select_files():
+    """Select multiple files, with optional native drag-and-drop when available."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox
+    except Exception:
+        raw = input("Paste full file paths separated by |: ").strip()
+        return [Path(x.strip().strip('"')) for x in raw.split("|") if x.strip()]
+
+    try:
+        from tkinterdnd2 import TkinterDnD, DND_FILES
+        root = TkinterDnD.Tk()
+        root.withdraw()
+        window = tk.Toplevel(root)
+        window.title("Coloring Book Factory — Lore Intake")
+        window.geometry("600x280")
+        window.resizable(False, False)
+        window.attributes("-topmost", True)
+        selected = {"paths": []}
+        tk.Label(window, text="LORE INTAKE", font=("Segoe UI", 16, "bold")).pack(pady=(20, 8))
+        tk.Label(window, text="Drop multiple PDFs or images here, or browse for files.",
+                 font=("Segoe UI", 10)).pack(pady=4)
+        zone = tk.Label(window, text="DROP FILES HERE", relief="groove", bd=2, height=5,
+                        font=("Segoe UI", 12, "bold"))
+        zone.pack(fill="both", padx=24, pady=8)
+        def accept_drop(event):
+            try:
+                values = root.tk.splitlist(event.data)
+            except Exception:
+                values = [event.data]
+            selected["paths"] = [Path(str(x).strip().strip('"')) for x in values if str(x).strip()]
+            window.destroy()
+        def browse():
+            values = filedialog.askopenfilenames(
+                parent=window, title="Select Lore Intake Files",
+                filetypes=[("PDF and images", "*.pdf *.png *.jpg *.jpeg *.webp"),
+                           ("All files", "*.*")]
+            )
+            if values:
+                selected["paths"] = [Path(x) for x in values]
+                window.destroy()
+        zone.drop_target_register(DND_FILES)
+        zone.dnd_bind("<<Drop>>", accept_drop)
+        tk.Button(window, text="Browse Multiple Files", command=browse).pack(pady=(0, 14))
+        window.protocol("WM_DELETE_WINDOW", window.destroy)
+        root.wait_window(window)
+        root.destroy()
+        return selected["paths"]
+    except Exception:
+        try:
+            root.destroy()
+        except Exception:
+            pass
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            values = filedialog.askopenfilenames(
+                title="Select Lore Intake Files",
+                filetypes=[("PDF and images", "*.pdf *.png *.jpg *.jpeg *.webp"),
+                           ("All files", "*.*")]
+            )
+            return [Path(x) for x in values]
+        finally:
+            root.destroy()
+
+
+def lore_intake_run(files=None):
+    """Copy incoming files into a review tree and record proposed lore matches.
+
+    Source files and canon records are never modified. Only explicit approval in
+    a future workflow should promote a proposal into a Series Bible.
+    """
+    candidates = list(files) if files is not None else lore_intake_select_files()
+    valid = []
+    rejected = []
+    for item in candidates:
+        path = Path(item).expanduser()
+        if not path.exists() or not path.is_file():
+            rejected.append({"path": str(path), "reason": "File does not exist"})
+        elif path.suffix.casefold() not in INTAKE_SUPPORTED_EXTENSIONS:
+            rejected.append({"path": str(path), "reason": "Unsupported file type"})
+        else:
+            valid.append(path.resolve())
+    if not valid:
+        print("No supported files selected. Accepted: PDF, PNG, JPG, JPEG, WEBP.")
+        for item in rejected:
+            print(f"SKIPPED: {item['path']} — {item['reason']}")
+        return {"items": [], "rejected": rejected}
+
+    records = lore_intake_collect_records()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    review_root = INTAKE_DIR / "Review"
+    batch_root = INTAKE_DIR / "Batches" / timestamp
+    items = []
+    seen_hashes = {}
+    for source in valid:
+        try:
+            digest = lore_intake_sha256(source)
+            if digest in seen_hashes:
+                items.append({"source": str(source), "sha256": digest, "status": "DUPLICATE_IN_BATCH",
+                              "duplicate_of": seen_hashes[digest], "classification": {"kind": "duplicate"},
+                              "staged_path": None})
+                continue
+            seen_hashes[digest] = str(source)
+            classification = lore_intake_classify(source, records)
+            destination = lore_intake_destination(review_root, source, classification)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if destination.exists():
+                destination = destination.with_name(f"{destination.stem}_{digest[:8]}{destination.suffix}")
+            shutil.copy2(source, destination)
+            batch_record = {"source": str(source), "sha256": digest, "status": "STAGED_FOR_REVIEW",
+                            "classification": classification, "staged_path": str(destination),
+                            "batch": timestamp}
+            items.append(batch_record)
+        except Exception as error:
+            items.append({"source": str(source), "status": "ERROR", "error": str(error),
+                          "staged_path": None})
+    INTAKE_DIR.mkdir(parents=True, exist_ok=True)
+    save_json(batch_root / "INTAKE_BATCH.json", {
+        "schema_version": 1, "factory_version": FACTORY_VERSION, "batch": timestamp,
+        "items": items, "rejected": rejected,
+        "notice": "Staged copies only. No source files or canon records were changed."
+    })
+    manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
+    try:
+        manifest = load_json(manifest_path) if manifest_path.exists() else {"schema_version": 1, "batches": []}
+        if not isinstance(manifest, dict):
+            manifest = {"schema_version": 1, "batches": []}
+        manifest.setdefault("batches", []).append({"batch": timestamp, "record": str(batch_root / "INTAKE_BATCH.json"),
+                                                   "item_count": len(items)})
+        save_json(manifest_path, manifest)
+    except Exception as error:
+        print(f"WARNING: Batch files were staged, but the overall manifest could not be updated: {error}")
+    print(f"\nLORE INTAKE COMPLETE — {len(items)} item(s) processed")
+    print(f"Review tree: {review_root}")
+    print(f"Batch report: {batch_root / 'INTAKE_BATCH.json'}")
+    print("Safety: source files and lore canon were not modified.")
+    for item in items:
+        classification = item.get("classification", {})
+        print(f"- {Path(item.get('source', '?')).name}: {item.get('status')} | "
+              f"{classification.get('world', '—')} / {classification.get('location', '—')} / "
+              f"{classification.get('name', 'Needs review')}")
+    for item in rejected:
+        print(f"SKIPPED: {item['path']} — {item['reason']}")
+    return {"items": items, "rejected": rejected, "review_root": str(review_root),
+            "batch_report": str(batch_root / "INTAKE_BATCH.json")}
+
+
+def lore_intake_menu():
+    print("\n" + "=" * 78)
+    print("LORE INTAKE & AUTO-SORTER")
+    print("=" * 78)
+    print("Drop or select PDFs and images to stage them under proposed World / Location / Creature folders.")
+    print("Registered lore names are matched conservatively; unknown or ambiguous files go to _Needs_Review.")
+    print("Files are COPIED into INTAKE/Review. Original files and canon records are not changed.")
+    answer = input("\nStart intake now? (Y/N): ").strip().casefold()
+    if answer in {"y", "yes"}:
+        lore_intake_run()
+    else:
+        print("Intake cancelled; no files were changed.")
+
+
 def factory_main_menu():
     PROJECTS.mkdir(exist_ok=True)
     while True:
@@ -14085,6 +14415,7 @@ def factory_main_menu():
         print("\nWORLDS & SERIES")
         print(" 14. Worlds & Projects")
         print(" 15. Series & Lore")
+        print(" 18. Lore Intake / Auto-Sort PDFs & Images")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -14109,6 +14440,7 @@ def factory_main_menu():
         elif c=="15":
             try: series_lore_center()
             except NameError: worlds_projects_menu()
+        elif c=="18": lore_intake_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
