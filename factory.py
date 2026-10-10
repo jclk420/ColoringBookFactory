@@ -10002,6 +10002,75 @@ def lore_validate_series_continuity(bible):
     expected_series_id = str(bible.get("series_id", "")).strip()
     expected_world = str(bible.get("world_name", "")).strip()
 
+    # Validate the top of the canon hierarchy without calling load_world_index(),
+    # which creates directories and therefore is not suitable for read-only audit.
+    if not expected_world:
+        findings.append({
+            "severity": "ERROR", "code": "SERIES_WORLD_UNASSIGNED",
+            "message": "Series Bible has no world_name; assign its canonical world before extending the series.",
+        })
+    else:
+        index_path = WORLDS_DIR / WORLD_INDEX_FILENAME
+        if not index_path.exists():
+            findings.append({
+                "severity": "WARNING", "code": "WORLD_INDEX_MISSING",
+                "message": f"World index is missing; cannot verify '{expected_world}' against registered worlds.",
+            })
+        else:
+            try:
+                world_index = load_json(index_path)
+                registered_worlds = world_index.get("worlds", {}) if isinstance(world_index, dict) else {}
+                world_match = next(
+                    (
+                        (world_id, meta)
+                        for world_id, meta in registered_worlds.items()
+                        if isinstance(meta, dict)
+                        and str(meta.get("name") or world_id).strip().casefold() == expected_world.casefold()
+                    ),
+                    None,
+                )
+                if world_match is None:
+                    findings.append({
+                        "severity": "ERROR", "code": "WORLD_NOT_REGISTERED",
+                        "message": f"Series world '{expected_world}' is not registered in the world index.",
+                    })
+                else:
+                    world_id, world_meta = world_match
+                    world_file = WORLDS_DIR / str(world_id) / "world.json"
+                    if not world_file.exists():
+                        findings.append({
+                            "severity": "ERROR", "code": "WORLD_RECORD_MISSING",
+                            "message": f"World '{expected_world}' is indexed but its world.json record is missing.",
+                        })
+                    else:
+                        try:
+                            world_record = load_json(world_file)
+                            if not isinstance(world_record, dict):
+                                raise ValueError("world.json must contain an object")
+                            registered_series = world_record.get("series", [])
+                            if not isinstance(registered_series, list):
+                                registered_series = []
+                            series_keys = {
+                                str(item.get("name") or item.get("series") or "").strip().casefold()
+                                if isinstance(item, dict) else str(item).strip().casefold()
+                                for item in registered_series
+                            }
+                            if expected_series.casefold() not in series_keys:
+                                findings.append({
+                                    "severity": "WARNING", "code": "SERIES_NOT_LINKED_TO_WORLD",
+                                    "message": f"Series '{expected_series}' is not listed under world '{expected_world}'.",
+                                })
+                        except Exception as error:
+                            findings.append({
+                                "severity": "ERROR", "code": "UNREADABLE_WORLD_RECORD",
+                                "message": f"World '{expected_world}' record could not be read ({error}).",
+                            })
+            except Exception as error:
+                findings.append({
+                    "severity": "ERROR", "code": "UNREADABLE_WORLD_INDEX",
+                    "message": f"World index could not be read ({error}).",
+                })
+
     for book in books:
         title = str(book.get("title") or book.get("project") or "Untitled book").strip()
         project_name = str(book.get("project", "")).strip()
