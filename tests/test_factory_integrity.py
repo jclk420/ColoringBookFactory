@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "19.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "20.0"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -195,7 +195,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "19.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "20.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -507,6 +507,18 @@ class FactoryIntegrityTests(unittest.TestCase):
             self.assertEqual(json.loads(target.read_text(encoding="utf-8")), {"old": True})
             self.assertEqual(list(pathlib.Path(temp).glob("*.tmp")), [])
 
+
+    def test_v20_release_safety_and_lore_diagnostics_are_wired(self):
+        required = ("v20_release_preflight", "v20_release_change_summary",
+                    "v20_verified_restore_drill", "v20_machine_diagnostics",
+                    "v20_lore_consistency_matrix", "v20_release_lore_diagnostics_menu")
+        for name in required:
+            with self.subTest(function=name):
+                self.assertEqual(len(self.functions.get(name, [])), 1)
+        self.assertIn('elif c=="19": v20_release_lore_diagnostics_menu()', self.source)
+        self.assertIn('"READ_ONLY_PREFLIGHT"', self.source)
+        self.assertIn('"restore_performed": False', self.source)
+        self.assertIn('"FACTORY_DIAGNOSTICS.json"', self.source)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

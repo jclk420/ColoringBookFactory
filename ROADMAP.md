@@ -4,6 +4,14 @@ This roadmap separates shipped work from future candidates. Planned items are no
 
 ## Shipped on the current upgrade branch
 
+### v20.0 — Release Safety & Lore Diagnostics
+- Adds a read-only release preflight listing MASTER integrity, enabled package contents, blockers, hashes, and output destinations without rebuilding production artifacts.
+- Compares current package files against the last saved delivery audit and reports added, changed, and removed files.
+- Validates safety ZIP readability/CRC and unsafe paths without extracting or restoring anything; flags whether a MASTER PDF is present.
+- Produces standardized machine-readable diagnostics in `REPORTS/FACTORY_DIAGNOSTICS.json`.
+- Adds a read-only lore consistency matrix for project title, world identity, location, and registered lore matches; it never rewrites canon.
+- Adds a main-menu entry and integrity checks for the new workflow.
+
 ### v19.0 — Lore Intake Review & Metadata Workflow (draft PR)
 - Adds best-effort PDF title/page/text extraction through `pypdf` or `PyPDF2` when installed, and image dimensions/format metadata.
 - Detects SHA-256 duplicates against previous intake batches as well as duplicates in the current batch.
@@ -45,11 +53,7 @@ This roadmap separates shipped work from future candidates. Planned items are no
 ## Recommended next upgrades
 
 ### Priority 1 — Release safety and recoverability
-- **Preflight-only release mode:** show exact files, checks, blockers, and output destinations without changing production files.
-- **Release change summary:** compare the last successful release with the current one; report changed artwork, pages, metadata, and package files.
-- **Verified restore drill:** validate backup ZIP contents and hashes before offering restore; require a clear target and never overwrite silently.
 - **Atomic JSON writes:** write temporary files, validate JSON, then replace originals to reduce corruption risk after interruptions.
-- **Machine-readable diagnostics:** standard error codes and a single health report for missing dependencies, unreadable metadata, bad paths, and failed packages.
 
 ### Priority 2 — Book and lore quality
 - **Schema-aware canon import:** map user-approved `APPROVED_LORE.json` entries into Series Bible/world records only after confirming each target schema and showing a before/after diff.
