@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "17.0"
+FACTORY_VERSION = "17.1"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -6955,7 +6955,7 @@ def import_finished_pdf_v111():
 
 
 # ============================================================
-# COLORING BOOK FACTORY v17.0 — UNIVERSAL PDF PREVIEW ENGINE
+# COLORING BOOK FACTORY v17.1 — UNIVERSAL PDF PREVIEW ENGINE
 #   - Automatically bootstraps PyMuPDF when vector PDF rendering is required.
 #   - Renders a broad interior-page sample at publishing-quality resolution.
 #   - Scores pages to favor real coloring artwork over title/copyright/text pages.
@@ -9732,6 +9732,32 @@ def lore_extract_project_record(project):
     }
 
 
+def lore_safe_metadata_updates(settings, expected_fields):
+    """Fill only missing metadata values and return existing-value conflicts.
+
+    This pure helper deliberately does not write files. It can be tested
+    independently so a future refactor cannot accidentally reintroduce silent
+    book-number or world-identity overwrites.
+    """
+    if not isinstance(settings, dict):
+        raise TypeError("Project metadata must be a dictionary")
+    conflicts = []
+    for key, expected in expected_fields:
+        if expected is None or expected == "":
+            continue
+        current = settings.get(key)
+        current_missing = current is None or (
+            isinstance(current, str) and not current.strip()
+        )
+        if current_missing:
+            settings[key] = expected
+        elif current != expected:
+            conflicts.append(
+                f"{key}: existing={current!r}, Series Bible={expected!r}"
+            )
+    return conflicts
+
+
 def lore_sync_explicit_series_attachments(bible):
     """Safely sync explicit Series Bible attachments without overwriting conflicts.
 
@@ -9773,22 +9799,13 @@ def lore_sync_explicit_series_attachments(bible):
                 print(f"WARNING: {project.name}/project.json is not a JSON object; skipped.")
                 continue
             before = dict(settings)
-            conflicts = []
             expected_fields = (
                 ("series_name", series_name),
                 ("series_id", series_id),
                 ("book_number", book.get("book_number")),
                 ("universe_name", world_name),
             )
-            for key, expected in expected_fields:
-                if expected in (None, ""):
-                    continue
-                current = settings.get(key)
-                current_missing = current is None or (isinstance(current, str) and not current.strip())
-                if current_missing:
-                    settings[key] = expected
-                elif current != expected:
-                    conflicts.append(f"{key}: existing={current!r}, Series Bible={expected!r}")
+            conflicts = lore_safe_metadata_updates(settings, expected_fields)
             # Explicit registration establishes canon status, but does not
             # authorize rewriting a conflicting series/world/number value.
             settings["series_canon"] = True
