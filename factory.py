@@ -17,7 +17,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 17.5.
+# Current version: 17.6.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "17.5"
+FACTORY_VERSION = "17.6"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -10019,6 +10019,7 @@ def lore_validate_series_continuity(bible):
     expected_series = str(bible.get("name", "")).strip()
     expected_series_id = str(bible.get("series_id", "")).strip()
     expected_world = str(bible.get("world_name", "")).strip()
+    expected_world_id = ""
 
     # Validate the top of the canon hierarchy without calling load_world_index(),
     # which creates directories and therefore is not suitable for read-only audit.
@@ -10054,6 +10055,7 @@ def lore_validate_series_continuity(bible):
                     })
                 else:
                     world_id, world_meta = world_match
+                    expected_world_id = str(world_id)
                     world_file = WORLDS_DIR / str(world_id) / "world.json"
                     if not world_file.exists():
                         findings.append({
@@ -10187,6 +10189,17 @@ def lore_validate_series_continuity(bible):
             findings.append({
                 "severity": "WARNING", "code": "WORLD_NAME_MISMATCH",
                 "message": f"{title}: project.json world '{project_world}' differs from Series Bible world '{expected_world}'.",
+            })
+        project_world_id = str(metadata.get("world_id") or "").strip()
+        if expected_world_id and not project_world_id:
+            findings.append({
+                "severity": "WARNING", "code": "PROJECT_WORLD_ID_MISSING",
+                "message": f"{title}: project.json has no world_id; safe repair can fill it from the registered world.",
+            })
+        elif expected_world_id and project_world_id != expected_world_id:
+            findings.append({
+                "severity": "WARNING", "code": "WORLD_ID_MISMATCH",
+                "message": f"{title}: project.json world_id '{project_world_id}' differs from canonical world id '{expected_world_id}'.",
             })
 
     return findings
