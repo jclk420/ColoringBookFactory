@@ -63,6 +63,33 @@ class FactoryIntegrityTests(unittest.TestCase):
             "Repair/Reconcile must synchronize registered Nightmare book metadata",
         )
 
+    def test_continuity_audit_covers_key_conflicts(self):
+        node = self.functions.get("lore_validate_series_continuity", [None])[0]
+        self.assertIsNotNone(node, "Continuity audit function must exist")
+        segment = ast.get_source_segment(self.source, node) or ""
+        for code in (
+            "DUPLICATE_PROJECT",
+            "DUPLICATE_BOOK_NUMBER",
+            "MISSING_PROJECT_FOLDER",
+            "SERIES_NAME_MISMATCH",
+            "SERIES_ID_MISMATCH",
+            "BOOK_NUMBER_MISMATCH",
+            "WORLD_NAME_MISMATCH",
+        ):
+            with self.subTest(code=code):
+                self.assertIn(code, segment)
+        self.assertNotIn("save_json(", segment)
+        self.assertNotIn("save_series_bible(", segment)
+
+    def test_analysis_runs_continuity_audit(self):
+        node = self.functions["lore_analyze_series"][0]
+        calls = {
+            child.func.id
+            for child in ast.walk(node)
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
+        }
+        self.assertIn("lore_validate_series_continuity", calls)
+
     def test_selector_preserves_selection_by_project_identity(self):
         node = self.functions["lore_manual_select_projects"][0]
         source_segment = ast.get_source_segment(self.source, node) or ""
