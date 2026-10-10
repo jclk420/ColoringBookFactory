@@ -4,6 +4,14 @@ This roadmap separates shipped work from future candidates. Planned items are no
 
 ## Shipped on the current upgrade branch
 
+### v18.2 — Lore Intake & Auto-Sorter
+- Adds a dedicated main-menu entry for batch intake of PDFs and images, including optional drag-and-drop when `tkinterdnd2` is installed and a multi-file picker fallback.
+- Matches filenames against registered world, location, creature, and book names; ambiguous and unmatched files are sent to `_Needs_Review` instead of being guessed into canon.
+- Copies files into a review-only World / Location / Creature tree and records SHA-256 hashes, match reasoning, duplicate-in-batch detection, rejected files, and batch manifests.
+- Leaves original source files and existing Series Bible/world canon untouched; intake is a staging workflow, not automatic canon approval.
+- Adds dependency-free tests for exact creature matching, safe review paths, ambiguous-name handling, menu wiring, and the `tempfile` import required by atomic JSON writes.
+
+
 ### v18.1 — Atomic JSON persistence
 - Writes JSON to a temporary file in the target directory, flushes it to disk, then replaces the destination.
 - Cleans up abandoned temporary files after failures.
@@ -35,6 +43,7 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - **Machine-readable diagnostics:** standard error codes and a single health report for missing dependencies, unreadable metadata, bad paths, and failed packages.
 
 ### Priority 2 — Book and lore quality
+- **Lore intake approval workflow:** review staged items, correct matches, then explicitly register approved creatures/locations and record their source files in the Series Bible.
 - **Lore consistency matrix:** compare each attached book against world rules, locations, entities, tone, and series canon, with evidence and severity.
 - **Canon change log:** record who/what changed a Series Bible or world record, before/after values, and timestamp.
 - **Conflict resolution queue:** let the user review each mismatch and choose preserve-project, use-series-canon, or leave-unresolved before any overwrite.
