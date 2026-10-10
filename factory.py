@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "16.8"
+FACTORY_VERSION = "16.9"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -6955,7 +6955,7 @@ def import_finished_pdf_v111():
 
 
 # ============================================================
-# COLORING BOOK FACTORY v16.8 — UNIVERSAL PDF PREVIEW ENGINE
+# COLORING BOOK FACTORY v16.9 — UNIVERSAL PDF PREVIEW ENGINE
 #   - Automatically bootstraps PyMuPDF when vector PDF rendering is required.
 #   - Renders a broad interior-page sample at publishing-quality resolution.
 #   - Scores pages to favor real coloring artwork over title/copyright/text pages.
@@ -10521,19 +10521,10 @@ def lore_repair_series():
     records = list(unique.values())
     for rec in records:
         lore_register_book(bible, rec, True)
-        project = PROJECTS / rec["project"]
-        if (project / "project.json").exists():
-            try:
-                settings = load_json(project / "project.json")
-                settings["series_name"] = bible.get("name", "")
-                settings["series_id"] = bible.get("series_id", "")
-                settings["world_relationship"] = settings.get("world_relationship", "canon")
-                settings["series_canon"] = True
-                if rec.get("book_number"):
-                    settings["book_number"] = rec["book_number"]
-                save_json(project / "project.json", settings)
-            except Exception:
-                pass
+    # Use the same conflict-aware sync path as Nightmare reconciliation.
+    # A discovered legacy match is not permission to overwrite a conflicting
+    # series identity or renumber an existing book.
+    synced = lore_sync_explicit_series_attachments(bible)
     # Build a transparent repair report instead of silently rewriting old books.
     report = {
         "series": bible.get("name", ""),
@@ -10549,7 +10540,7 @@ def lore_repair_series():
     save_json(series_path(bible["series_id"]) / "LORE_REPAIR_REPORT.json", report)
     bible["continuity_notes"] = list(dict.fromkeys(bible.get("continuity_notes", []) + ["Legacy series projects were reconciled into the Series Bible; existing book text remains unchanged until republished."]))
     save_series_bible(bible)
-    print(f"\nLORE REPAIR COMPLETE — {len(records)} books registered.")
+    print(f"\nLORE REPAIR COMPLETE — {len(records)} books registered; {synced} project.json file(s) safely updated.")
     print(f"Repair report: {series_path(bible['series_id']) / 'LORE_REPAIR_REPORT.json'}")
     print("Existing PDFs were NOT modified.")
 
