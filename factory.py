@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "16.7"
+FACTORY_VERSION = "16.8"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -6955,7 +6955,7 @@ def import_finished_pdf_v111():
 
 
 # ============================================================
-# COLORING BOOK FACTORY v11.4 — UNIVERSAL PDF PREVIEW ENGINE
+# COLORING BOOK FACTORY v16.8 — UNIVERSAL PDF PREVIEW ENGINE
 #   - Automatically bootstraps PyMuPDF when vector PDF rendering is required.
 #   - Renders a broad interior-page sample at publishing-quality resolution.
 #   - Scores pages to favor real coloring artwork over title/copyright/text pages.
@@ -9733,18 +9733,19 @@ def lore_extract_project_record(project):
 
 
 def lore_sync_explicit_series_attachments(bible):
-    """Sync manually registered Series Bible books back into project.json.
+    """Safely sync explicit Series Bible attachments without overwriting conflicts.
 
-    The Series Bible is authoritative for manual attachments. Older v15.2
-    registrations may already be in bible["books"] without the explicit
-    attachment flag, so this upgrades those records and restores project
-    metadata without touching PDFs or artwork.
+    Missing metadata can be filled from the Series Bible. Existing non-empty
+    values that disagree with canon are preserved and reported for deliberate
+    resolution; this routine never silently renumbers a book or changes its
+    world identity.
     """
     if not bible:
         return 0
     changed = 0
     series_name = str(bible.get("name", "")).strip()
     series_id = str(bible.get("series_id", "")).strip()
+    world_name = str(bible.get("world_name", "")).strip()
     for book in bible.get("books", []):
         if not isinstance(book, dict):
             continue
@@ -9763,26 +9764,49 @@ def lore_sync_explicit_series_attachments(bible):
         book["attachment_status"] = "attached"
         book["explicit_attachment"] = True
         metadata = project / "project.json"
-        if metadata.exists():
-            try:
-                settings = load_json(metadata)
-                before = (settings.get("series_name"), settings.get("series_id"), settings.get("series_canon"), settings.get("book_number"))
-                settings["series_name"] = series_name
-                settings["series_id"] = series_id
-                settings["series_canon"] = True
-                settings["world_relationship"] = settings.get("world_relationship", "canon")
-                if isinstance(book.get("book_number"), int):
-                    settings["book_number"] = book["book_number"]
-                after = (settings.get("series_name"), settings.get("series_id"), settings.get("series_canon"), settings.get("book_number"))
-                if before != after:
-                    save_json(metadata, settings)
-                    changed += 1
-            except Exception as error:
-                print(f"WARNING: Could not sync {project.name}/project.json: {error}")
+        if not metadata.exists():
+            print(f"WARNING: {project.name}/project.json is missing; attachment recorded, metadata not changed.")
+            continue
+        try:
+            settings = load_json(metadata)
+            if not isinstance(settings, dict):
+                print(f"WARNING: {project.name}/project.json is not a JSON object; skipped.")
+                continue
+            before = dict(settings)
+            conflicts = []
+            expected_fields = (
+                ("series_name", series_name),
+                ("series_id", series_id),
+                ("book_number", book.get("book_number")),
+                ("universe_name", world_name),
+            )
+            for key, expected in expected_fields:
+                if expected in (None, ""):
+                    continue
+                current = settings.get(key)
+                current_missing = current is None or (isinstance(current, str) and not current.strip())
+                if current_missing:
+                    settings[key] = expected
+                elif current != expected:
+                    conflicts.append(f"{key}: existing={current!r}, Series Bible={expected!r}")
+            # Explicit registration establishes canon status, but does not
+            # authorize rewriting a conflicting series/world/number value.
+            settings["series_canon"] = True
+            if not settings.get("world_relationship"):
+                settings["world_relationship"] = "canon"
+            if conflicts:
+                print(
+                    f"CONFLICT: {project.name}/project.json preserved existing metadata: "
+                    + "; ".join(conflicts)
+                )
+            if settings != before:
+                save_json(metadata, settings)
+                changed += 1
+        except Exception as error:
+            print(f"WARNING: Could not sync {project.name}/project.json: {error}")
     bible["updated"] = datetime.now().isoformat(timespec="seconds")
     save_series_bible(bible)
     return changed
-
 
 def lore_find_series_projects(series_name):
     target = str(series_name or "").strip().casefold()
