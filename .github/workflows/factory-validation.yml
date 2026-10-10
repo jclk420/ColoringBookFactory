@@ -1,0 +1,29 @@
+name: Factory source validation
+
+on:
+  push:
+    branches:
+      - main
+      - "fix/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Compile factory source
+        run: python -m py_compile factory.py
+      - name: Run dependency-free integrity tests
+        run: python -m unittest discover -s tests -v

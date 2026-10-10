@@ -17,7 +17,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: see FACTORY_VERSION below.
+# Current version: 17.8.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "16.7"
+FACTORY_VERSION = "17.8"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -6955,7 +6955,7 @@ def import_finished_pdf_v111():
 
 
 # ============================================================
-# COLORING BOOK FACTORY v11.4 — UNIVERSAL PDF PREVIEW ENGINE
+# COLORING BOOK FACTORY v17.1 — UNIVERSAL PDF PREVIEW ENGINE
 #   - Automatically bootstraps PyMuPDF when vector PDF rendering is required.
 #   - Renders a broad interior-page sample at publishing-quality resolution.
 #   - Scores pages to favor real coloring artwork over title/copyright/text pages.
@@ -9732,50 +9732,179 @@ def lore_extract_project_record(project):
     }
 
 
-def lore_sync_explicit_series_attachments(bible):
-    """Sync manually registered Series Bible books back into project.json.
+def lore_safe_metadata_updates(settings, expected_fields):
+    """Fill only missing metadata values and return existing-value conflicts.
 
-    The Series Bible is authoritative for manual attachments. Older v15.2
-    registrations may already be in bible["books"] without the explicit
-    attachment flag, so this upgrades those records and restores project
-    metadata without touching PDFs or artwork.
+    This pure helper deliberately does not write files. It can be tested
+    independently so a future refactor cannot accidentally reintroduce silent
+    book-number or world-identity overwrites.
+    """
+    if not isinstance(settings, dict):
+        raise TypeError("Project metadata must be a dictionary")
+    conflicts = []
+    for key, expected in expected_fields:
+        if expected is None or expected == "":
+            continue
+        current = settings.get(key)
+        current_missing = current is None or (
+            isinstance(current, str) and not current.strip()
+        )
+        if current_missing:
+            settings[key] = expected
+        elif current != expected:
+            conflicts.append(
+                f"{key}: existing={current!r}, Series Bible={expected!r}"
+            )
+    return conflicts
+
+
+def lore_ensure_series_world_link(bible):
+    """Deliberately register a series in its existing canonical world record.
+
+    This is a repair action, not an audit side effect. It never creates a world
+    or world record, and it preserves all existing world metadata.
+    """
+    if not isinstance(bible, dict):
+        return "invalid_series_bible"
+    world_name = str(bible.get("world_name", "")).strip()
+    series_name = str(bible.get("name", "")).strip()
+    if not world_name or not series_name:
+        return "missing_series_or_world_name"
+
+    index_path = WORLDS_DIR / WORLD_INDEX_FILENAME
+    if not index_path.exists():
+        return "world_index_missing"
+    try:
+        index = load_json(index_path)
+        worlds = index.get("worlds", {}) if isinstance(index, dict) else {}
+        matches = [
+            (str(world_id), metadata)
+            for world_id, metadata in worlds.items()
+            if isinstance(metadata, dict)
+            and str(metadata.get("name") or world_id).strip().casefold() == world_name.casefold()
+        ]
+        if len(matches) != 1:
+            return "world_not_registered" if not matches else "ambiguous_world_name"
+        world_id, _ = matches[0]
+        existing_world_id = str(bible.get("world_id") or "").strip()
+        if existing_world_id and existing_world_id != world_id:
+            return "series_world_id_mismatch"
+        world_file = WORLDS_DIR / world_id / "world.json"
+        if not world_file.exists():
+            return "world_record_missing"
+        world = load_json(world_file)
+        if not isinstance(world, dict):
+            return "invalid_world_record"
+        existing = world.get("series", [])
+        if not isinstance(existing, list):
+            return "invalid_world_series_list"
+        already_linked = False
+        for item in existing:
+            existing_name = (
+                str(item.get("name") or item.get("series") or "").strip()
+                if isinstance(item, dict) else str(item).strip()
+            )
+            if existing_name.casefold() == series_name.casefold():
+                already_linked = True
+                break
+        if not already_linked:
+            world["series"].append(series_name)
+            world["updated"] = datetime.now().isoformat(timespec="seconds")
+            save_json(world_file, world)
+        if not existing_world_id:
+            bible["world_id"] = world_id
+            bible["updated"] = datetime.now().isoformat(timespec="seconds")
+            save_series_bible(bible)
+        return "already_linked" if already_linked else "linked"
+    except Exception as error:
+        print(f"WARNING: Could not link series '{series_name}' to world '{world_name}': {error}")
+        return "link_failed"
+
+
+def lore_sync_explicit_series_attachments(bible):
+    """Safely sync explicit Series Bible attachments without overwriting conflicts.
+
+    Missing metadata can be filled from the Series Bible. Existing non-empty
+    values that disagree with canon are preserved and reported for deliberate
+    resolution; this routine never silently renumbers a book or changes its
+    world identity.
     """
     if not bible:
         return 0
     changed = 0
     series_name = str(bible.get("name", "")).strip()
     series_id = str(bible.get("series_id", "")).strip()
+    world_name = str(bible.get("world_name", "")).strip()
+    world_id = ""
+    # Resolve a stable world_id from the existing index without creating or
+    # repairing any world files as a side effect of a series sync.
+    world_index_path = WORLDS_DIR / WORLD_INDEX_FILENAME
+    if world_name and world_index_path.exists():
+        try:
+            world_index = load_json(world_index_path)
+            registered_worlds = world_index.get("worlds", {}) if isinstance(world_index, dict) else {}
+            for candidate_id, metadata in registered_worlds.items():
+                if (
+                    isinstance(metadata, dict)
+                    and str(metadata.get("name") or candidate_id).strip().casefold() == world_name.casefold()
+                ):
+                    world_id = str(candidate_id)
+                    break
+        except Exception as error:
+            print(f"WARNING: Could not resolve world_id for '{world_name}': {error}")
     for book in bible.get("books", []):
         if not isinstance(book, dict):
             continue
         project_name = str(book.get("project", "")).strip()
         project_path = str(book.get("path", "")).strip()
         project = Path(project_path) if project_path else (PROJECTS / project_name)
+        # Older Bible entries may contain paths from another machine or an
+        # archived working copy. Prefer the named project folder when the
+        # saved path no longer resolves, but never guess by title alone.
+        if (not project.exists() or not project.is_dir()) and project_name:
+            project = PROJECTS / project_name
         if not project_name or not project.exists() or not project.is_dir():
+            book["attachment_status"] = "missing_project_folder"
             continue
         book["path"] = str(project)
+        book["attachment_status"] = "attached"
         book["explicit_attachment"] = True
         metadata = project / "project.json"
-        if metadata.exists():
-            try:
-                settings = load_json(metadata)
-                before = (settings.get("series_name"), settings.get("series_id"), settings.get("series_canon"), settings.get("book_number"))
-                settings["series_name"] = series_name
-                settings["series_id"] = series_id
-                settings["series_canon"] = True
-                settings["world_relationship"] = settings.get("world_relationship", "canon")
-                if isinstance(book.get("book_number"), int):
-                    settings["book_number"] = book["book_number"]
-                after = (settings.get("series_name"), settings.get("series_id"), settings.get("series_canon"), settings.get("book_number"))
-                if before != after:
-                    save_json(metadata, settings)
-                    changed += 1
-            except Exception as error:
-                print(f"WARNING: Could not sync {project.name}/project.json: {error}")
+        if not metadata.exists():
+            print(f"WARNING: {project.name}/project.json is missing; attachment recorded, metadata not changed.")
+            continue
+        try:
+            settings = load_json(metadata)
+            if not isinstance(settings, dict):
+                print(f"WARNING: {project.name}/project.json is not a JSON object; skipped.")
+                continue
+            before = dict(settings)
+            expected_fields = (
+                ("series_name", series_name),
+                ("series_id", series_id),
+                ("book_number", book.get("book_number")),
+                ("universe_name", world_name),
+                ("world_id", world_id),
+            )
+            conflicts = lore_safe_metadata_updates(settings, expected_fields)
+            # Explicit registration establishes canon status, but does not
+            # authorize rewriting a conflicting series/world/number value.
+            settings["series_canon"] = True
+            if not settings.get("world_relationship"):
+                settings["world_relationship"] = "canon"
+            if conflicts:
+                print(
+                    f"CONFLICT: {project.name}/project.json preserved existing metadata: "
+                    + "; ".join(conflicts)
+                )
+            if settings != before:
+                save_json(metadata, settings)
+                changed += 1
+        except Exception as error:
+            print(f"WARNING: Could not sync {project.name}/project.json: {error}")
     bible["updated"] = datetime.now().isoformat(timespec="seconds")
     save_series_bible(bible)
     return changed
-
 
 def lore_find_series_projects(series_name):
     target = str(series_name or "").strip().casefold()
@@ -9941,6 +10070,215 @@ def lore_bootstrap_nightmare_series():
     print("Existing book PDFs/artwork were NOT modified.")
     return bible
 
+def lore_validate_series_continuity(bible):
+    """Return non-mutating continuity findings for registered series books."""
+    if not isinstance(bible, dict):
+        return [{"severity": "ERROR", "code": "INVALID_BIBLE", "message": "Series Bible is not a dictionary."}]
+
+    findings = []
+    books = [book for book in bible.get("books", []) if isinstance(book, dict)]
+    seen_projects = {}
+    seen_numbers = {}
+    expected_series = str(bible.get("name", "")).strip()
+    expected_series_id = str(bible.get("series_id", "")).strip()
+    expected_world = str(bible.get("world_name", "")).strip()
+    expected_world_id = ""
+
+    # Validate the top of the canon hierarchy without calling load_world_index(),
+    # which creates directories and therefore is not suitable for read-only audit.
+    if not expected_world:
+        findings.append({
+            "severity": "ERROR", "code": "SERIES_WORLD_UNASSIGNED",
+            "message": "Series Bible has no world_name; assign its canonical world before extending the series.",
+        })
+    else:
+        index_path = WORLDS_DIR / WORLD_INDEX_FILENAME
+        if not index_path.exists():
+            findings.append({
+                "severity": "WARNING", "code": "WORLD_INDEX_MISSING",
+                "message": f"World index is missing; cannot verify '{expected_world}' against registered worlds.",
+            })
+        else:
+            try:
+                world_index = load_json(index_path)
+                registered_worlds = world_index.get("worlds", {}) if isinstance(world_index, dict) else {}
+                world_match = next(
+                    (
+                        (world_id, meta)
+                        for world_id, meta in registered_worlds.items()
+                        if isinstance(meta, dict)
+                        and str(meta.get("name") or world_id).strip().casefold() == expected_world.casefold()
+                    ),
+                    None,
+                )
+                if world_match is None:
+                    findings.append({
+                        "severity": "ERROR", "code": "WORLD_NOT_REGISTERED",
+                        "message": f"Series world '{expected_world}' is not registered in the world index.",
+                    })
+                else:
+                    world_id, world_meta = world_match
+                    expected_world_id = str(world_id)
+                    series_world_id = str(bible.get("world_id") or "").strip()
+                    if not series_world_id:
+                        findings.append({
+                            "severity": "WARNING", "code": "SERIES_WORLD_ID_MISSING",
+                            "message": f"Series Bible has no world_id; explicit repair can bind it to '{expected_world_id}'.",
+                        })
+                    elif series_world_id != expected_world_id:
+                        findings.append({
+                            "severity": "ERROR", "code": "SERIES_WORLD_ID_MISMATCH",
+                            "message": f"Series Bible world_id '{series_world_id}' differs from registered world id '{expected_world_id}'.",
+                        })
+                    world_file = WORLDS_DIR / str(world_id) / "world.json"
+                    if not world_file.exists():
+                        findings.append({
+                            "severity": "ERROR", "code": "WORLD_RECORD_MISSING",
+                            "message": f"World '{expected_world}' is indexed but its world.json record is missing.",
+                        })
+                    else:
+                        try:
+                            world_record = load_json(world_file)
+                            if not isinstance(world_record, dict):
+                                raise ValueError("world.json must contain an object")
+                            registered_series = world_record.get("series", [])
+                            if not isinstance(registered_series, list):
+                                registered_series = []
+                            series_keys = {
+                                str(item.get("name") or item.get("series") or "").strip().casefold()
+                                if isinstance(item, dict) else str(item).strip().casefold()
+                                for item in registered_series
+                            }
+                            if expected_series.casefold() not in series_keys:
+                                findings.append({
+                                    "severity": "WARNING", "code": "SERIES_NOT_LINKED_TO_WORLD",
+                                    "message": f"Series '{expected_series}' is not listed under world '{expected_world}'.",
+                                })
+                        except Exception as error:
+                            findings.append({
+                                "severity": "ERROR", "code": "UNREADABLE_WORLD_RECORD",
+                                "message": f"World '{expected_world}' record could not be read ({error}).",
+                            })
+            except Exception as error:
+                findings.append({
+                    "severity": "ERROR", "code": "UNREADABLE_WORLD_INDEX",
+                    "message": f"World index could not be read ({error}).",
+                })
+
+    for book in books:
+        title = str(book.get("title") or book.get("project") or "Untitled book").strip()
+        project_name = str(book.get("project", "")).strip()
+        number = book.get("book_number")
+
+        if not project_name:
+            findings.append({
+                "severity": "ERROR", "code": "MISSING_PROJECT_NAME",
+                "message": f"{title}: no project-folder name is registered.",
+            })
+            continue
+
+        project_key = project_name.casefold()
+        if project_key in seen_projects:
+            findings.append({
+                "severity": "ERROR", "code": "DUPLICATE_PROJECT",
+                "message": f"{title}: project '{project_name}' is also registered as '{seen_projects[project_key]}'.",
+            })
+        else:
+            seen_projects[project_key] = title
+
+        if isinstance(number, int) and not isinstance(number, bool) and number > 0:
+            if number in seen_numbers:
+                findings.append({
+                    "severity": "ERROR", "code": "DUPLICATE_BOOK_NUMBER",
+                    "message": f"Book number {number} is assigned to both '{seen_numbers[number]}' and '{title}'.",
+                })
+            else:
+                seen_numbers[number] = title
+        elif number is None:
+            findings.append({
+                "severity": "WARNING", "code": "UNASSIGNED_BOOK_NUMBER",
+                "message": f"{title}: canonical book number is unassigned.",
+            })
+        else:
+            findings.append({
+                "severity": "ERROR", "code": "INVALID_BOOK_NUMBER",
+                "message": f"{title}: book number '{number}' must be a positive integer or unassigned.",
+            })
+
+        saved_path = str(book.get("path", "")).strip()
+        project = Path(saved_path) if saved_path else (PROJECTS / project_name)
+        if not project.exists() or not project.is_dir():
+            project = PROJECTS / project_name
+        if not project.exists() or not project.is_dir():
+            findings.append({
+                "severity": "ERROR", "code": "MISSING_PROJECT_FOLDER",
+                "message": f"{title}: project folder '{project_name}' cannot be found.",
+            })
+            continue
+
+        metadata_path = project / "project.json"
+        if not metadata_path.exists():
+            findings.append({
+                "severity": "WARNING", "code": "MISSING_PROJECT_METADATA",
+                "message": f"{title}: project.json is missing; metadata cannot be cross-checked.",
+            })
+            continue
+        try:
+            metadata = load_json(metadata_path)
+        except Exception as error:
+            findings.append({
+                "severity": "ERROR", "code": "UNREADABLE_PROJECT_METADATA",
+                "message": f"{title}: project.json could not be read ({error}).",
+            })
+            continue
+        if not isinstance(metadata, dict):
+            findings.append({
+                "severity": "ERROR", "code": "INVALID_PROJECT_METADATA",
+                "message": f"{title}: project.json must contain a JSON object.",
+            })
+            continue
+
+        project_series = str(metadata.get("series_name", "")).strip()
+        project_series_id = str(metadata.get("series_id", "")).strip()
+        if expected_series and project_series and project_series.casefold() != expected_series.casefold():
+            findings.append({
+                "severity": "WARNING", "code": "SERIES_NAME_MISMATCH",
+                "message": f"{title}: project.json names series '{project_series}', but the Bible is '{expected_series}'.",
+            })
+        if expected_series_id and project_series_id and project_series_id.casefold() != expected_series_id.casefold():
+            findings.append({
+                "severity": "WARNING", "code": "SERIES_ID_MISMATCH",
+                "message": f"{title}: project.json series_id '{project_series_id}' differs from Bible id '{expected_series_id}'.",
+            })
+
+        project_number = metadata.get("book_number")
+        if isinstance(number, int) and not isinstance(number, bool) and project_number != number:
+            findings.append({
+                "severity": "WARNING", "code": "BOOK_NUMBER_MISMATCH",
+                "message": f"{title}: Series Bible says book {number}, but project.json says {project_number!r}.",
+            })
+
+        project_world = str(metadata.get("universe_name") or "").strip()
+        if expected_world and project_world and project_world.casefold() != expected_world.casefold():
+            findings.append({
+                "severity": "WARNING", "code": "WORLD_NAME_MISMATCH",
+                "message": f"{title}: project.json world '{project_world}' differs from Series Bible world '{expected_world}'.",
+            })
+        project_world_id = str(metadata.get("world_id") or "").strip()
+        if expected_world_id and not project_world_id:
+            findings.append({
+                "severity": "WARNING", "code": "PROJECT_WORLD_ID_MISSING",
+                "message": f"{title}: project.json has no world_id; safe repair can fill it from the registered world.",
+            })
+        elif expected_world_id and project_world_id != expected_world_id:
+            findings.append({
+                "severity": "WARNING", "code": "WORLD_ID_MISMATCH",
+                "message": f"{title}: project.json world_id '{project_world_id}' differs from canonical world id '{expected_world_id}'.",
+            })
+
+    return findings
+
+
 def lore_analyze_series(bible=None):
     if bible is None:
         bibles = list_series_bibles()
@@ -9954,20 +10292,48 @@ def lore_analyze_series(bible=None):
         except (ValueError, IndexError):
             print("Invalid selection.")
             return None
-    # Reconcile explicit manual registrations with the actual project metadata
-    # before reporting attachment status. Manual registration is authoritative.
-    lore_sync_explicit_series_attachments(bible)
+    # Read-only analysis: never repair the Series Bible or project.json here.
+    # Explicit attachment/metadata synchronization belongs in a deliberate
+    # attach or repair action, not in a diagnostic screen.
+    books = [b for b in bible.get("books", []) if isinstance(b, dict)]
+    attached_books = []
+    missing_books = []
+    for book in books:
+        project_name = str(book.get("project", "")).strip()
+        project_path = str(book.get("path", "")).strip()
+        project = Path(project_path) if project_path else (PROJECTS / project_name)
+        if (not project.exists() or not project.is_dir()) and project_name:
+            project = PROJECTS / project_name
+        if project_name and project.exists() and project.is_dir():
+            attached_books.append(book)
+        else:
+            missing_books.append(book)
     records = lore_find_series_projects(bible.get("name", ""))
     candidates = lore_candidate_projects(bible.get("name", ""))
     print("\n" + "=" * 78)
     print(f"SERIES LORE ANALYSIS — {bible.get('name', '')}")
     print("=" * 78)
     print(f"Central mythology: {bible.get('central_mythology') or 'Not defined'}")
-    print(f"Recorded books: {len(bible.get('books', []))}")
-    print(f"Projects explicitly attached: {len(records)}")
+    print(f"Books recorded in Series Bible: {len(books)}")
+    print(f"Registered books with existing project folders: {len(attached_books)}")
+    print(f"Project folders missing for registered books: {len(missing_books)}")
+    print(f"Project metadata independently identifies as this series: {len(records)}")
     print(f"Possible legacy/unattached matches: {len(candidates)}")
-    for rec in records:
-        print(f"  ✓ {rec['title']}" + (f" — Book {rec['book_number']}" if rec.get('book_number') else ""))
+    findings = lore_validate_series_continuity(bible)
+    errors = sum(1 for item in findings if item.get("severity") == "ERROR")
+    warnings = sum(1 for item in findings if item.get("severity") == "WARNING")
+    print(f"Continuity audit: {errors} error(s), {warnings} warning(s)")
+    for finding in findings:
+        print(f"  [{finding.get('severity', 'INFO')}] {finding.get('code', 'FINDING')}: {finding.get('message', '')}")
+    if not findings:
+        print("  No registered-book continuity conflicts detected.")
+    for book in attached_books:
+        title = str(book.get("title") or book.get("project") or "Untitled book")
+        print(f"  ✓ {title}" + (f" — Book {book['book_number']}" if book.get("book_number") else ""))
+    if missing_books:
+        print("\nREGISTERED BOOKS WITH MISSING PROJECT FOLDERS")
+        for book in missing_books:
+            print(f"  ! {book.get('title') or book.get('project') or 'Untitled book'} — {book.get('path') or book.get('project') or 'no path recorded'}")
     if candidates:
         print("\nPOSSIBLE LEGACY BOOKS")
         for i, rec in enumerate(candidates, 1):
@@ -10136,7 +10502,11 @@ def lore_manual_select_projects(bible):
             except (ValueError, IndexError):
                 pass
     else:
-        selected_indices = []
+        # Keep selections by project-folder identity, not listbox row number.
+        # Rebuilding the list when the filter changes otherwise silently clears
+        # prior selections, which made multi-filter series attachment unreliable.
+        selected_projects = set()
+        chosen = []
         root = tk.Tk()
         root.title(f"Add Books to {bible.get('name', 'Series')}")
         root.geometry("820x620")
@@ -10147,7 +10517,8 @@ def lore_manual_select_projects(bible):
             text=(
                 "MANUAL SERIES BOOK SELECTOR\n"
                 "Choose the actual project folders that belong to this series.\n"
-                "The factory will NOT try to infer membership from the name."
+                "Selections are kept when you change the filter.\n"
+                "The factory will NOT infer membership from the name."
             ),
             justify="left",
         )
@@ -10157,6 +10528,9 @@ def lore_manual_select_projects(bible):
         ttk.Label(root, text="Filter projects:").pack(anchor="w", padx=14)
         filter_entry = ttk.Entry(root, textvariable=filter_var)
         filter_entry.pack(fill="x", padx=14, pady=(2, 8))
+
+        selection_status = ttk.Label(root, text="Selected: 0")
+        selection_status.pack(anchor="w", padx=14, pady=(0, 6))
 
         frame = ttk.Frame(root)
         frame.pack(fill="both", expand=True, padx=14)
@@ -10168,7 +10542,24 @@ def lore_manual_select_projects(bible):
 
         filtered = []
 
+        def remember_visible_selection():
+            visible_projects = {
+                str(rec.get("project", "")).casefold() for rec in filtered
+            }
+            selected_projects.difference_update(visible_projects)
+            for index in listbox.curselection():
+                if 0 <= index < len(filtered):
+                    selected_projects.add(str(filtered[index].get("project", "")).casefold())
+
+        def update_selection_status():
+            selection_status.config(text=f"Selected: {len(selected_projects)}")
+
+        def selection_changed(_event=None):
+            remember_visible_selection()
+            update_selection_status()
+
         def refresh(*_):
+            remember_visible_selection()
             query = filter_var.get().strip().casefold()
             filtered.clear()
             listbox.delete(0, tk.END)
@@ -10181,23 +10572,35 @@ def lore_manual_select_projects(bible):
                 if rec.get("series_name"):
                     label += f"    series={rec['series_name']}"
                 listbox.insert(tk.END, label)
+                if str(rec.get("project", "")).casefold() in selected_projects:
+                    listbox.selection_set(tk.END)
+            update_selection_status()
 
         def select_all():
-            if filtered:
-                listbox.selection_set(0, tk.END)
+            for rec in filtered:
+                selected_projects.add(str(rec.get("project", "")).casefold())
+            for index in range(len(filtered)):
+                listbox.selection_set(index)
+            update_selection_status()
 
         def clear_all():
+            selected_projects.clear()
             listbox.selection_clear(0, tk.END)
+            update_selection_status()
 
         def attach():
-            selected_indices.clear()
-            selected_indices.extend(listbox.curselection())
+            remember_visible_selection()
+            chosen.extend(
+                rec for rec in available
+                if str(rec.get("project", "")).casefold() in selected_projects
+            )
             root.destroy()
 
         def cancel():
-            selected_indices.clear()
+            chosen.clear()
             root.destroy()
 
+        listbox.bind("<<ListboxSelect>>", selection_changed)
         filter_var.trace_add("write", refresh)
         refresh()
 
@@ -10210,9 +10613,9 @@ def lore_manual_select_projects(bible):
 
         root.bind("<Escape>", lambda _e: cancel())
         root.bind("<Control-a>", lambda _e: select_all())
+        root.protocol("WM_DELETE_WINDOW", cancel)
         filter_entry.focus_set()
         root.mainloop()
-        chosen = [filtered[i] for i in selected_indices if 0 <= i < len(filtered)]
 
     if not chosen:
         print("\nNo books selected. Existing projects were NOT modified.")
@@ -10223,18 +10626,36 @@ def lore_manual_select_projects(bible):
         print(f"  {i}. {rec['title']} <- {rec['project']}")
 
     count = 0
+    reserved_numbers = {
+        book.get("book_number")
+        for book in bible.get("books", [])
+        if isinstance(book, dict)
+        and isinstance(book.get("book_number"), int)
+        and not isinstance(book.get("book_number"), bool)
+        and book.get("book_number") > 0
+    }
     for rec in chosen:
-        raw_number = input(
-            f"Book number for '{rec['title']}' (blank = unassigned): "
-        ).strip()
         book_number = None
-        if raw_number:
+        while True:
+            raw_number = input(
+                f"Book number for '{rec['title']}' (blank = unassigned): "
+            ).strip()
+            if not raw_number:
+                break
             try:
                 parsed = int(raw_number)
-                if parsed > 0:
-                    book_number = parsed
             except ValueError:
-                print("  Invalid book number; leaving it unassigned.")
+                print("  Enter a positive whole number, or blank to leave unassigned.")
+                continue
+            if parsed <= 0:
+                print("  Book numbers must be positive. Try again or leave blank.")
+                continue
+            if parsed in reserved_numbers:
+                print(f"  Book {parsed} is already assigned in this Series Bible. Choose another number.")
+                continue
+            book_number = parsed
+            reserved_numbers.add(parsed)
+            break
 
         rec = dict(rec)
         rec["book_number"] = book_number
@@ -10242,21 +10663,14 @@ def lore_manual_select_projects(bible):
         rec["path"] = str(PROJECTS / rec["project"])
         lore_register_book(bible, rec, True)
 
-        project = PROJECTS / rec["project"]
-        metadata = project / "project.json"
-        if metadata.exists():
-            try:
-                settings = load_json(metadata)
-                settings["series_name"] = bible.get("name", "")
-                settings["series_id"] = bible.get("series_id", "")
-                settings["series_canon"] = True
-                settings["world_relationship"] = settings.get("world_relationship", "canon")
-                if book_number is not None:
-                    settings["book_number"] = book_number
-                save_json(metadata, settings)
-            except Exception as error:
-                print(f"WARNING: Could not update {project.name}/project.json: {error}")
         count += 1
+
+    # Run all metadata writes through the conflict-aware sync. The creator's
+    # explicit book number is stored in the Series Bible, while conflicting
+    # pre-existing project identity/number/world fields remain intact and are
+    # reported instead of being silently overwritten.
+    synced = lore_sync_explicit_series_attachments(bible)
+    print(f"Safe metadata sync updated {synced} project.json file(s).")
 
     bible["continuity_notes"] = list(dict.fromkeys(
         bible.get("continuity_notes", []) + [
@@ -10284,6 +10698,36 @@ def lore_repair_series():
         print("\nNightmare Series manual reconciliation")
         print("The popup lets you choose exactly which existing project folders belong to the series.")
         lore_manual_select_projects(bible)
+        print("\nSyncing metadata for books already registered in this Series Bible...")
+        changed = lore_sync_explicit_series_attachments(bible)
+        world_link_status = lore_ensure_series_world_link(bible)
+        findings = lore_validate_series_continuity(bible)
+        report = {
+            "series": bible.get("name", ""),
+            "series_id": bible.get("series_id", ""),
+            "world_name": bible.get("world_name", ""),
+            "world_link_status": world_link_status,
+            "central_mythology": bible.get("central_mythology", ""),
+            "books": bible.get("books", []),
+            "possible_conflicts": findings,
+            "error_count": sum(1 for item in findings if item.get("severity") == "ERROR"),
+            "warning_count": sum(1 for item in findings if item.get("severity") == "WARNING"),
+            "unresolved_items": [
+                "Resolve reported series/world identity conflicts before republishing.",
+                "Existing PDF prose and artwork are not modified by lore reconciliation.",
+            ],
+            "generated": datetime.now().isoformat(timespec="seconds"),
+        }
+        report_path = series_path(bible["series_id"]) / "LORE_REPAIR_REPORT.json"
+        save_json(report_path, report)
+        print(f"Series metadata sync complete. Updated {changed} project.json file(s).")
+        print(f"World-to-series link: {world_link_status}")
+        print(
+            f"Continuity report: {report['error_count']} error(s), "
+            f"{report['warning_count']} warning(s)."
+        )
+        print(f"Saved report: {report_path}")
+        print("Existing PDFs and artwork were NOT modified.")
         return
     records = lore_find_series_projects(bible.get("name", ""))
     candidates = lore_candidate_projects(bible.get("name", ""))
@@ -10305,25 +10749,22 @@ def lore_repair_series():
     records = list(unique.values())
     for rec in records:
         lore_register_book(bible, rec, True)
-        project = PROJECTS / rec["project"]
-        if (project / "project.json").exists():
-            try:
-                settings = load_json(project / "project.json")
-                settings["series_name"] = bible.get("name", "")
-                settings["series_id"] = bible.get("series_id", "")
-                settings["world_relationship"] = settings.get("world_relationship", "canon")
-                settings["series_canon"] = True
-                if rec.get("book_number"):
-                    settings["book_number"] = rec["book_number"]
-                save_json(project / "project.json", settings)
-            except Exception:
-                pass
+    # Use the same conflict-aware sync path as Nightmare reconciliation.
+    # A discovered legacy match is not permission to overwrite a conflicting
+    # series identity or renumber an existing book.
+    synced = lore_sync_explicit_series_attachments(bible)
+    world_link_status = lore_ensure_series_world_link(bible)
     # Build a transparent repair report instead of silently rewriting old books.
+    findings = lore_validate_series_continuity(bible)
     report = {
         "series": bible.get("name", ""),
+        "series_id": bible.get("series_id", ""),
+        "world_name": bible.get("world_name", ""),
         "central_mythology": bible.get("central_mythology", ""),
-        "books": records,
-        "possible_conflicts": [],
+        "world_link_status": world_link_status,
+        "possible_conflicts": findings,
+        "error_count": sum(1 for item in findings if item.get("severity") == "ERROR"),
+        "warning_count": sum(1 for item in findings if item.get("severity") == "WARNING"),
         "unresolved_items": [
             "Review each existing book's lore pages against the canonical Series Bible before republishing.",
             "Existing PDF prose is not automatically declared canon; explicit approval is required for new facts.",
@@ -10333,7 +10774,8 @@ def lore_repair_series():
     save_json(series_path(bible["series_id"]) / "LORE_REPAIR_REPORT.json", report)
     bible["continuity_notes"] = list(dict.fromkeys(bible.get("continuity_notes", []) + ["Legacy series projects were reconciled into the Series Bible; existing book text remains unchanged until republished."]))
     save_series_bible(bible)
-    print(f"\nLORE REPAIR COMPLETE — {len(records)} books registered.")
+    print(f"\nLORE REPAIR COMPLETE — {len(records)} books registered; {synced} project.json file(s) safely updated.")
+    print(f"World-to-series link: {world_link_status}")
     print(f"Repair report: {series_path(bible['series_id']) / 'LORE_REPAIR_REPORT.json'}")
     print("Existing PDFs were NOT modified.")
 
