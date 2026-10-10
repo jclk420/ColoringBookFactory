@@ -559,5 +559,26 @@ class FactoryIntegrityTests(unittest.TestCase):
                 self.assertNotIn("save_json(bible_path", segment)
                 self.assertNotIn("bible[", segment)
 
+
+    def test_v22_platform_listing_builder_is_unique_and_wired(self):
+        required = (
+            "v22_listing_text", "v22_build_platform_listing",
+            "v22_build_all_platform_listings", "v22_platform_listing_menu",
+        )
+        for name in required:
+            with self.subTest(function=name):
+                self.assertEqual(len(self.functions.get(name, [])), 1)
+        self.assertIn('FACTORY_VERSION = "22.0"', self.source)
+        self.assertIn('elif c=="21": v22_platform_listing_menu()', self.source)
+        self.assertIn('"LISTING_READINESS.json"', self.source)
+        self.assertIn('"published": False', self.source)
+
+    def test_v22_listing_builder_does_not_invent_price_or_claim_upload(self):
+        node = self.functions["v22_build_platform_listing"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertIn('"price": ""', segment)
+        self.assertIn('"list_price": ""', segment)
+        self.assertIn('"published": False', segment)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
