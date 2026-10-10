@@ -167,6 +167,25 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(settings["book_number"], 1)
         self.assertEqual(settings["universe_name"], "Nightmare World")
 
+    def test_continuity_audit_checks_world_to_series_hierarchy(self):
+        node = self.functions["lore_validate_series_continuity"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        for code in (
+            "SERIES_WORLD_UNASSIGNED",
+            "WORLD_INDEX_MISSING",
+            "WORLD_NOT_REGISTERED",
+            "WORLD_RECORD_MISSING",
+            "SERIES_NOT_LINKED_TO_WORLD",
+            "UNREADABLE_WORLD_INDEX",
+            "UNREADABLE_WORLD_RECORD",
+        ):
+            with self.subTest(code=code):
+                self.assertIn(code, segment)
+        self.assertIn("WORLDS_DIR / WORLD_INDEX_FILENAME", segment)
+        self.assertNotIn("load_world_index(", segment)
+        self.assertNotIn("save_world(", segment)
+        self.assertNotIn("save_world_index(", segment)
+
     def test_analysis_runs_continuity_audit(self):
         node = self.functions["lore_analyze_series"][0]
         calls = {
