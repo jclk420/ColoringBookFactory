@@ -10602,7 +10602,30 @@ def lore_repair_series():
         lore_manual_select_projects(bible)
         print("\nSyncing metadata for books already registered in this Series Bible...")
         changed = lore_sync_explicit_series_attachments(bible)
+        findings = lore_validate_series_continuity(bible)
+        report = {
+            "series": bible.get("name", ""),
+            "series_id": bible.get("series_id", ""),
+            "world_name": bible.get("world_name", ""),
+            "central_mythology": bible.get("central_mythology", ""),
+            "books": bible.get("books", []),
+            "possible_conflicts": findings,
+            "error_count": sum(1 for item in findings if item.get("severity") == "ERROR"),
+            "warning_count": sum(1 for item in findings if item.get("severity") == "WARNING"),
+            "unresolved_items": [
+                "Resolve reported series/world identity conflicts before republishing.",
+                "Existing PDF prose and artwork are not modified by lore reconciliation.",
+            ],
+            "generated": datetime.now().isoformat(timespec="seconds"),
+        }
+        report_path = series_path(bible["series_id"]) / "LORE_REPAIR_REPORT.json"
+        save_json(report_path, report)
         print(f"Series metadata sync complete. Updated {changed} project.json file(s).")
+        print(
+            f"Continuity report: {report['error_count']} error(s), "
+            f"{report['warning_count']} warning(s)."
+        )
+        print(f"Saved report: {report_path}")
         print("Existing PDFs and artwork were NOT modified.")
         return
     records = lore_find_series_projects(bible.get("name", ""))
@@ -10634,7 +10657,7 @@ def lore_repair_series():
         "series": bible.get("name", ""),
         "central_mythology": bible.get("central_mythology", ""),
         "books": records,
-        "possible_conflicts": [],
+        "possible_conflicts": lore_validate_series_continuity(bible),
         "unresolved_items": [
             "Review each existing book's lore pages against the canonical Series Bible before republishing.",
             "Existing PDF prose is not automatically declared canon; explicit approval is required for new facts.",
