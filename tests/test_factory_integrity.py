@@ -195,7 +195,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "18.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "18.1"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
