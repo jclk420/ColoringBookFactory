@@ -121,7 +121,9 @@ class FactoryIntegrityTests(unittest.TestCase):
         sync = self.functions["lore_sync_explicit_series_attachments"][0]
         sync_segment = ast.get_source_segment(self.source, sync) or ""
         self.assertIn('"universe_name"', sync_segment)
+        self.assertIn('"world_id"', sync_segment)
         self.assertIn('"book_number"', sync_segment)
+        self.assertIn("world_index_path", sync_segment)
         self.assertIn("lore_safe_metadata_updates", sync_segment)
 
     def test_safe_metadata_merge_runtime_preserves_conflicts(self):
@@ -175,7 +177,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "17.3"', self.source)
+        self.assertIn('FACTORY_VERSION = "17.4"', self.source)
 
     def test_continuity_audit_checks_world_to_series_hierarchy(self):
         node = self.functions["lore_validate_series_continuity"][0]
