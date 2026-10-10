@@ -167,6 +167,16 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(settings["book_number"], 1)
         self.assertEqual(settings["universe_name"], "Nightmare World")
 
+    def test_repair_persists_continuity_findings(self):
+        node = self.functions["lore_repair_series"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertIn('"possible_conflicts": findings', segment)
+        self.assertIn('"error_count"', segment)
+        self.assertIn('"warning_count"', segment)
+        self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
+        self.assertIn("lore_validate_series_continuity(bible)", segment)
+        self.assertIn('FACTORY_VERSION = "17.3"', self.source)
+
     def test_continuity_audit_checks_world_to_series_hierarchy(self):
         node = self.functions["lore_validate_series_continuity"][0]
         segment = ast.get_source_segment(self.source, node) or ""
