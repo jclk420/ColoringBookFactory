@@ -520,10 +520,6 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"restore_performed": False', self.source)
         self.assertIn('"FACTORY_DIAGNOSTICS.json"', self.source)
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
     def test_v21_canon_tools_are_unique_and_wired(self):
         required = (
             "v21_series_bibles", "v21_choose_bible", "v21_load_approved_registry",
@@ -563,3 +559,5 @@ if __name__ == "__main__":
                 self.assertNotIn("save_json(bible_path", segment)
                 self.assertNotIn("bible[", segment)
 
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
