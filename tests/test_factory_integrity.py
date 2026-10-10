@@ -26,6 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
+        self.assertIn('FACTORY_VERSION = "18.1"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -358,6 +359,43 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(settings["universe_name"], "AREA 420")
         self.assertEqual(result["conflicts"][0]["code"], "PROJECT_WORLD_ID_CONFLICT")
         self.assertEqual(world["books"], [])
+
+    def test_save_json_uses_atomic_same_directory_replacement(self):
+        node = self.functions["save_json"][0]
+        module = ast.Module(body=[node], type_ignores=[])
+        namespace = {
+            "Path": pathlib.Path, "tempfile": tempfile, "json": json,
+            "os": __import__("os"),
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            target = pathlib.Path(temp) / "record.json"
+            target.write_text('{"old": true}', encoding="utf-8")
+            exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+            namespace["save_json"](target, {"new": "valid", "count": 2})
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8")), {"new": "valid", "count": 2})
+            self.assertEqual(list(pathlib.Path(temp).glob("*.tmp")), [])
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertIn("os.fsync(stream.fileno())", segment)
+        self.assertIn("os.replace(str(temp_path), str(path))", segment)
+
+    def test_save_json_replace_failure_preserves_original(self):
+        node = self.functions["save_json"][0]
+        module = ast.Module(body=[node], type_ignores=[])
+        import os as os_module
+        class FailingReplace:
+            fsync = staticmethod(os_module.fsync)
+            @staticmethod
+            def replace(source, destination):
+                raise OSError("simulated replace failure")
+        namespace = {"Path": pathlib.Path, "tempfile": tempfile, "json": json, "os": FailingReplace}
+        with tempfile.TemporaryDirectory() as temp:
+            target = pathlib.Path(temp) / "record.json"
+            target.write_text('{"old": true}', encoding="utf-8")
+            exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+            with self.assertRaises(OSError):
+                namespace["save_json"](target, {"new": True})
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8")), {"old": True})
+            self.assertEqual(list(pathlib.Path(temp).glob("*.tmp")), [])
 
 
 if __name__ == "__main__":
