@@ -192,9 +192,14 @@ class FactoryIntegrityTests(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertIn(code, segment)
         self.assertIn("WORLDS_DIR / WORLD_INDEX_FILENAME", segment)
-        self.assertNotIn("load_world_index(", segment)
-        self.assertNotIn("save_world(", segment)
-        self.assertNotIn("save_world_index(", segment)
+        calls = {
+            child.func.id
+            for child in ast.walk(node)
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
+        }
+        self.assertNotIn("load_world_index", calls)
+        self.assertNotIn("save_world", calls)
+        self.assertNotIn("save_world_index", calls)
 
     def test_analysis_runs_continuity_audit(self):
         node = self.functions["lore_analyze_series"][0]
