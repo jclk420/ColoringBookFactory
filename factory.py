@@ -17,7 +17,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 17.8.
+# Current version: 17.9.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "17.8"
+FACTORY_VERSION = "17.9"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -10275,6 +10275,42 @@ def lore_validate_series_continuity(bible):
                 "severity": "WARNING", "code": "WORLD_ID_MISMATCH",
                 "message": f"{title}: project.json world_id '{project_world_id}' differs from canonical world id '{expected_world_id}'.",
             })
+
+        # Confirm the book is listed in the canonical world's own book registry.
+        # This remains read-only: audit never repairs or creates world records.
+        if expected_world_id and project_world_id in {"", expected_world_id}:
+            world_file = WORLDS_DIR / expected_world_id / "world.json"
+            if world_file.exists():
+                try:
+                    world_record = load_json(world_file)
+                    if not isinstance(world_record, dict):
+                        raise ValueError("world.json must contain an object")
+                    world_books = world_record.get("books", [])
+                    if not isinstance(world_books, list):
+                        findings.append({
+                            "severity": "WARNING", "code": "WORLD_BOOKS_LIST_INVALID",
+                            "message": f"{title}: canonical world's books field is not a list; book linkage cannot be verified.",
+                        })
+                    else:
+                        project_paths = {str(project), str(project.resolve())}
+                        linked = any(
+                            isinstance(entry, dict)
+                            and (
+                                str(entry.get("project", "")).strip() in project_paths
+                                or str(entry.get("project", "")).strip().casefold() == project_name.casefold()
+                            )
+                            for entry in world_books
+                        )
+                        if not linked:
+                            findings.append({
+                                "severity": "WARNING", "code": "PROJECT_NOT_LINKED_TO_WORLD",
+                                "message": f"{title}: project metadata points to world '{expected_world}', but the world's books registry does not list this project.",
+                            })
+                except Exception as error:
+                    findings.append({
+                        "severity": "WARNING", "code": "WORLD_BOOK_REGISTRY_UNREADABLE",
+                        "message": f"{title}: canonical world's book registry could not be checked ({error}).",
+                    })
 
     return findings
 
