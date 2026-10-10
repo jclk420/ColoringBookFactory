@@ -15100,7 +15100,8 @@ def v21_conflict_resolution_queue():
         return {"reviewed": 0, "error": str(error)}
     queue = []
     for item in registry.get("entities", []):
-        if not isinstance(item, dict) or str(item.get("status", "")).upper() != "APPROVED":
+        if (not isinstance(item, dict) or str(item.get("status", "")).upper() != "APPROVED"
+                or item.get("conflict_resolution")):
             continue
         conflicts = v21_entity_conflicts(bible, item)
         if conflicts:
