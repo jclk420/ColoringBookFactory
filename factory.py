@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 18.2.
+# Current version: 19.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "18.2"
+FACTORY_VERSION = "19.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14227,6 +14227,227 @@ def lore_intake_sha256(path):
     return digest.hexdigest()
 
 
+
+def lore_intake_inspect_file(path, max_text_chars=6000):
+    """Return lightweight file metadata; PDF text extraction is optional and best-effort."""
+    path = Path(path)
+    info = {"extension": path.suffix.casefold(), "size_bytes": path.stat().st_size if path.exists() else None}
+    if path.suffix.casefold() in IMAGE_EXTENSIONS:
+        try:
+            with Image.open(path) as image:
+                info.update({"media_type": "image", "width": image.width, "height": image.height,
+                             "image_format": image.format})
+        except Exception as error:
+            info.update({"media_type": "image", "metadata_warning": f"Could not inspect image: {error}"})
+    elif path.suffix.casefold() == ".pdf":
+        info["media_type"] = "pdf"
+        reader = None
+        reader_name = ""
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(str(path))
+            reader_name = "pypdf"
+        except Exception:
+            try:
+                from PyPDF2 import PdfReader
+                reader = PdfReader(str(path))
+                reader_name = "PyPDF2"
+            except Exception:
+                info["metadata_warning"] = "PDF text extraction unavailable; install pypdf to read PDF text."
+        if reader is not None:
+            try:
+                info["page_count"] = len(reader.pages)
+                info["pdf_title"] = str((reader.metadata or {}).get("/Title") or "").strip()
+                chunks = []
+                for page in reader.pages:
+                    if sum(len(chunk) for chunk in chunks) >= max_text_chars:
+                        break
+                    try:
+                        text = page.extract_text() or ""
+                    except Exception:
+                        text = ""
+                    if text:
+                        chunks.append(text)
+                info["text_preview"] = "\n".join(chunks)[:max_text_chars]
+                info["text_extraction"] = reader_name
+                if not info["text_preview"].strip():
+                    info["metadata_warning"] = "No selectable text found; this may be a scanned/image-only PDF."
+            except Exception as error:
+                info["metadata_warning"] = f"PDF metadata extraction failed: {error}"
+    return info
+
+
+def lore_intake_existing_hashes(manifest_path):
+    """Collect hashes from prior intake batches without touching those records."""
+    manifest_path = Path(manifest_path)
+    known = {}
+    if not manifest_path.exists():
+        return known
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as stream:
+            manifest = json.load(stream)
+    except Exception:
+        return known
+    intake_root = manifest_path.parent
+    for batch in manifest.get("batches", []) if isinstance(manifest, dict) else []:
+        record_value = batch.get("record") if isinstance(batch, dict) else None
+        if not record_value:
+            continue
+        record_path = Path(record_value)
+        if not record_path.is_absolute():
+            record_path = intake_root / record_path
+        try:
+            with open(record_path, "r", encoding="utf-8") as stream:
+                report = json.load(stream)
+        except Exception:
+            continue
+        for item in report.get("items", []) if isinstance(report, dict) else []:
+            digest = item.get("sha256") if isinstance(item, dict) else None
+            if digest and item.get("staged_path"):
+                known.setdefault(digest, {"source": item.get("source", ""), "batch": report.get("batch", ""),
+                                           "staged_path": item.get("staged_path")})
+    return known
+
+
+def lore_intake_approved_registry_add(registry_path, item):
+    """Record a user-approved intake classification separately from the Series Bible."""
+    registry_path = Path(registry_path)
+    registry = {"schema_version": 1, "entities": []}
+    if registry_path.exists():
+        try:
+            with open(registry_path, "r", encoding="utf-8") as stream:
+                loaded = json.load(stream)
+            if isinstance(loaded, dict) and isinstance(loaded.get("entities"), list):
+                registry = loaded
+        except Exception:
+            pass
+    classification = item.get("classification", {})
+    name = str(classification.get("name") or "").strip()
+    kind = str(classification.get("kind") or "").strip().casefold()
+    world = str(classification.get("world") or "").strip()
+    location = str(classification.get("location") or "").strip()
+    if kind not in {"creature", "location", "world", "book"} or not name:
+        raise ValueError("Approval requires a named world, location, creature, or book.")
+    key = (kind, lore_intake_normalize(name), lore_intake_normalize(world), lore_intake_normalize(location))
+    for existing in registry["entities"]:
+        if not isinstance(existing, dict):
+            continue
+        old = (str(existing.get("kind") or "").casefold(), lore_intake_normalize(existing.get("name")),
+               lore_intake_normalize(existing.get("world")), lore_intake_normalize(existing.get("location")))
+        if old == key:
+            existing["source_hash"] = item.get("sha256", existing.get("source_hash", ""))
+            existing["source_path"] = item.get("staged_path", existing.get("source_path", ""))
+            existing["status"] = "APPROVED"
+            save_json(registry_path, registry)
+            return {"added": False, "duplicate": True, "registry_path": str(registry_path)}
+    registry["entities"].append({
+        "kind": kind, "name": name, "world": world, "location": location,
+        "bible": classification.get("bible", ""), "source_hash": item.get("sha256", ""),
+        "source_path": item.get("staged_path", ""), "original_source": item.get("source", ""),
+        "approved_at": datetime.now().isoformat(timespec="seconds"), "status": "APPROVED",
+        "note": "Approved intake record; not yet written into a Series Bible."
+    })
+    save_json(registry_path, registry)
+    return {"added": True, "duplicate": False, "registry_path": str(registry_path)}
+
+
+def lore_intake_review_pending():
+    """Interactive review: edit proposals and explicitly approve or reject each staged file."""
+    manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
+    if not manifest_path.exists():
+        print("No intake manifest exists yet. Run Lore Intake first.")
+        return {"reviewed": 0, "approved": 0, "rejected": 0}
+    try:
+        manifest = load_json(manifest_path)
+    except Exception as error:
+        print(f"Cannot read intake manifest: {error}")
+        return {"reviewed": 0, "approved": 0, "rejected": 0}
+    registry_path = INTAKE_DIR / "APPROVED_LORE.json"
+    reviewed = approved = rejected = 0
+    for batch in manifest.get("batches", []) if isinstance(manifest, dict) else []:
+        record_value = batch.get("record") if isinstance(batch, dict) else None
+        if not record_value:
+            continue
+        report_path = Path(record_value)
+        if not report_path.is_absolute():
+            report_path = INTAKE_DIR / report_path
+        try:
+            report = load_json(report_path)
+        except Exception:
+            continue
+        changed = False
+        for item in report.get("items", []) if isinstance(report, dict) else []:
+            if not isinstance(item, dict) or item.get("status") != "STAGED_FOR_REVIEW":
+                continue
+            reviewed += 1
+            classification = item.setdefault("classification", {})
+            print("\n" + "-" * 72)
+            print(f"File: {Path(item.get('source', '?')).name}")
+            print(f"Current match: {classification.get('kind', 'unmatched')} | "
+                  f"{classification.get('world', 'Unassigned World')} / "
+                  f"{classification.get('location', 'Unassigned Location')} / "
+                  f"{classification.get('name', 'Needs review')}")
+            metadata = item.get("metadata", {})
+            if metadata.get("pdf_title") or metadata.get("text_preview"):
+                print(f"PDF title: {metadata.get('pdf_title') or '(none)'}")
+                print("Extracted text preview: " + str(metadata.get("text_preview", ""))[:600].replace("\n", " "))
+            action = input("[A]pprove / [E]dit then approve / [R]eject / [S]kip: ").strip().casefold()
+            if action == "s" or not action:
+                continue
+            if action == "r":
+                item["status"] = "REJECTED"
+                item["reviewed_at"] = datetime.now().isoformat(timespec="seconds")
+                changed = True
+                rejected += 1
+                continue
+            if action == "e":
+                allowed = {"creature", "location", "world", "book"}
+                kind = input(f"Kind {classification.get('kind', 'creature')} (creature/location/world/book): ").strip().casefold()
+                if kind in allowed:
+                    classification["kind"] = kind
+                for field, label, default in (
+                    ("name", "Name", classification.get("name", "")),
+                    ("world", "World", classification.get("world", "Unassigned World")),
+                    ("location", "Location", classification.get("location", "Unassigned Location")),
+                ):
+                    value = input(f"{label} [{default}]: ").strip()
+                    if value:
+                        classification[field] = value
+                classification["confidence"] = "USER_CONFIRMED"
+                classification["reason"] = "Corrected and confirmed by user during intake review"
+                old_staged = Path(item.get("staged_path", "")) if item.get("staged_path") else None
+                if old_staged and old_staged.exists():
+                    destination = lore_intake_destination(INTAKE_DIR / "Review", old_staged, classification)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    if destination.exists():
+                        destination = destination.with_name(f"{destination.stem}_{str(item.get('sha256',''))[:8]}{destination.suffix}")
+                    if old_staged.resolve() != destination.resolve():
+                        shutil.move(str(old_staged), str(destination))
+                    item["staged_path"] = str(destination)
+            elif action != "a":
+                print("Unrecognized choice; leaving item pending.")
+                continue
+            try:
+                result = lore_intake_approved_registry_add(registry_path, item)
+            except Exception as error:
+                print(f"Approval failed; item remains pending: {error}")
+                continue
+            item["status"] = "APPROVED_FOR_LORE_REGISTRY"
+            item["reviewed_at"] = datetime.now().isoformat(timespec="seconds")
+            item["registry_duplicate"] = result.get("duplicate", False)
+            changed = True
+            approved += 1
+            print("Approved into the separate intake registry. Series Bible was not changed.")
+        if changed:
+            save_json(report_path, report)
+    print(f"\nReview complete: {reviewed} examined, {approved} approved, {rejected} rejected.")
+    print(f"Approved intake registry: {registry_path}")
+    print("Existing Series Bibles and world canon were not modified.")
+    return {"reviewed": reviewed, "approved": approved, "rejected": rejected,
+            "registry_path": str(registry_path)}
+
+
+
 def lore_intake_select_files():
     """Select multiple files, with optional native drag-and-drop when available."""
     try:
@@ -14318,6 +14539,8 @@ def lore_intake_run(files=None):
 
     records = lore_intake_collect_records()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
+    existing_hashes = lore_intake_existing_hashes(manifest_path)
     review_root = INTAKE_DIR / "Review"
     batch_root = INTAKE_DIR / "Batches" / timestamp
     items = []
@@ -14331,15 +14554,21 @@ def lore_intake_run(files=None):
                               "staged_path": None})
                 continue
             seen_hashes[digest] = str(source)
+            if digest in existing_hashes:
+                items.append({"source": str(source), "sha256": digest, "status": "DUPLICATE_PRIOR_INTAKE",
+                              "duplicate_of": existing_hashes[digest], "classification": {"kind": "duplicate"},
+                              "staged_path": None})
+                continue
             classification = lore_intake_classify(source, records)
+            metadata = lore_intake_inspect_file(source)
             destination = lore_intake_destination(review_root, source, classification)
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.exists():
                 destination = destination.with_name(f"{destination.stem}_{digest[:8]}{destination.suffix}")
             shutil.copy2(source, destination)
             batch_record = {"source": str(source), "sha256": digest, "status": "STAGED_FOR_REVIEW",
-                            "classification": classification, "staged_path": str(destination),
-                            "batch": timestamp}
+                            "classification": classification, "metadata": metadata,
+                            "staged_path": str(destination), "batch": timestamp}
             items.append(batch_record)
         except Exception as error:
             items.append({"source": str(source), "status": "ERROR", "error": str(error),
@@ -14350,7 +14579,6 @@ def lore_intake_run(files=None):
         "items": items, "rejected": rejected,
         "notice": "Staged copies only. No source files or canon records were changed."
     })
-    manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
     try:
         manifest = load_json(manifest_path) if manifest_path.exists() else {"schema_version": 1, "batches": []}
         if not isinstance(manifest, dict):
@@ -14382,11 +14610,27 @@ def lore_intake_menu():
     print("Drop or select PDFs and images to stage them under proposed World / Location / Creature folders.")
     print("Registered lore names are matched conservatively; unknown or ambiguous files go to _Needs_Review.")
     print("Files are COPIED into INTAKE/Review. Original files and canon records are not changed.")
-    answer = input("\nStart intake now? (Y/N): ").strip().casefold()
-    if answer in {"y", "yes"}:
+    print("1. Intake files")
+    print("2. Review / correct / approve staged files")
+    print("3. Show approved intake registry")
+    choice = input("Choose: ").strip()
+    if choice == "1":
         lore_intake_run()
+    elif choice == "2":
+        lore_intake_review_pending()
+    elif choice == "3":
+        registry_path = INTAKE_DIR / "APPROVED_LORE.json"
+        if registry_path.exists():
+            try:
+                registry = load_json(registry_path)
+                for entity in registry.get("entities", []):
+                    print(f"- {entity.get('kind')}: {entity.get('name')} | {entity.get('world')} / {entity.get('location')}")
+            except Exception as error:
+                print(f"Cannot read approved registry: {error}")
+        else:
+            print("No approved intake records yet.")
     else:
-        print("Intake cancelled; no files were changed.")
+        print("No action selected.")
 
 
 def factory_main_menu():
