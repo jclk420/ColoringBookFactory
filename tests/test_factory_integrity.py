@@ -81,6 +81,29 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertNotIn("save_json(", segment)
         self.assertNotIn("save_series_bible(", segment)
 
+    def test_legacy_repair_does_not_force_overwrite_metadata(self):
+        node = self.functions["lore_repair_series"][0]
+        forced_keys = set()
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Assign):
+                continue
+            for target in child.targets:
+                if (
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "settings"
+                    and isinstance(target.slice, ast.Constant)
+                    and target.slice.value in {"series_name", "series_id", "book_number", "universe_name"}
+                ):
+                    forced_keys.add(target.slice.value)
+        self.assertFalse(
+            forced_keys,
+            f"Repair must not directly overwrite conflicting metadata: {sorted(forced_keys)}",
+        )
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertIn("lore_sync_explicit_series_attachments", segment)
+        self.assertIn("conflict", segment.casefold())
+
     def test_sync_preserves_existing_canon_conflicts(self):
         node = self.functions["lore_sync_explicit_series_attachments"][0]
         segment = ast.get_source_segment(self.source, node) or ""
@@ -95,7 +118,7 @@ class FactoryIntegrityTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, segment)
         self.assertIn(
-            'FACTORY_VERSION = "16.8"',
+            'FACTORY_VERSION = "16.9"',
             self.source,
             "Meaningful factory changes must update the version declaration",
         )
