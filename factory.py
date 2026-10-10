@@ -17,7 +17,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 17.9.
+# Current version: 18.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -30,7 +30,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "17.9"
+FACTORY_VERSION = "18.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -10718,6 +10718,156 @@ def lore_manual_select_projects(bible):
     print("Existing PDFs/artwork were NOT modified.")
     return count
 
+def lore_repair_world_book_links(bible):
+    """Repair missing links for explicitly registered books, without rewriting conflicts.
+
+    This intentional repair never creates worlds/projects, overwrites conflicting
+    world identity, replaces an invalid books list, or changes canon flags.
+    """
+    result = {"status": "skipped", "linked": [], "metadata_filled": [], "conflicts": [], "errors": []}
+    if not isinstance(bible, dict):
+        result["errors"].append("invalid_series_bible")
+        return result
+    world_name = str(bible.get("world_name", "")).strip()
+    series_name = str(bible.get("name", "")).strip()
+    if not world_name or not series_name:
+        result["errors"].append("missing_series_or_world_name")
+        return result
+    index_path = WORLDS_DIR / WORLD_INDEX_FILENAME
+    if not index_path.exists():
+        result["errors"].append("world_index_missing")
+        return result
+    try:
+        index = load_json(index_path)
+        registered = index.get("worlds", {}) if isinstance(index, dict) else {}
+        matches = [
+            str(world_id) for world_id, item in registered.items()
+            if isinstance(item, dict)
+            and str(item.get("name") or world_id).strip().casefold() == world_name.casefold()
+        ]
+        if len(matches) != 1:
+            result["errors"].append("world_not_registered" if not matches else "ambiguous_world_name")
+            return result
+        world_id = matches[0]
+    except Exception as error:
+        result["errors"].append("world_index_unreadable: " + str(error))
+        return result
+    bible_world_id = str(bible.get("world_id") or "").strip()
+    if bible_world_id and bible_world_id != world_id:
+        result["conflicts"].append({
+            "item": series_name, "code": "SERIES_WORLD_ID_MISMATCH",
+            "message": f"Series Bible world_id '{bible_world_id}' conflicts with registered world '{world_id}'.",
+        })
+        return result
+    world_file = WORLDS_DIR / world_id / "world.json"
+    if not world_file.exists():
+        result["errors"].append("world_record_missing")
+        return result
+    try:
+        world = load_json(world_file)
+        if not isinstance(world, dict):
+            raise ValueError("world.json must contain an object")
+        world_books = world.get("books", [])
+        if not isinstance(world_books, list):
+            result["errors"].append("world_books_list_invalid")
+            return result
+    except Exception as error:
+        result["errors"].append("world_record_unreadable: " + str(error))
+        return result
+
+    world_changed = False
+    for book in bible.get("books", []):
+        if not isinstance(book, dict):
+            continue
+        project_name = str(book.get("project", "")).strip()
+        if not project_name:
+            continue
+        saved_path = str(book.get("path", "")).strip()
+        project = Path(saved_path) if saved_path else (PROJECTS / project_name)
+        if not project.exists() or not project.is_dir():
+            project = PROJECTS / project_name
+        if not project_name or not project.exists() or not project.is_dir():
+            result["errors"].append(f"{project_name or 'unnamed_book'}: project_folder_missing")
+            continue
+        metadata_path = project / "project.json"
+        if not metadata_path.exists():
+            result["errors"].append(f"{project_name}: project_metadata_missing")
+            continue
+        try:
+            settings = load_json(metadata_path)
+            if not isinstance(settings, dict):
+                raise ValueError("project.json must contain a JSON object")
+        except Exception as error:
+            result["errors"].append(f"{project_name}: project_metadata_unreadable: {error}")
+            continue
+
+        current_world_id = str(settings.get("world_id") or "").strip()
+        current_world_name = str(settings.get("universe_name") or "").strip()
+        if current_world_id and current_world_id != world_id:
+            result["conflicts"].append({
+                "item": project_name, "code": "PROJECT_WORLD_ID_CONFLICT",
+                "message": f"Preserved existing world_id '{current_world_id}'.",
+            })
+            continue
+        if current_world_name and current_world_name.casefold() != world_name.casefold():
+            result["conflicts"].append({
+                "item": project_name, "code": "PROJECT_WORLD_NAME_CONFLICT",
+                "message": f"Preserved existing universe_name '{current_world_name}'.",
+            })
+            continue
+
+        settings_changed = False
+        if not current_world_id:
+            settings["world_id"] = world_id
+            settings_changed = True
+        if not current_world_name:
+            settings["universe_name"] = world_name
+            settings_changed = True
+        # Relationship/canon flags and series/book metadata are never guessed.
+        if settings_changed:
+            try:
+                save_json(metadata_path, settings)
+                result["metadata_filled"].append(project_name)
+            except Exception as error:
+                result["errors"].append(f"{project_name}: metadata_save_failed: {error}")
+                continue
+
+        project_paths = {str(project), str(project.resolve())}
+        linked = any(
+            isinstance(entry, dict) and (
+                str(entry.get("project", "")).strip() in project_paths
+                or str(entry.get("project", "")).strip().casefold() == project_name.casefold()
+            )
+            for entry in world_books
+        )
+        if not linked:
+            relationship = str(settings.get("world_relationship") or "canon").strip().lower()
+            if relationship not in {"canon", "related", "inspired_by", "non_canon", "standalone"}:
+                relationship = "canon"
+            canon_flag = settings.get("world_canon")
+            if not isinstance(canon_flag, bool):
+                canon_flag = relationship == "canon"
+            world_books.append({
+                "project": str(project),
+                "title": settings.get("title", book.get("title") or project.name),
+                "series": str(settings.get("series_name") or series_name),
+                "relationship": relationship,
+                "canon": canon_flag,
+                "attached": datetime.now().isoformat(timespec="seconds"),
+            })
+            result["linked"].append(project_name)
+            world_changed = True
+    if world_changed:
+        world["books"] = world_books
+        world["updated"] = datetime.now().isoformat(timespec="seconds")
+        try:
+            save_json(world_file, world)
+        except Exception as error:
+            result["errors"].append("world_record_save_failed: " + str(error))
+    result["status"] = "repaired" if result["linked"] or result["metadata_filled"] else "no_changes"
+    return result
+
+
 def lore_repair_series():
     bibles = list_series_bibles()
     if not bibles:
@@ -10737,12 +10887,14 @@ def lore_repair_series():
         print("\nSyncing metadata for books already registered in this Series Bible...")
         changed = lore_sync_explicit_series_attachments(bible)
         world_link_status = lore_ensure_series_world_link(bible)
+        world_book_repair = lore_repair_world_book_links(bible)
         findings = lore_validate_series_continuity(bible)
         report = {
             "series": bible.get("name", ""),
             "series_id": bible.get("series_id", ""),
             "world_name": bible.get("world_name", ""),
             "world_link_status": world_link_status,
+            "world_book_repair": world_book_repair,
             "central_mythology": bible.get("central_mythology", ""),
             "books": bible.get("books", []),
             "possible_conflicts": findings,
@@ -10758,6 +10910,7 @@ def lore_repair_series():
         save_json(report_path, report)
         print(f"Series metadata sync complete. Updated {changed} project.json file(s).")
         print(f"World-to-series link: {world_link_status}")
+        print(f"World-to-book repair: {world_book_repair['status']} — {len(world_book_repair['linked'])} linked, {len(world_book_repair['metadata_filled'])} metadata repaired, {len(world_book_repair['conflicts'])} conflict(s).")
         print(
             f"Continuity report: {report['error_count']} error(s), "
             f"{report['warning_count']} warning(s)."
@@ -10790,6 +10943,7 @@ def lore_repair_series():
     # series identity or renumber an existing book.
     synced = lore_sync_explicit_series_attachments(bible)
     world_link_status = lore_ensure_series_world_link(bible)
+    world_book_repair = lore_repair_world_book_links(bible)
     # Build a transparent repair report instead of silently rewriting old books.
     findings = lore_validate_series_continuity(bible)
     report = {
@@ -10798,6 +10952,7 @@ def lore_repair_series():
         "world_name": bible.get("world_name", ""),
         "central_mythology": bible.get("central_mythology", ""),
         "world_link_status": world_link_status,
+        "world_book_repair": world_book_repair,
         "possible_conflicts": findings,
         "error_count": sum(1 for item in findings if item.get("severity") == "ERROR"),
         "warning_count": sum(1 for item in findings if item.get("severity") == "WARNING"),
@@ -10812,6 +10967,7 @@ def lore_repair_series():
     save_series_bible(bible)
     print(f"\nLORE REPAIR COMPLETE — {len(records)} books registered; {synced} project.json file(s) safely updated.")
     print(f"World-to-series link: {world_link_status}")
+    print(f"World-to-book repair: {world_book_repair['status']} — {len(world_book_repair['linked'])} linked, {len(world_book_repair['metadata_filled'])} metadata repaired, {len(world_book_repair['conflicts'])} conflict(s).")
     print(f"Repair report: {series_path(bible['series_id']) / 'LORE_REPAIR_REPORT.json'}")
     print("Existing PDFs were NOT modified.")
 
