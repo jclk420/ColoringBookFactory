@@ -88,6 +88,14 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn("already assigned in this Series Bible", segment)
         self.assertIn("reserved_numbers.add(parsed)", segment)
 
+    def test_manual_attachment_uses_conflict_safe_sync(self):
+        node = self.functions["lore_manual_select_projects"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertIn("lore_sync_explicit_series_attachments(bible)", segment)
+        self.assertNotIn('settings["series_name"] =', segment)
+        self.assertNotIn('settings["series_id"] =', segment)
+        self.assertNotIn('settings["book_number"] =', segment)
+
     def test_legacy_repair_does_not_force_overwrite_metadata(self):
         node = self.functions["lore_repair_series"][0]
         forced_keys = set()
@@ -177,7 +185,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "17.4"', self.source)
+        self.assertIn('FACTORY_VERSION = "17.5"', self.source)
 
     def test_continuity_audit_checks_world_to_series_hierarchy(self):
         node = self.functions["lore_validate_series_continuity"][0]
