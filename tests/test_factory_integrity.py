@@ -839,7 +839,7 @@ class FactoryIntegrityTests(unittest.TestCase):
 
 
     def test_lore_review_evidence_collects_exact_mentions_and_aliases(self):
-        names = ["lore_intake_normalize", "lore_intake_review_evidence"]
+        names = ["lore_intake_normalize", "lore_intake_extract_text_entities", "lore_intake_review_evidence"]
         module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
         namespace = {"Path": pathlib.Path, "re": re}
         exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
@@ -858,7 +858,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(result["hierarchy_warnings"], [])
 
     def test_lore_review_evidence_flags_duplicate_names_and_cross_world_mentions(self):
-        names = ["lore_intake_normalize", "lore_intake_review_evidence"]
+        names = ["lore_intake_normalize", "lore_intake_extract_text_entities", "lore_intake_review_evidence"]
         module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
         namespace = {"Path": pathlib.Path, "re": re}
         exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
