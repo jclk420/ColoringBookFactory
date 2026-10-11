@@ -14835,6 +14835,8 @@ def lore_intake_menu():
         lore_intake_run()
     elif choice == "2":
         lore_intake_review_pending()
+    elif choice == "4":
+        lore_intake_review_dashboard()
     elif choice == "3":
         registry_path = INTAKE_DIR / "APPROVED_LORE.json"
         if registry_path.exists():
