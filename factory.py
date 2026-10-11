@@ -14810,7 +14810,7 @@ def lore_intake_review_dashboard():
         if row["duplicate"]:
             flags.append("DUPLICATE CHECK")
         flag_text = " | " + ", ".join(flags) if flags else ""
-        print(f"\\n[{row['status']}] {row['file']}")
+        print(f"\n[{row['status']}] {row['file']}")
         print(f"  Proposal: {row['kind']} '{row['name']}' — {row['world']} / {row['location']}")
         print(f"  Evidence: {row['evidence']} | Confidence: {row['confidence']}{flag_text}")
         if row["pdf_title"]:
