@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "27.1"', self.source)
+        self.assertIn('FACTORY_VERSION = "27.2"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -195,7 +195,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "27.1"', self.source)
+        self.assertIn('FACTORY_VERSION = "27.2"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -608,7 +608,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "27.1"', self.source)
+        self.assertIn('FACTORY_VERSION = "27.2"', self.source)
         self.assertIn('elif c=="20": v21_canon_tools_menu()', self.source)
 
     def test_v21_import_preview_is_read_only_and_blocks_unsupported_shapes(self):
@@ -644,7 +644,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "27.1"', self.source)
+        self.assertIn('FACTORY_VERSION = "27.2"', self.source)
         self.assertIn('elif c=="21": v22_platform_listing_menu()', self.source)
         self.assertIn('"LISTING_READINESS.json"', self.source)
         self.assertIn('"published": False', self.source)
@@ -667,7 +667,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "27.1"', self.source)
+        self.assertIn('FACTORY_VERSION = "27.2"', self.source)
         self.assertIn('elif c=="22": v23_reliability_toolkit_menu()', self.source)
         self.assertIn('"master_rebuilt": False', self.source)
         self.assertIn('"production_projects_modified": False', self.source)
@@ -791,7 +791,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         segment = ast.get_source_segment(self.source, self.functions["lore_intake_menu"][0]) or ""
         self.assertIn('choice == "4"', segment)
         self.assertIn("lore_intake_review_dashboard()", segment)
-        self.assertIn('FACTORY_VERSION = "27.1"', self.source)
+        self.assertIn('FACTORY_VERSION = "27.2"', self.source)
 
     def test_v27_location_context_enriches_book_without_replacing_primary_match(self):
         names = ("lore_intake_normalize", "lore_intake_classify")
@@ -871,6 +871,55 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(len(result["duplicate_warnings"]), 1)
         self.assertEqual(len(result["hierarchy_warnings"]), 1)
         self.assertIn("AREA 420", result["hierarchy_warnings"][0]["worlds"])
+
+
+    def test_v272_extracts_only_explicit_text_entity_labels_and_relationships(self):
+        names = ["lore_intake_normalize", "lore_intake_extract_text_entities",
+                 "lore_intake_review_evidence"]
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        namespace = {"Path": pathlib.Path, "re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        text = (
+            "Creature: The Hollow Stitcher\n"
+            "Location: Hollow Stitch Nursery\n"
+            "Found at: Intake Wing\n"
+            "An unrelated Title Case Heading\n"
+            "World: Nightmare World\n"
+        )
+        extracted = namespace["lore_intake_extract_text_entities"](text)
+        self.assertIn(("creature", "The Hollow Stitcher"),
+                      {(x["kind"], x["name"]) for x in extracted["entity_candidates"]})
+        self.assertIn(("location", "Hollow Stitch Nursery"),
+                      {(x["kind"], x["name"]) for x in extracted["entity_candidates"]})
+        self.assertTrue(any(x["subject"] == "The Hollow Stitcher"
+                            and x["object"] == "Hollow Stitch Nursery"
+                            and x["relation"] == "located_at"
+                            for x in extracted["relationships"]))
+        self.assertTrue(any(x["object"] == "Intake Wing"
+                            for x in extracted["relationships"]))
+        self.assertFalse(any(x["name"] == "An unrelated Title Case Heading"
+                             for x in extracted["entity_candidates"]))
+        self.assertTrue(all(x["confidence"] == "LOW"
+                            for x in extracted["entity_candidates"] + extracted["relationships"]))
+        result = namespace["lore_intake_review_evidence"](
+            pathlib.Path("Cryptids.pdf"), [],
+            {"pdf_title": "", "text_preview": text})
+        self.assertEqual(result["extracted_entity_candidates"], extracted["entity_candidates"])
+        self.assertEqual(result["extracted_relationships"], extracted["relationships"])
+
+    def test_v272_text_extraction_is_empty_safe_and_does_not_promote_canon(self):
+        names = ["lore_intake_extract_text_entities"]
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        namespace = {"re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        self.assertEqual(namespace["lore_intake_extract_text_entities"](""), {
+            "entity_candidates": [], "relationships": []})
+        self.assertEqual(namespace["lore_intake_extract_text_entities"](None), {
+            "entity_candidates": [], "relationships": []})
+        node = self.functions["lore_intake_extract_text_entities"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertNotIn("save_json(", segment)
+        self.assertNotIn("APPROVED_LORE", segment)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
