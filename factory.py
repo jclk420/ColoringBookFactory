@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 24.0.
+# Current version: 25.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "24.0"
+FACTORY_VERSION = "25.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14278,42 +14278,62 @@ def lore_intake_collect_records():
     return list(unique.values())
 
 
-def lore_intake_classify(path, records):
-    """Suggest a single conservative match from known names in the filename."""
+def lore_intake_classify(path, records, metadata=None):
+    """Suggest a lore match using exact registered phrases and traceable evidence.
+
+    Filename matches take precedence. If the filename has no match, PDF title and
+    extracted text may provide a suggestion. Metadata-only matches are MEDIUM
+    confidence and ambiguous matches remain unresolved; this function never edits canon.
+    """
     path = Path(path)
+    metadata = metadata if isinstance(metadata, dict) else {}
     stem = lore_intake_normalize(path.stem)
-    if not stem:
-        return {"kind": "unmatched", "name": "", "world": "Unassigned World",
-                "location": "Unassigned Location", "confidence": "LOW", "reason": "Empty filename"}
-    matches = []
-    for record in records or []:
-        name = lore_intake_normalize(record.get("name"))
-        if not name or len(name) < 3:
+    evidence_sources = [
+        ("filename", stem, "HIGH"),
+        ("pdf_title", lore_intake_normalize(metadata.get("pdf_title")), "MEDIUM"),
+        ("pdf_text", lore_intake_normalize(metadata.get("text_preview")), "MEDIUM"),
+    ]
+    matches_by_source = []
+    for source_name, haystack, confidence in evidence_sources:
+        if not haystack:
             continue
-        # Match complete normalized phrases, never isolated short tokens.
-        if name == stem or re.search(r"(?<![a-z0-9])" + re.escape(name) + r"(?![a-z0-9])", stem):
-            matches.append(record)
-    if not matches:
+        matches = []
+        for record in records or []:
+            name = lore_intake_normalize(record.get("name"))
+            if not name or len(name) < 3:
+                continue
+            # Match complete normalized phrases, never isolated short tokens.
+            if name == haystack or re.search(r"(?<![a-z0-9])" + re.escape(name) + r"(?![a-z0-9])", haystack):
+                matches.append(record)
+        if matches:
+            matches_by_source.append((source_name, confidence, matches))
+            # Filename is the strongest signal. Only fall back to document metadata
+            # when the filename provides no registered-name evidence.
+            if source_name == "filename":
+                break
+    if not matches_by_source:
         return {"kind": "unmatched", "name": "", "world": "Unassigned World",
-                "location": "Unassigned Location", "confidence": "LOW",
-                "reason": "No registered world, location, creature, or book name found in filename"}
+                "location": "Unassigned Location", "confidence": "LOW", "matched_in": [],
+                "reason": "No registered world, location, creature, or book name found in filename or readable PDF metadata"}
+    source_name, confidence, matches = matches_by_source[0]
     # Prefer the most specific registered entity; equal-specificity matches stay unresolved.
     priority = {"creature": 4, "location": 3, "book": 2, "world": 1}
     max_priority = max(priority.get(item.get("kind"), 0) for item in matches)
     best = [item for item in matches if priority.get(item.get("kind"), 0) == max_priority]
-    names = {(lore_intake_normalize(x.get("name")), lore_intake_normalize(x.get("world")),
-              lore_intake_normalize(x.get("location"))) for x in best}
-    if len(names) != 1:
+    identities = {(lore_intake_normalize(x.get("name")), lore_intake_normalize(x.get("world")),
+                   lore_intake_normalize(x.get("location"))) for x in best}
+    if len(identities) != 1:
         return {"kind": "ambiguous", "name": "", "world": "Unassigned World",
-                "location": "Unassigned Location", "confidence": "LOW",
-                "reason": "Filename matches multiple equally specific lore records"}
+                "location": "Unassigned Location", "confidence": "LOW", "matched_in": [source_name],
+                "reason": "Evidence matches multiple equally specific lore records"}
     match = best[0]
     return {"kind": match.get("kind", "unmatched"), "name": match.get("name", ""),
             "world": match.get("world") or "Unassigned World",
             "location": match.get("location") or "Unassigned Location",
-            "bible": match.get("bible", ""), "confidence": "HIGH",
-            "reason": "Exact registered lore name found in filename"}
-
+            "bible": match.get("bible", ""), "confidence": confidence,
+            "matched_in": [source_name],
+            "reason": ("Exact registered lore name found in filename" if source_name == "filename"
+                       else f"Exact registered lore name found in readable PDF {source_name.replace('_', ' ')}")}
 
 def lore_intake_destination(review_root, source, classification):
     """Return a review-only destination; never returns a canon folder."""
@@ -14674,8 +14694,8 @@ def lore_intake_run(files=None):
                               "duplicate_of": existing_hashes[digest], "classification": {"kind": "duplicate"},
                               "staged_path": None})
                 continue
-            classification = lore_intake_classify(source, records)
             metadata = lore_intake_inspect_file(source)
+            classification = lore_intake_classify(source, records, metadata)
             destination = lore_intake_destination(review_root, source, classification)
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.exists():
