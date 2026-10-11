@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "22.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "23.0"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -195,7 +195,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "22.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "23.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -532,7 +532,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "22.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "23.0"', self.source)
         self.assertIn('elif c=="20": v21_canon_tools_menu()', self.source)
 
     def test_v21_import_preview_is_read_only_and_blocks_unsupported_shapes(self):
@@ -568,7 +568,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "22.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "23.0"', self.source)
         self.assertIn('elif c=="21": v22_platform_listing_menu()', self.source)
         self.assertIn('"LISTING_READINESS.json"', self.source)
         self.assertIn('"published": False', self.source)
@@ -579,6 +579,55 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"price": ""', segment)
         self.assertIn('"list_price": ""', segment)
         self.assertIn('"published": False', segment)
+
+
+    def test_v23_reliability_toolkit_functions_are_unique_and_wired(self):
+        required = (
+            "v23_capability_report", "v23_verify_package_root",
+            "v23_package_manifest_verify", "v23_build_fingerprint",
+            "v23_project_migration_plan", "v23_apply_project_migration",
+            "v23_run_e2e_fixture", "v23_reliability_toolkit_menu",
+        )
+        for name in required:
+            with self.subTest(function=name):
+                self.assertEqual(len(self.functions.get(name, [])), 1)
+        self.assertIn('FACTORY_VERSION = "23.0"', self.source)
+        self.assertIn('elif c=="22": v23_reliability_toolkit_menu()', self.source)
+        self.assertIn('"master_rebuilt": False', self.source)
+        self.assertIn('"production_projects_modified": False', self.source)
+
+    def test_v23_manifest_verifier_detects_tampering_without_mutating_package(self):
+        node = self.functions["v23_verify_package_root"][0]
+        namespace = {"Path": pathlib.Path, "load_json": json.load, "file_hash": lambda p: __import__("hashlib").sha256(pathlib.Path(p).read_bytes()).hexdigest()}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "<v23-manifest-test>", "exec"), namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp) / "KDP"
+            root.mkdir()
+            artifact = root / "sample.txt"
+            artifact.write_text("original", encoding="utf-8")
+            digest = namespace["file_hash"](artifact)
+            (root / "PACKAGE_MANIFEST.json").write_text(json.dumps({"schema_version": 1, "files": ["sample.txt"], "file_hashes": {"sample.txt": digest}}), encoding="utf-8")
+            self.assertEqual(namespace["v23_verify_package_root"](root)["status"], "READY")
+            artifact.write_text("changed", encoding="utf-8")
+            result = namespace["v23_verify_package_root"](root)
+            self.assertEqual(result["status"], "BLOCKED")
+            self.assertTrue(any("SHA-256 mismatch" in item for item in result["errors"]))
+
+    def test_v23_migration_preview_only_adds_missing_known_fields(self):
+        node = self.functions["v23_project_migration_plan"][0]
+        namespace = {"Path": pathlib.Path, "load_json": json.load, "WORLD_ENGINE_VERSION": "1.1", "FACTORY_VERSION": "23.0"}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "<v23-migration-test>", "exec"), namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            project = pathlib.Path(temp) / "Book"
+            project.mkdir()
+            config = project / "project.json"
+            original = {"title": "Book", "world_engine_version": "legacy-custom"}
+            config.write_text(json.dumps(original), encoding="utf-8")
+            plan = namespace["v23_project_migration_plan"](project)
+            self.assertEqual(plan["status"], "READY_TO_MIGRATE")
+            self.assertEqual(json.loads(config.read_text(encoding="utf-8")), original)
+            self.assertNotIn("world_engine_version", plan["changes"])
+            self.assertIn("book_spec_version", plan["changes"])
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
