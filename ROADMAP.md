@@ -94,3 +94,12 @@ This roadmap separates shipped work from future candidates. Planned items are no
 4. Do not claim a package is uploaded merely because it was generated.
 5. Every meaningful change should include regression tests, a version/header update where appropriate, and a passing CI run before it is described as validated.
 6. Keep PR #1 open and unmerged until the user explicitly authorizes merging.
+
+
+### v22.0 — Platform Listing Builder
+- Generates a structured listing draft (LISTING.json), paste-ready field sheet (LISTING.txt), and project-wide LISTING_READINESS.json for each platform profile.
+- Builds dedicated field sets for KDP, Gumroad, Payhip, and Digital PDF; other configured platform profiles receive a clearly marked generic draft for platform-specific review.
+- Reuses the Gumroad Listing Studio output and project metadata; includes verified master-PDF page count and trim dimensions only when readable.
+- Leaves prices, categories, and other account-dependent selections blank rather than guessing. Marks drafts as unpublished and never claims a package was uploaded.
+- Writes listing files under each project's MARKETING/LISTINGS folder without rebuilding or modifying the master PDF.
+- Adds source-integrity tests for unique function definitions, menu wiring, missing-price safety, and unpublished status.
