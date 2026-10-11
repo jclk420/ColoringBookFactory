@@ -1,0 +1,10 @@
+{
+    "schema_version": 1,
+    "batches": [
+        {
+            "batch": "20261011_070139",
+            "record": "C:\\ColoringBookFactory\\INTAKE\\Batches\\20261011_070139\\INTAKE_BATCH.json",
+            "item_count": 1
+        }
+    ]
+}
