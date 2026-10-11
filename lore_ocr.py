@@ -187,3 +187,29 @@ def _render_pdf_pages(path: Path, *, page_limit: int, dpi: int) -> list[Any]:
     if not pages:
         raise ValueError("The PDF contains no pages to OCR.")
     return pages
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Small standalone entry point for testing OCR before factory integration."""
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="Extract low-confidence OCR text for lore review.")
+    parser.add_argument("source", help="PDF or image file to OCR")
+    parser.add_argument("--pages", type=int, default=DEFAULT_PAGE_LIMIT, help="Maximum PDF pages (1-25)")
+    parser.add_argument("--dpi", type=int, default=DEFAULT_DPI, help="PDF render DPI (72-220)")
+    parser.add_argument("--output", help="Optional text output path; defaults to stdout JSON")
+    args = parser.parse_args(argv)
+    result = lore_ocr_extract_text(args.source, page_limit=args.pages, dpi=args.dpi)
+    if args.output:
+        output_path = Path(args.output)
+        output_path.write_text(result["text"], encoding="utf-8")
+        summary = {key: value for key, value in result.items() if key != "text"}
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
+    else:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0 if result["status"] == "REVIEW" else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
