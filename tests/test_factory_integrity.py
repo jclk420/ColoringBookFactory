@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "25.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "26.0"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -195,7 +195,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "25.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "26.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -567,7 +567,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "25.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "26.0"', self.source)
         self.assertIn('elif c=="20": v21_canon_tools_menu()', self.source)
 
     def test_v21_import_preview_is_read_only_and_blocks_unsupported_shapes(self):
@@ -603,7 +603,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "25.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "26.0"', self.source)
         self.assertIn('elif c=="21": v22_platform_listing_menu()', self.source)
         self.assertIn('"LISTING_READINESS.json"', self.source)
         self.assertIn('"published": False', self.source)
@@ -626,7 +626,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "25.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "26.0"', self.source)
         self.assertIn('elif c=="22": v23_reliability_toolkit_menu()', self.source)
         self.assertIn('"master_rebuilt": False', self.source)
         self.assertIn('"production_projects_modified": False', self.source)
@@ -709,6 +709,48 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertNotIn("lore_manual_select_projects(bible)", segment)
         self.assertLess(segment.index("lore_build_repair_preview(bible)"), segment.index("lore_sync_explicit_series_attachments(bible)"))
         self.assertIn("No books are registered in this Nightmare Series Bible yet.", segment)
+
+    def test_v26_lore_intake_dashboard_summarizes_without_writing(self):
+        node = self.functions.get("lore_intake_review_dashboard", [None])[0]
+        self.assertIsNotNone(node, "v26 read-only lore intake dashboard must exist")
+        namespace = {"Path": pathlib.Path, "INTAKE_DIR": pathlib.Path("."),
+                     "INTAKE_MANIFEST_FILENAME": "manifest.json",
+                     "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8"))}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "<v26-dashboard-test>", "exec"), namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            intake = root / "INTAKE"
+            intake.mkdir()
+            (intake / "manifest.json").write_text(json.dumps({"batches": [{"record": "batch.json"}]}), encoding="utf-8")
+            report = {"items": [
+                {"source": "Cryptid.pdf", "status": "STAGED_FOR_REVIEW",
+                 "classification": {"kind": "creature", "name": "Cryptid", "world": "Nightmare World",
+                                    "location": "Intake Wing", "confidence": "MEDIUM", "matched_in": ["pdf_title"]},
+                 "metadata": {"pdf_title": "Cryptid"}},
+                {"source": "unknown.png", "status": "STAGED_FOR_REVIEW",
+                 "classification": {"kind": "ambiguous", "name": "", "world": "Unassigned World",
+                                    "location": "Unassigned Location", "confidence": "LOW", "matched_in": []}},
+                {"source": "copy.png", "status": "DUPLICATE_SKIPPED", "duplicate": True,
+                 "classification": {"kind": "unmatched", "name": ""}}
+            ]}
+            (intake / "batch.json").write_text(json.dumps(report), encoding="utf-8")
+            namespace["INTAKE_DIR"] = intake
+            before_manifest = (intake / "manifest.json").read_bytes()
+            before_report = (intake / "batch.json").read_bytes()
+            result = namespace["lore_intake_review_dashboard"]()
+            self.assertEqual(result["items"], 3)
+            self.assertEqual(result["pending"], 2)
+            self.assertEqual(result["duplicates"], 1)
+            self.assertEqual(result["unresolved"], 2)
+            self.assertEqual((intake / "manifest.json").read_bytes(), before_manifest)
+            self.assertEqual((intake / "batch.json").read_bytes(), before_report)
+
+    def test_v26_dashboard_is_unique_and_connected_to_lore_intake_menu(self):
+        self.assertEqual(len(self.functions.get("lore_intake_review_dashboard", [])), 1)
+        segment = ast.get_source_segment(self.source, self.functions["lore_intake_menu"][0]) or ""
+        self.assertIn('choice == "4"', segment)
+        self.assertIn("lore_intake_review_dashboard()", segment)
+        self.assertIn('FACTORY_VERSION = "26.0"', self.source)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

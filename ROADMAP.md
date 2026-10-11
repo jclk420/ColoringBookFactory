@@ -4,6 +4,13 @@ This roadmap separates shipped work from future candidates. Planned items are no
 
 ## Implemented on the current upgrade branch
 
+### v26.0 — Lore Intake Review Dashboard
+- Adds a consolidated, read-only queue view across intake batches and their reports.
+- Summarizes staged, approved, rejected, unresolved, and duplicate-warning counts.
+- Shows each file's proposal, world/location, evidence source, confidence, PDF title, and review flags.
+- Leaves intake manifests/reports, source files, approved registry, World Bible, and series canon unchanged while viewing the dashboard.
+- Adds regression coverage for dashboard summaries, ambiguity/duplicate visibility, read-only behavior, and menu wiring.
+
 ### v25.0 — Evidence-Aware Lore Intake
 - Uses exact registered-name matches in readable PDF titles and extracted text when filenames do not identify a known lore entity.
 - Records which evidence source produced each proposal and marks metadata-only suggestions as MEDIUM confidence; filename matches remain HIGH confidence.
