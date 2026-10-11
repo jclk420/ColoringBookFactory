@@ -598,7 +598,7 @@ class FactoryIntegrityTests(unittest.TestCase):
 
     def test_v23_manifest_verifier_detects_tampering_without_mutating_package(self):
         node = self.functions["v23_verify_package_root"][0]
-        namespace = {"Path": pathlib.Path, "load_json": json.load, "file_hash": lambda p: __import__("hashlib").sha256(pathlib.Path(p).read_bytes()).hexdigest()}
+        namespace = {"Path": pathlib.Path, "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8")), "file_hash": lambda p: __import__("hashlib").sha256(pathlib.Path(p).read_bytes()).hexdigest()}
         exec(compile(ast.Module(body=[node], type_ignores=[]), "<v23-manifest-test>", "exec"), namespace)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp) / "KDP"
