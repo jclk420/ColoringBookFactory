@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 22.0.
+# Current version: 23.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "22.0"
+FACTORY_VERSION = "23.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15585,6 +15585,7 @@ def factory_main_menu():
         print(" 19. Release Safety & Lore Diagnostics")
         print(" 20. Canon Registry & Continuity Tools")
         print(" 21. Platform Listing Builder")
+        print(" 22. Reliability & Migration Toolkit")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -15613,6 +15614,7 @@ def factory_main_menu():
         elif c=="19": v20_release_lore_diagnostics_menu()
         elif c=="20": v21_canon_tools_menu()
         elif c=="21": v22_platform_listing_menu()
+        elif c=="22": v23_reliability_toolkit_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -15651,6 +15653,405 @@ def book_creation_engine_menu():
         else:
             print("Invalid choice.")
         input("\nPress Enter to continue...")
+
+
+# ============================================================
+# v23.0 — FACTORY RELIABILITY & SAFE MIGRATION TOOLKIT
+# ============================================================
+
+def v23_capability_report():
+    """Report optional runtime capabilities; do not install or change dependencies."""
+    import importlib.util
+    modules = {
+        "Pillow image engine": "PIL",
+        "ReportLab PDF generation": "reportlab",
+        "pypdf PDF reader": "pypdf",
+        "PyPDF2 PDF reader fallback": "PyPDF2",
+        "Tkinter drag-and-drop extension": "tkinterdnd2",
+        "PyMuPDF PDF renderer": "fitz",
+    }
+    available = {}
+    for label, module_name in modules.items():
+        try:
+            available[label] = importlib.util.find_spec(module_name) is not None
+        except (ImportError, ValueError, ModuleNotFoundError):
+            available[label] = False
+    report = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "python_version": sys.version.split()[0],
+        "capabilities": available,
+        "image_engine_ready": available["Pillow image engine"],
+        "pdf_generation_ready": available["ReportLab PDF generation"],
+        "pdf_reading_ready": available["pypdf PDF reader"] or available["PyPDF2 PDF reader fallback"],
+        "drag_and_drop_optional": available["Tkinter drag-and-drop extension"],
+        "note": "Diagnostic only; no packages were installed and no production files were changed.",
+    }
+    target = Path(FACTORY) / "REPORTS" / "FACTORY_CAPABILITIES.json"
+    save_json(target, report)
+    report["report_path"] = str(target)
+    print("\nFACTORY CAPABILITIES")
+    for name, state in available.items():
+        print(f"{'AVAILABLE' if state else 'MISSING':<10} {name}")
+    print(f"Report: {target}")
+    return report
+
+
+def v23_verify_package_root(root):
+    """Verify a package manifest against current direct-child files without modifying the package."""
+    root = Path(root)
+    errors = []
+    warnings = []
+    manifest_path = root / "PACKAGE_MANIFEST.json"
+    if not root.is_dir():
+        return {"status": "BLOCKED", "root": str(root), "errors": ["Package directory is missing."], "warnings": [], "checked_files": 0}
+    if not manifest_path.is_file():
+        return {"status": "BLOCKED", "root": str(root), "errors": ["PACKAGE_MANIFEST.json is missing."], "warnings": [], "checked_files": 0}
+    try:
+        manifest = load_json(manifest_path)
+    except Exception as error:
+        return {"status": "BLOCKED", "root": str(root), "errors": [f"Manifest cannot be read: {error}"], "warnings": [], "checked_files": 0}
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), list):
+        return {"status": "BLOCKED", "root": str(root), "errors": ["Manifest schema is unsupported: expected an object with a files list."], "warnings": [], "checked_files": 0}
+    hashes = manifest.get("file_hashes", {})
+    if not isinstance(hashes, dict):
+        hashes = {}
+        warnings.append("Manifest file_hashes field is missing or invalid.")
+    expected = set()
+    checked = 0
+    for raw_name in manifest.get("files", []):
+        name = str(raw_name)
+        if not name or Path(name).name != name or "/" in name or "\\" in name or name in {".", ".."}:
+            errors.append(f"Unsafe manifest path rejected: {name!r}")
+            continue
+        expected.add(name)
+        target = root / name
+        if not target.is_file():
+            errors.append(f"Manifest file is missing: {name}")
+            continue
+        checked += 1
+        if target.stat().st_size <= 0:
+            errors.append(f"Manifest file is empty: {name}")
+        expected_hash = hashes.get(name)
+        if expected_hash:
+            try:
+                actual_hash = file_hash(target)
+            except OSError as error:
+                errors.append(f"Cannot hash {name}: {error}")
+                continue
+            if actual_hash != expected_hash:
+                errors.append(f"SHA-256 mismatch: {name}")
+        else:
+            warnings.append(f"No recorded SHA-256 for: {name}")
+    actual = {item.name for item in root.iterdir() if item.is_file() and item.name != "PACKAGE_MANIFEST.json"}
+    extras = sorted(actual - expected)
+    if extras:
+        warnings.append("Unexpected files not listed in manifest: " + ", ".join(extras))
+    status = "BLOCKED" if errors else ("REVIEW" if warnings else "READY")
+    return {
+        "status": status,
+        "root": str(root),
+        "manifest": str(manifest_path),
+        "manifest_schema_version": manifest.get("schema_version"),
+        "expected_files": sorted(expected),
+        "unexpected_files": extras,
+        "checked_files": checked,
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+def v23_package_manifest_verify(project):
+    """Verify enabled platform package manifests and write a diagnostic report."""
+    project = Path(project)
+    profiles = load_platform_profiles()
+    results = {}
+    for name, profile in profiles.items():
+        if not profile.get("enabled", False):
+            continue
+        output_dir = profile.get("output_dir", str(name).upper())
+        root = project / PLATFORM_DIRNAME / output_dir
+        results[name] = v23_verify_package_root(root)
+    errors = sum(len(row.get("errors", [])) for row in results.values())
+    warnings = sum(len(row.get("warnings", [])) for row in results.values())
+    report = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "project": project.name,
+        "overall_status": "BLOCKED" if errors else ("REVIEW" if warnings else "READY"),
+        "error_count": errors,
+        "warning_count": warnings,
+        "platforms": results,
+        "read_only": True,
+    }
+    target = project / "REPORTS" / "PACKAGE_MANIFEST_VERIFICATION.json"
+    save_json(target, report)
+    print(f"\nPACKAGE MANIFEST VERIFICATION: {report['overall_status']}")
+    for name, row in results.items():
+        print(f"{name:<16} {row['status']:<8} checked={row.get('checked_files', 0)} errors={len(row.get('errors', []))} warnings={len(row.get('warnings', []))}")
+        for message in row.get("errors", []):
+            print(f"  ERROR: {message}")
+        for message in row.get("warnings", []):
+            print(f"  WARNING: {message}")
+    print(f"Report: {target}")
+    print("No package files were changed.")
+    return report
+
+
+def v23_build_fingerprint(project):
+    """Record stable hashes of project metadata and source assets without rebuilding outputs."""
+    project = Path(project)
+    settings_path = project / "project.json"
+    settings = {}
+    if settings_path.is_file():
+        try:
+            loaded = load_json(settings_path)
+            settings = loaded if isinstance(loaded, dict) else {"_invalid_project_json": True}
+        except Exception:
+            settings = {"_invalid_project_json": True}
+    settings_bytes = json.dumps(settings, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
+    excluded = {"PLATFORMS", "DELIVERY", "REPORTS", "MARKETING", "_FACTORY_BACKUPS", "PREVIEWS", "PROCESSED", "THUMBNAILS", "__pycache__"}
+    records = []
+    if project.exists():
+        for path in sorted(project.rglob("*"), key=lambda item: str(item).casefold()):
+            if not path.is_file() or path.name == "BUILD_FINGERPRINT.json":
+                continue
+            try:
+                relative = path.relative_to(project)
+            except ValueError:
+                continue
+            if any(part.upper() in excluded for part in relative.parts):
+                continue
+            if path.name != "project.json" and path.suffix.lower() not in IMAGE_EXTENSIONS | {".pdf"}:
+                continue
+            try:
+                records.append({
+                    "path": relative.as_posix(),
+                    "size_bytes": path.stat().st_size,
+                    "sha256": file_hash(path),
+                })
+            except OSError as error:
+                records.append({"path": relative.as_posix(), "error": str(error)})
+    payload = {
+        "factory_version": FACTORY_VERSION,
+        "project": project.name,
+        "settings_sha256": sha256(settings_bytes).hexdigest(),
+        "source_files": records,
+    }
+    fingerprint_bytes = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
+    fingerprint = sha256(fingerprint_bytes).hexdigest()
+    report = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "project": project.name,
+        "fingerprint_sha256": fingerprint,
+        "settings_sha256": payload["settings_sha256"],
+        "source_file_count": len(records),
+        "source_files": records,
+        "master_pdf": str(find_master_pdf(project) or ""),
+        "master_rebuilt": False,
+    }
+    target = project / "REPORTS" / "BUILD_FINGERPRINT.json"
+    save_json(target, report)
+    print("\nBUILD FINGERPRINT")
+    print(f"Project: {project.name}")
+    print(f"Fingerprint SHA-256: {fingerprint}")
+    print(f"Source files fingerprinted: {len(records)}")
+    print(f"Report: {target}")
+    print("This records the current inputs; it does not rebuild or alter the MASTER PDF.")
+    return report
+
+
+def v23_project_migration_plan(project):
+    """Preview additive, known-field metadata migration; never changes the project."""
+    project = Path(project)
+    config_path = project / "project.json"
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "changes": {}, "errors": ["Project directory is missing."]}
+    if not config_path.is_file():
+        return {"status": "BLOCKED", "project": str(project), "changes": {}, "errors": ["project.json is missing; migration will not invent a project file."]}
+    try:
+        current = load_json(config_path)
+    except Exception as error:
+        return {"status": "BLOCKED", "project": str(project), "changes": {}, "errors": [f"project.json cannot be parsed: {error}"]}
+    if not isinstance(current, dict):
+        return {"status": "BLOCKED", "project": str(project), "changes": {}, "errors": ["project.json must contain a JSON object."]}
+    known_defaults = {
+        "book_spec_version": 1,
+        "world_engine_version": WORLD_ENGINE_VERSION,
+        "production_profile_version": 2,
+    }
+    changes = {key: value for key, value in known_defaults.items() if key not in current}
+    return {
+        "status": "READY_TO_MIGRATE" if changes else "CURRENT",
+        "project": str(project),
+        "config_path": str(config_path),
+        "changes": changes,
+        "preserved_existing_values": {key: current[key] for key in known_defaults if key in current},
+        "errors": [],
+        "read_only": True,
+    }
+
+
+def v23_apply_project_migration(project, confirmation):
+    """Apply only missing known metadata fields after explicit confirmation and a verified backup."""
+    project = Path(project)
+    if confirmation != "MIGRATE":
+        return {"status": "CANCELLED", "project": str(project), "errors": ["Explicit MIGRATE confirmation was not supplied."]}
+    plan = v23_project_migration_plan(project)
+    if plan.get("status") == "BLOCKED":
+        return plan
+    if not plan.get("changes"):
+        return {"status": "CURRENT", "project": str(project), "changes": {}, "errors": []}
+    config_path = project / "project.json"
+    original_hash = file_hash(config_path)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup = config_path.with_name(f"project.json.pre_v23_{stamp}.bak")
+    counter = 1
+    while backup.exists():
+        backup = config_path.with_name(f"project.json.pre_v23_{stamp}_{counter}.bak")
+        counter += 1
+    try:
+        shutil.copy2(config_path, backup)
+        if file_hash(backup) != original_hash:
+            backup.unlink(missing_ok=True)
+            return {"status": "BLOCKED", "project": str(project), "errors": ["Backup hash verification failed; migration was not applied."]}
+        current = load_json(config_path)
+        for key, value in plan["changes"].items():
+            if key not in current:
+                current[key] = value
+        save_json(config_path, current)
+        verified = load_json(config_path)
+        if not isinstance(verified, dict) or any(verified.get(key) != value for key, value in plan["changes"].items()):
+            raise ValueError("Post-migration verification failed.")
+        return {
+            "status": "MIGRATED",
+            "project": str(project),
+            "changes": plan["changes"],
+            "backup": str(backup),
+            "backup_sha256": original_hash,
+            "backup_verified": file_hash(backup) == original_hash,
+            "project_json_sha256": file_hash(config_path),
+            "errors": [],
+        }
+    except Exception as error:
+        if not backup.is_file():
+            return {"status": "FAILED", "project": str(project), "errors": [str(error), "No verified backup was created; project.json was not intentionally modified."]}
+        try:
+            shutil.copy2(backup, config_path)
+        except Exception as restore_error:
+            return {"status": "RECOVERY_REQUIRED", "project": str(project), "backup": str(backup), "errors": [str(error), f"Automatic rollback failed: {restore_error}"]}
+        return {"status": "ROLLED_BACK", "project": str(project), "backup": str(backup), "errors": [str(error)]}
+
+
+def v23_run_e2e_fixture():
+    """Run a disposable integration fixture; all test assets live in a temporary directory."""
+    checks = {}
+    details = {}
+    try:
+        with tempfile.TemporaryDirectory(prefix="cbf_v23_fixture_") as temp:
+            project = Path(temp) / "Fixture Book"
+            project.mkdir(parents=True)
+            save_json(project / "project.json", {"title": "Fixture Book", "author": "Test"})
+            package = project / PLATFORM_DIRNAME / "KDP"
+            package.mkdir(parents=True)
+            artifact = package / "sample.txt"
+            artifact.write_text("fixture artifact\n", encoding="utf-8")
+            save_json(package / "PACKAGE_MANIFEST.json", {
+                "schema_version": 1,
+                "files": ["sample.txt"],
+                "file_hashes": {"sample.txt": file_hash(artifact)},
+            })
+            clean = v23_verify_package_root(package)
+            checks["valid_manifest_passes"] = clean["status"] == "READY"
+            artifact.write_text("changed fixture artifact\n", encoding="utf-8")
+            tampered = v23_verify_package_root(package)
+            checks["tampered_file_is_detected"] = tampered["status"] == "BLOCKED" and any("SHA-256 mismatch" in item for item in tampered["errors"])
+            first_fingerprint = v23_build_fingerprint(project)["fingerprint_sha256"]
+            second_fingerprint = v23_build_fingerprint(project)["fingerprint_sha256"]
+            checks["fingerprint_is_repeatable"] = first_fingerprint == second_fingerprint
+            plan = v23_project_migration_plan(project)
+            checks["migration_preview_is_read_only"] = plan["status"] == "READY_TO_MIGRATE" and "book_spec_version" not in load_json(project / "project.json")
+            migrated = v23_apply_project_migration(project, "MIGRATE")
+            checks["migration_requires_backup_and_verifies"] = migrated.get("status") == "MIGRATED" and migrated.get("backup_verified") is True and Path(migrated.get("backup", "")).is_file()
+            details = {
+                "valid_manifest_status": clean["status"],
+                "tampered_manifest_status": tampered["status"],
+                "fingerprint_sha256": first_fingerprint,
+                "migration_status": migrated.get("status"),
+                "backup_verified": migrated.get("backup_verified", False),
+            }
+    except Exception as error:
+        details["exception"] = f"{type(error).__name__}: {error}"
+    passed = sum(1 for value in checks.values() if value)
+    report = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "status": "PASS" if checks and all(checks.values()) else "FAIL",
+        "checks_passed": passed,
+        "checks_total": len(checks),
+        "checks": checks,
+        "details": details,
+        "production_projects_modified": False,
+        "note": "All project and package fixtures were created inside a temporary directory.",
+    }
+    target = Path(FACTORY) / "REPORTS" / "V23_END_TO_END_FIXTURE.json"
+    save_json(target, report)
+    print(f"\nV23 END-TO-END FIXTURE: {report['status']} ({passed}/{len(checks)} checks)")
+    for name, value in checks.items():
+        print(f"{'PASS' if value else 'FAIL'} {name}")
+    if details.get("exception"):
+        print(details["exception"])
+    print(f"Report: {target}")
+    print("Production projects modified: NO")
+    return report
+
+
+def v23_reliability_toolkit_menu():
+    while True:
+        print("\n" + "=" * 72)
+        print(f"FACTORY RELIABILITY TOOLKIT v{FACTORY_VERSION}")
+        print("1. Dependency & capability report")
+        print("2. Verify package manifests for a project")
+        print("3. Create/compare a build fingerprint")
+        print("4. Preview safe project migration")
+        print("5. Run disposable end-to-end test fixtures")
+        print("0. Back")
+        choice = input("Choose: ").strip()
+        if choice == "0":
+            return
+        if choice == "1":
+            v23_capability_report()
+            continue
+        if choice == "5":
+            v23_run_e2e_fixture()
+            continue
+        if choice not in {"2", "3", "4"}:
+            print("Invalid choice.")
+            continue
+        project = v12_active_project() or choose_project()
+        if not project:
+            print("No project selected.")
+            continue
+        project = Path(project)
+        if choice == "2":
+            v23_package_manifest_verify(project)
+        elif choice == "3":
+            v23_build_fingerprint(project)
+        elif choice == "4":
+            plan = v23_project_migration_plan(project)
+            print("\nPROJECT MIGRATION PREVIEW")
+            print(json.dumps(plan, indent=2, ensure_ascii=False))
+            if plan.get("status") == "READY_TO_MIGRATE":
+                confirm = input("Type MIGRATE to apply only these missing fields (anything else cancels): ").strip()
+                result = v23_apply_project_migration(project, confirm)
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+            else:
+                print("No migration applied.")
 
 def main():
     factory_main_menu()
