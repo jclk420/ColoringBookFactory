@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "27.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "27.1"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -836,6 +836,41 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(result["location"], "Unassigned Location")
         self.assertEqual(result["location_confidence"], "LOW")
         self.assertCountEqual(result["location_candidates"], ["Hollow Stitch Nursery", "Intake Wing"])
+
+
+    def test_lore_review_evidence_collects_exact_mentions_and_aliases(self):
+        names = ["lore_intake_normalize", "lore_intake_review_evidence"]
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        namespace = {"Path": pathlib.Path, "re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        records = [
+            {"kind": "book", "name": "Nightmare Cryptids", "world": "Nightmare World",
+             "aliases": ["Cryptids Archive"]},
+            {"kind": "location", "name": "Hollow Stitch Nursery", "world": "Nightmare World",
+             "location": "Hollow Stitch Nursery"},
+        ]
+        result = namespace["lore_intake_review_evidence"](
+            pathlib.Path("Cryptids.pdf"), records,
+            {"pdf_title": "Nightmare Cryptids — Hollow Stitch Nursery Archive", "text_preview": ""})
+        self.assertEqual({x["name"] for x in result["candidate_mentions"]},
+                         {"Nightmare Cryptids", "Hollow Stitch Nursery"})
+        self.assertEqual(result["duplicate_warnings"], [])
+        self.assertEqual(result["hierarchy_warnings"], [])
+
+    def test_lore_review_evidence_flags_duplicate_names_and_cross_world_mentions(self):
+        names = ["lore_intake_normalize", "lore_intake_review_evidence"]
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        namespace = {"Path": pathlib.Path, "re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        records = [
+            {"kind": "creature", "name": "The Hollow", "world": "Nightmare World", "location": "Nursery"},
+            {"kind": "location", "name": "The Hollow", "world": "AREA 420", "location": "The Hollow"},
+        ]
+        result = namespace["lore_intake_review_evidence"](
+            pathlib.Path("The Hollow.pdf"), records, {"pdf_title": "", "text_preview": ""})
+        self.assertEqual(len(result["duplicate_warnings"]), 1)
+        self.assertEqual(len(result["hierarchy_warnings"]), 1)
+        self.assertIn("AREA 420", result["hierarchy_warnings"][0]["worlds"])
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
