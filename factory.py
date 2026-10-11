@@ -15105,7 +15105,7 @@ def lore_intake_ocr_pending_file():
     item["metadata"] = metadata
     save_json(report_path, report)
 
-    print("\\nOCR review results attached to the pending intake record.")
+    print("\nOCR review results attached to the pending intake record.")
     print(f"Pages processed: {ocr.get('pages_processed', 0)}")
     print(f"New entity candidates detected: {len(extracted.get('entity_candidates', []))}")
     print(f"New relationship candidates detected: {len(extracted.get('relationships', []))}")
