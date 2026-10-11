@@ -615,7 +615,7 @@ class FactoryIntegrityTests(unittest.TestCase):
 
     def test_v23_migration_preview_only_adds_missing_known_fields(self):
         node = self.functions["v23_project_migration_plan"][0]
-        namespace = {"Path": pathlib.Path, "load_json": json.load, "WORLD_ENGINE_VERSION": "1.1", "FACTORY_VERSION": "23.0"}
+        namespace = {"Path": pathlib.Path, "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8")), "WORLD_ENGINE_VERSION": "1.1", "FACTORY_VERSION": "23.0"}
         exec(compile(ast.Module(body=[node], type_ignores=[]), "<v23-migration-test>", "exec"), namespace)
         with tempfile.TemporaryDirectory() as temp:
             project = pathlib.Path(temp) / "Book"
