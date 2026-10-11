@@ -14795,7 +14795,7 @@ def lore_intake_review_dashboard():
                 summary["duplicates"] += 1
             if unresolved:
                 summary["unresolved"] += 1
-    print("\\n" + "=" * 100)
+    print("\n" + "=" * 100)
     print("LORE INTAKE REVIEW DASHBOARD — READ ONLY")
     print("=" * 100)
     print(f"Batches: {summary['batches']} | Items: {summary['items']} | Pending: {summary['pending']} | "
@@ -14815,7 +14815,7 @@ def lore_intake_review_dashboard():
         print(f"  Evidence: {row['evidence']} | Confidence: {row['confidence']}{flag_text}")
         if row["pdf_title"]:
             print(f"  PDF title: {row['pdf_title']}")
-    print("\\nRead-only dashboard: no manifest, source file, registry, or canon was changed.")
+    print("\nRead-only dashboard: no manifest, source file, registry, or canon was changed.")
     return summary
 
 
@@ -14828,7 +14828,8 @@ def lore_intake_menu():
     print("Files are COPIED into INTAKE/Review. Original files and canon records are not changed.")
     print("1. Intake files")
     print("2. Review / correct / approve staged files")
-    print("3. Show approved intake registry")\n    print("4. Lore Intake Review Dashboard (read-only)")
+    print("3. Show approved intake registry")
+    print("4. Lore Intake Review Dashboard (read-only)")
     choice = input("Choose: ").strip()
     if choice == "1":
         lore_intake_run()
