@@ -144,3 +144,16 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Attach a location only when the evidence resolves to one registered location compatible with the primary world's identity.
 - Preserve ambiguous location candidates as review information and leave the location unassigned; never invent a location or write to canon.
 - Add regression tests for contextual location enrichment and ambiguity handling.
+
+### v27.3 — Optional Review-Only OCR
+- Add a standalone OCR utility for scanned PDFs and common image formats using optional Tesseract OCR and pypdfium2.
+- Bound page count, render DPI, and OCR timeout; report missing dependencies and recognition failures explicitly.
+- Keep recognized text low-confidence and never edit sources, approve intake, or write lore canon.
+
+### v27.4 — OCR-Enabled Pending Lore Review
+- Add a Lore Intake menu action to OCR an exact source/staged path that belongs to one existing `STAGED_FOR_REVIEW` item.
+- Extract only explicitly labeled entity and relationship candidates using the existing conservative text parser.
+- Attach candidates and OCR warnings to the pending batch report so the read-only dashboard can display them.
+- Preserve primary classification and review status; reject ambiguous path matches and never OCR/modify approved or rejected items.
+- Add regression checks for menu wiring and review-only guardrails.
+
