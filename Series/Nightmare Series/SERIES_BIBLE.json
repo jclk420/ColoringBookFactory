@@ -89,6 +89,11 @@
         {
             "name": "Intake Wing",
             "source_book": "Nightmare Cryptids"
+        },
+        {
+            "name": "Hollow Stitch Nursery",
+            "source_book": "Nightmare Series",
+            "type": "central_mythology_site"
         }
     ],
     "future_hooks": [],
