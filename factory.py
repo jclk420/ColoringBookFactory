@@ -14324,7 +14324,7 @@ def lore_intake_classify(path, records, metadata=None):
                 "reason": "No registered world, location, creature, or book name found in filename or readable PDF metadata"}
 
     source_name, confidence, matches = matches_by_source[0]
-    priority = {"creature": 4, "location": 3, "book": 2, "world": 1}
+    priority = {"book": 4, "creature": 3, "location": 2, "world": 1}
     max_priority = max(priority.get(item.get("kind"), 0) for item in matches)
     best = [item for item in matches if priority.get(item.get("kind"), 0) == max_priority]
     identities = {(lore_intake_normalize(x.get("name")), lore_intake_normalize(x.get("world")),
