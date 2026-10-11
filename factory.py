@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "27.1"
+FACTORY_VERSION = "27.2"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14279,6 +14279,81 @@ def lore_intake_collect_records():
 
 
 
+def lore_intake_extract_text_entities(text):
+    """Extract only explicitly labeled entity names and relationships from selectable PDF text.
+
+    This is a low-confidence review aid, not canon data. It deliberately avoids
+    guessing names from arbitrary title-case lines or automatically registering entities.
+    """
+    result = {"entity_candidates": [], "relationships": []}
+    if not isinstance(text, str) or not text.strip():
+        return result
+    current_creature = ""
+    seen_entities = set()
+    seen_relationships = set()
+    for raw_line in text.splitlines():
+        line = re.sub(r"\s+", " ", raw_line).strip(" \t-•")
+        if not line or len(line) > 180:
+            continue
+        creature_match = re.match(
+            r"^(?:creature|monster|cryptid|entity)(?:\s+name)?\s*[:\-]\s*(.{3,100})$",
+            line, re.IGNORECASE)
+        if creature_match:
+            name = creature_match.group(1).strip(" \t:;,.|")
+            if len(name) >= 3:
+                current_creature = name
+                key = ("creature", name.casefold())
+                if key not in seen_entities:
+                    result["entity_candidates"].append({
+                        "kind": "creature", "name": name, "source": "pdf_text",
+                        "evidence": line, "confidence": "LOW",
+                        "note": "Explicit label detected; verify before approval"})
+                    seen_entities.add(key)
+            continue
+        labeled_match = re.match(
+            r"^(location|world|book|series)(?:\s+name)?\s*[:\-]\s*(.{3,100})$",
+            line, re.IGNORECASE)
+        if labeled_match:
+            kind = labeled_match.group(1).casefold()
+            name = labeled_match.group(2).strip(" \t:;,.|")
+            if len(name) >= 3:
+                key = (kind, name.casefold())
+                if key not in seen_entities:
+                    result["entity_candidates"].append({
+                        "kind": kind, "name": name, "source": "pdf_text",
+                        "evidence": line, "confidence": "LOW",
+                        "note": "Explicit label detected; verify before approval"})
+                    seen_entities.add(key)
+                if current_creature and kind == "location":
+                    rel_key = (current_creature.casefold(), "located_at", name.casefold())
+                    if rel_key not in seen_relationships:
+                        result["relationships"].append({
+                            "subject_kind": "creature", "subject": current_creature,
+                            "relation": "located_at", "object_kind": "location",
+                            "object": name, "source": "pdf_text", "evidence": line,
+                            "confidence": "LOW",
+                            "note": "Textual relationship candidate; verify before approval"})
+                        seen_relationships.add(rel_key)
+            continue
+        relation_match = re.match(
+            r"^(?:found|located|contained|discovered|originates)\s+"
+            r"(?:in|at|within|from)\s*[:\-]?\s*(.{3,100})$",
+            line, re.IGNORECASE)
+        if current_creature and relation_match:
+            name = relation_match.group(1).strip(" \t:;,.|")
+            if len(name) >= 3:
+                rel_key = (current_creature.casefold(), "located_at", name.casefold())
+                if rel_key not in seen_relationships:
+                    result["relationships"].append({
+                        "subject_kind": "creature", "subject": current_creature,
+                        "relation": "located_at", "object_kind": "location",
+                        "object": name, "source": "pdf_text", "evidence": line,
+                        "confidence": "LOW",
+                        "note": "Textual relationship candidate; verify before approval"})
+                    seen_relationships.add(rel_key)
+    return result
+
+
 def lore_intake_review_evidence(path, records, metadata=None):
     """Collect exact registered mentions and flag review conflicts without changing canon."""
     path = Path(path)
@@ -14324,7 +14399,11 @@ def lore_intake_review_evidence(path, records, metadata=None):
     worlds = sorted({x["world"] for x in candidates if x["world"] not in {"", "Unassigned World"}})
     hierarchy = ([{"reason": "Evidence mentions registered entities from multiple worlds; verify hierarchy before approval",
                    "worlds": worlds}] if len({lore_intake_normalize(w) for w in worlds}) > 1 else [])
-    return {"candidate_mentions": candidates, "duplicate_warnings": duplicates, "hierarchy_warnings": hierarchy}
+    text_entities = lore_intake_extract_text_entities(metadata.get("text_preview", ""))
+    return {"candidate_mentions": candidates, "duplicate_warnings": duplicates,
+            "hierarchy_warnings": hierarchy,
+            "extracted_entity_candidates": text_entities["entity_candidates"],
+            "extracted_relationships": text_entities["relationships"]}
 
 
 def lore_intake_classify(path, records, metadata=None):
@@ -14964,7 +15043,9 @@ def lore_intake_review_dashboard():
                    "status": status, "kind": kind, "name": name, "world": world,
                    "location": location, "confidence": str(classification.get("confidence") or "LOW"),
                    "evidence": evidence or "none", "duplicate": duplicate, "unresolved": unresolved,
-                   "pdf_title": str(metadata.get("pdf_title") or "")}
+                   "pdf_title": str(metadata.get("pdf_title") or ""),
+                   "extracted_entity_candidates": classification.get("extracted_entity_candidates", []),
+                   "extracted_relationships": classification.get("extracted_relationships", [])}
             summary["records"].append(row)
             summary["items"] += 1
             if status == "STAGED_FOR_REVIEW":
@@ -14997,6 +15078,10 @@ def lore_intake_review_dashboard():
         print(f"  Evidence: {row['evidence']} | Confidence: {row['confidence']}{flag_text}")
         if row["pdf_title"]:
             print(f"  PDF title: {row['pdf_title']}")
+        for candidate in row["extracted_entity_candidates"][:8]:
+            print(f"  Text candidate (LOW confidence): {candidate.get('kind', 'entity')} '{candidate.get('name', '')}' — verify manually")
+        for relationship in row["extracted_relationships"][:8]:
+            print(f"  Relationship candidate (LOW confidence): {relationship.get('subject', '')} — {relationship.get('relation', '')} — {relationship.get('object', '')}")
     print("\nRead-only dashboard: no manifest, source file, registry, or canon was changed.")
     return summary
 
