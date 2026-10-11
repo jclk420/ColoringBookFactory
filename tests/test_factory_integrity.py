@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "23.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "24.0"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -195,7 +195,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "23.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "24.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -532,7 +532,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "23.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "24.0"', self.source)
         self.assertIn('elif c=="20": v21_canon_tools_menu()', self.source)
 
     def test_v21_import_preview_is_read_only_and_blocks_unsupported_shapes(self):
@@ -568,7 +568,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "23.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "24.0"', self.source)
         self.assertIn('elif c=="21": v22_platform_listing_menu()', self.source)
         self.assertIn('"LISTING_READINESS.json"', self.source)
         self.assertIn('"published": False', self.source)
@@ -591,7 +591,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "23.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "24.0"', self.source)
         self.assertIn('elif c=="22": v23_reliability_toolkit_menu()', self.source)
         self.assertIn('"master_rebuilt": False', self.source)
         self.assertIn('"production_projects_modified": False', self.source)
@@ -615,7 +615,7 @@ class FactoryIntegrityTests(unittest.TestCase):
 
     def test_v23_migration_preview_only_adds_missing_known_fields(self):
         node = self.functions["v23_project_migration_plan"][0]
-        namespace = {"Path": pathlib.Path, "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8")), "WORLD_ENGINE_VERSION": "1.1", "FACTORY_VERSION": "23.0"}
+        namespace = {"Path": pathlib.Path, "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8")), "WORLD_ENGINE_VERSION": "1.1", "FACTORY_VERSION": "24.0"}
         exec(compile(ast.Module(body=[node], type_ignores=[]), "<v23-migration-test>", "exec"), namespace)
         with tempfile.TemporaryDirectory() as temp:
             project = pathlib.Path(temp) / "Book"
@@ -628,6 +628,52 @@ class FactoryIntegrityTests(unittest.TestCase):
             self.assertEqual(json.loads(config.read_text(encoding="utf-8")), original)
             self.assertNotIn("world_engine_version", plan["changes"])
             self.assertIn("book_spec_version", plan["changes"])
+
+    def test_v24_repair_preview_is_read_only_and_preserves_conflicts(self):
+        node = self.functions.get("lore_build_repair_preview", [None])[0]
+        self.assertIsNotNone(node, "v24 repair preview helper must exist")
+        namespace = {
+            "Path": pathlib.Path, "PROJECTS": pathlib.Path("."),
+            "WORLDS_DIR": pathlib.Path("."), "WORLD_INDEX_FILENAME": "world_index.json",
+            "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8")),
+        }
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "<v24-preview-test>", "exec"), namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            projects, worlds = root / "Projects", root / "Worlds"
+            project = projects / "Sample Nightmare Book"
+            project.mkdir(parents=True)
+            worlds.mkdir()
+            (worlds / "world_index.json").write_text(json.dumps({
+                "worlds": {"nightmare-world": {"name": "Nightmare World"}}
+            }), encoding="utf-8")
+            metadata = {"title": "Sample Nightmare Book", "series_name": "AREA 420", "book_number": 9}
+            config = project / "project.json"
+            config.write_text(json.dumps(metadata), encoding="utf-8")
+            namespace["PROJECTS"], namespace["WORLDS_DIR"] = projects, worlds
+            bible = {
+                "name": "Nightmare Series", "series_id": "nightmare-series",
+                "world_name": "Nightmare World",
+                "books": [{"title": "Sample Nightmare Book", "project": "Sample Nightmare Book", "book_number": 1}],
+            }
+            plan = namespace["lore_build_repair_preview"](bible)
+            self.assertEqual(plan["status"], "REVIEW")
+            self.assertEqual(plan["fill_count"], 3)
+            self.assertEqual(plan["conflict_count"], 2)
+            item = plan["items"][0]
+            self.assertEqual({x["field"] for x in item["fills"]}, {"series_id", "universe_name", "world_id"})
+            self.assertEqual({x["field"] for x in item["conflicts"]}, {"series_name", "book_number"})
+            self.assertTrue(all(x["action"] == "PRESERVE_EXISTING_VALUE" for x in item["conflicts"]))
+            self.assertEqual(json.loads(config.read_text(encoding="utf-8")), metadata)
+
+    def test_v24_repair_previews_and_requires_confirmation_without_forced_picker(self):
+        node = self.functions["lore_repair_series"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertIn("lore_build_repair_preview(bible)", segment)
+        self.assertIn('!= "REPAIR"', segment)
+        self.assertNotIn("lore_manual_select_projects(bible)", segment)
+        self.assertLess(segment.index("lore_build_repair_preview(bible)"), segment.index("lore_sync_explicit_series_attachments(bible)"))
+        self.assertIn("No books are registered in this Nightmare Series Bible yet.", segment)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
