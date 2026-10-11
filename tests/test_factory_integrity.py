@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "27.4"', self.source)
+        self.assertIn('FACTORY_VERSION = "27.5"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -920,6 +920,25 @@ class FactoryIntegrityTests(unittest.TestCase):
         segment = ast.get_source_segment(self.source, node) or ""
         self.assertNotIn("save_json(", segment)
         self.assertNotIn("APPROVED_LORE", segment)
+
+    def test_v275_path_match_resolves_relative_records_from_known_roots(self):
+        node = self.functions.get("lore_intake_paths_match", [None])[0]
+        self.assertIsNotNone(node, "relative-path matching helper must exist")
+        module = ast.Module(body=[node], type_ignores=[])
+        namespace = {"Path": pathlib.Path}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            intake = root / "INTAKE"
+            intake.mkdir()
+            staged = intake / "pending" / "cryptids.pdf"
+            staged.parent.mkdir()
+            staged.write_bytes(b"")
+            match = namespace["lore_intake_paths_match"]
+            self.assertTrue(match("pending/cryptids.pdf", staged, (intake,)))
+            self.assertTrue(match(str(staged), staged, (intake,)))
+            self.assertFalse(match("pending/other.pdf", staged, (intake,)))
+            self.assertFalse(match(None, staged, (intake,)))
 
     def test_v27_4_ocr_review_is_menu_connected_and_review_only(self):
         node = self.functions.get("lore_intake_ocr_pending_file", [None])[0]
