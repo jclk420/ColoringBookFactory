@@ -157,3 +157,8 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Preserve primary classification and review status; reject ambiguous path matches and never OCR/modify approved or rejected items.
 - Add regression checks for menu wiring and review-only guardrails.
 
+### v27.5 — Robust Relative-Path Matching for OCR Review
+- Resolve relative manifest paths against the intake directory and factory root before matching the selected file.
+- Keep exact-path matching and the one-pending-record-only guard; no fuzzy matching or automatic selection.
+- Add dependency-free tests for relative, absolute, missing, and non-matching paths.
+
