@@ -2,6 +2,16 @@
 
 This roadmap separates shipped work from future candidates. Planned items are not implemented until their code, tests, and release notes are committed.
 
+## Implemented on the current upgrade branch
+
+### v23.0 — Factory Reliability & Safe Migration Toolkit
+- Adds a runtime capability report for optional image/PDF engines and drag-and-drop support without installing dependencies.
+- Verifies enabled platform package manifests for missing files, SHA-256 mismatches, unsafe manifest paths, and unlisted files; writes a diagnostic report without changing package contents.
+- Records a deterministic project-input fingerprint from metadata and source image/PDF hashes without rebuilding the MASTER PDF.
+- Adds a read-only project metadata migration preview and an explicitly confirmed additive migration; existing values are preserved, the backup is hash-verified, and post-write verification/rollback are included.
+- Adds disposable end-to-end fixtures that validate manifest checks, tamper detection, repeatable fingerprints, and backup-protected migration entirely in a temporary directory.
+- Wires the toolkit into main-menu option 22 and adds regression tests for menu/function uniqueness, manifest tampering, and migration preview safety.
+
 ## Shipped on the current upgrade branch
 
 ### v21.0 — Canon Registry & Continuity Tools
