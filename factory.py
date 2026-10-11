@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 25.0.
+# Current version: 26.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "25.0"
+FACTORY_VERSION = "26.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14738,6 +14738,87 @@ def lore_intake_run(files=None):
             "batch_report": str(batch_root / "INTAKE_BATCH.json")}
 
 
+def lore_intake_review_dashboard():
+    """Read-only summary of staged intake records; never changes manifests or canon."""
+    manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
+    summary = {"batches": 0, "items": 0, "pending": 0, "approved": 0,
+               "rejected": 0, "duplicates": 0, "unresolved": 0, "records": []}
+    if not manifest_path.exists():
+        print("No intake manifest exists yet. Run Lore Intake first.")
+        return summary
+    try:
+        manifest = load_json(manifest_path)
+    except Exception as error:
+        print(f"Cannot read intake manifest: {error}")
+        summary["error"] = str(error)
+        return summary
+    batches = manifest.get("batches", []) if isinstance(manifest, dict) else []
+    summary["batches"] = len(batches)
+    for batch in batches:
+        record_value = batch.get("record") if isinstance(batch, dict) else None
+        if not record_value:
+            continue
+        report_path = Path(record_value)
+        if not report_path.is_absolute():
+            report_path = INTAKE_DIR / report_path
+        try:
+            report = load_json(report_path)
+        except Exception:
+            continue
+        for item in report.get("items", []) if isinstance(report, dict) else []:
+            if not isinstance(item, dict):
+                continue
+            classification = item.get("classification") if isinstance(item.get("classification"), dict) else {}
+            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            status = str(item.get("status") or "UNKNOWN").upper()
+            kind = str(classification.get("kind") or "unmatched")
+            name = str(classification.get("name") or "(unresolved)")
+            world = str(classification.get("world") or "Unassigned World")
+            location = str(classification.get("location") or "Unassigned Location")
+            evidence = ", ".join(classification.get("matched_in", [])) if isinstance(classification.get("matched_in"), list) else ""
+            duplicate = bool(item.get("duplicate") or item.get("duplicate_of") or "DUPLICATE" in status)
+            unresolved = kind in {"ambiguous", "unmatched"} or not classification.get("name")
+            row = {"file": Path(str(item.get("source") or item.get("staged_path") or "?")).name,
+                   "status": status, "kind": kind, "name": name, "world": world,
+                   "location": location, "confidence": str(classification.get("confidence") or "LOW"),
+                   "evidence": evidence or "none", "duplicate": duplicate, "unresolved": unresolved,
+                   "pdf_title": str(metadata.get("pdf_title") or "")}
+            summary["records"].append(row)
+            summary["items"] += 1
+            if status == "STAGED_FOR_REVIEW":
+                summary["pending"] += 1
+            elif status == "APPROVED":
+                summary["approved"] += 1
+            elif status == "REJECTED":
+                summary["rejected"] += 1
+            if duplicate:
+                summary["duplicates"] += 1
+            if unresolved:
+                summary["unresolved"] += 1
+    print("\\n" + "=" * 100)
+    print("LORE INTAKE REVIEW DASHBOARD — READ ONLY")
+    print("=" * 100)
+    print(f"Batches: {summary['batches']} | Items: {summary['items']} | Pending: {summary['pending']} | "
+          f"Approved: {summary['approved']} | Rejected: {summary['rejected']}")
+    print(f"Unresolved: {summary['unresolved']} | Duplicate warnings: {summary['duplicates']}")
+    if not summary["records"]:
+        print("No readable intake items found.")
+    for row in summary["records"]:
+        flags = []
+        if row["unresolved"]:
+            flags.append("NEEDS REVIEW")
+        if row["duplicate"]:
+            flags.append("DUPLICATE CHECK")
+        flag_text = " | " + ", ".join(flags) if flags else ""
+        print(f"\\n[{row['status']}] {row['file']}")
+        print(f"  Proposal: {row['kind']} '{row['name']}' — {row['world']} / {row['location']}")
+        print(f"  Evidence: {row['evidence']} | Confidence: {row['confidence']}{flag_text}")
+        if row["pdf_title"]:
+            print(f"  PDF title: {row['pdf_title']}")
+    print("\\nRead-only dashboard: no manifest, source file, registry, or canon was changed.")
+    return summary
+
+
 def lore_intake_menu():
     print("\n" + "=" * 78)
     print("LORE INTAKE & AUTO-SORTER")
@@ -14747,7 +14828,7 @@ def lore_intake_menu():
     print("Files are COPIED into INTAKE/Review. Original files and canon records are not changed.")
     print("1. Intake files")
     print("2. Review / correct / approve staged files")
-    print("3. Show approved intake registry")
+    print("3. Show approved intake registry")\n    print("4. Lore Intake Review Dashboard (read-only)")
     choice = input("Choose: ").strip()
     if choice == "1":
         lore_intake_run()
