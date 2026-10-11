@@ -11,13 +11,19 @@
                 "kind": "book",
                 "name": "Nightmare Cryptids",
                 "world": "Nightmare World",
-                "location": "Unassigned Location",
+                "location": "Hollow Stitch Nursery",
                 "bible": "Nightmare Series",
                 "confidence": "MEDIUM",
                 "matched_in": [
                     "pdf_title"
                 ],
-                "reason": "Exact registered lore name found in readable PDF pdf title"
+                "location_evidence": [
+                    "pdf_title"
+                ],
+                "location_confidence": "MEDIUM",
+                "location_candidates": [],
+                "reason": "Exact registered lore name found in readable PDF pdf title",
+                "location_reason": "Exact registered location phrase found in file evidence"
             },
             "metadata": {
                 "extension": ".pdf",
@@ -29,7 +35,42 @@
                 "text_extraction": "PyPDF2"
             },
             "staged_path": "C:\\ColoringBookFactory\\INTAKE\\Review\\Nightmare World\\Books\\Nightmare Cryptids\\cOPYCryptidsInterior.pdf",
-            "batch": "20261011_070139"
+            "batch": "20261011_070139",
+            "classification_refresh_history": [
+                {
+                    "refreshed_at": "2026-10-11T08:02:38",
+                    "previous": {
+                        "kind": "book",
+                        "name": "Nightmare Cryptids",
+                        "world": "Nightmare World",
+                        "location": "Unassigned Location",
+                        "bible": "Nightmare Series",
+                        "confidence": "MEDIUM",
+                        "matched_in": [
+                            "pdf_title"
+                        ],
+                        "reason": "Exact registered lore name found in readable PDF pdf title"
+                    },
+                    "updated": {
+                        "kind": "book",
+                        "name": "Nightmare Cryptids",
+                        "world": "Nightmare World",
+                        "location": "Hollow Stitch Nursery",
+                        "bible": "Nightmare Series",
+                        "confidence": "MEDIUM",
+                        "matched_in": [
+                            "pdf_title"
+                        ],
+                        "location_evidence": [
+                            "pdf_title"
+                        ],
+                        "location_confidence": "MEDIUM",
+                        "location_candidates": [],
+                        "reason": "Exact registered lore name found in readable PDF pdf title",
+                        "location_reason": "Exact registered location phrase found in file evidence"
+                    }
+                }
+            ]
         }
     ],
     "rejected": [],
