@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "27.4"
+FACTORY_VERSION = "27.5"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15000,6 +15000,25 @@ def lore_intake_refresh_pending():
 
 
 
+def lore_intake_paths_match(recorded_path, selected_path, base_dirs=()):
+    """Compare recorded and selected paths, resolving relative records against known roots."""
+    try:
+        selected = Path(selected_path).expanduser().resolve()
+        recorded = Path(str(recorded_path)).expanduser()
+    except (TypeError, ValueError, OSError):
+        return False
+    candidates = [recorded]
+    if not recorded.is_absolute():
+        candidates.extend(Path(root).expanduser() / recorded for root in base_dirs)
+    for candidate in candidates:
+        try:
+            if candidate.resolve() == selected:
+                return True
+        except (OSError, RuntimeError, ValueError):
+            continue
+    return False
+
+
 def lore_intake_ocr_pending_file():
     """OCR one existing pending intake file and attach low-confidence candidates for review."""
     source_value = input("Path to the source or staged PDF/image: ").strip().strip('"')
@@ -15040,12 +15059,7 @@ def lore_intake_ocr_pending_file():
             for value in paths:
                 if not value:
                     continue
-                candidate = Path(str(value))
-                try:
-                    same_path = candidate.resolve() == source.resolve()
-                except OSError:
-                    same_path = False
-                if same_path:
+                if lore_intake_paths_match(value, source, (INTAKE_DIR, FACTORY)):
                     matches.append((report_path, report, item))
                     break
 
