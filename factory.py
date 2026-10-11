@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 27.0.
+# Current version: 27.1.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "27.0"
+FACTORY_VERSION = "27.1"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14278,6 +14278,55 @@ def lore_intake_collect_records():
     return list(unique.values())
 
 
+
+def lore_intake_review_evidence(path, records, metadata=None):
+    """Collect exact registered mentions and flag review conflicts without changing canon."""
+    path = Path(path)
+    metadata = metadata if isinstance(metadata, dict) else {}
+    sources = [
+        ("filename", lore_intake_normalize(path.stem), "HIGH"),
+        ("pdf_title", lore_intake_normalize(metadata.get("pdf_title")), "MEDIUM"),
+        ("pdf_text", lore_intake_normalize(metadata.get("text_preview")), "MEDIUM"),
+    ]
+    found = {}
+    for record in records or []:
+        if not isinstance(record, dict):
+            continue
+        aliases = record.get("aliases", [])
+        if not isinstance(aliases, list):
+            aliases = []
+        for label, is_alias in [(str(record.get("name") or ""), False)] + [(str(a), True) for a in aliases]:
+            norm = lore_intake_normalize(label)
+            if len(norm) < 3:
+                continue
+            for source, haystack, confidence in sources:
+                if not haystack or not re.search(r"(?<![a-z0-9])" + re.escape(norm) + r"(?![a-z0-9])", haystack):
+                    continue
+                key = (record.get("kind", ""), lore_intake_normalize(record.get("name")),
+                       lore_intake_normalize(record.get("world")), lore_intake_normalize(record.get("location")))
+                row = found.setdefault(key, {"kind": record.get("kind", "unknown"),
+                    "name": record.get("name") or label, "world": record.get("world") or "Unassigned World",
+                    "location": record.get("location") or "Unassigned Location", "sources": [],
+                    "confidence": confidence, "alias_match": False})
+                if source not in row["sources"]:
+                    row["sources"].append(source)
+                row["alias_match"] = row["alias_match"] or is_alias
+                if confidence == "HIGH":
+                    row["confidence"] = "HIGH"
+    candidates = sorted(found.values(), key=lambda x: (str(x["kind"]), str(x["name"]).casefold()))
+    names = {}
+    for row in candidates:
+        names.setdefault(lore_intake_normalize(row["name"]), []).append(row)
+    duplicates = [{"name": group[0]["name"], "reason": "Same normalized name maps to multiple registered lore identities",
+                   "candidates": [{"kind": x["kind"], "world": x["world"], "location": x["location"]} for x in group]}
+                  for norm, group in names.items()
+                  if norm and len({(x["kind"], x["world"], x["location"]) for x in group}) > 1]
+    worlds = sorted({x["world"] for x in candidates if x["world"] not in {"", "Unassigned World"}})
+    hierarchy = ([{"reason": "Evidence mentions registered entities from multiple worlds; verify hierarchy before approval",
+                   "worlds": worlds}] if len({lore_intake_normalize(w) for w in worlds}) > 1 else [])
+    return {"candidate_mentions": candidates, "duplicate_warnings": duplicates, "hierarchy_warnings": hierarchy}
+
+
 def lore_intake_classify(path, records, metadata=None):
     """Suggest a registered lore match and independently enrich its location context.
 
@@ -14751,6 +14800,7 @@ def lore_intake_run(files=None):
                 continue
             metadata = lore_intake_inspect_file(source)
             classification = lore_intake_classify(source, records, metadata)
+            classification.update(lore_intake_review_evidence(source, records, metadata))
             destination = lore_intake_destination(review_root, source, classification)
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.exists():
@@ -14835,8 +14885,10 @@ def lore_intake_refresh_pending():
             evidence_path = source if source.is_file() else (staged if staged and staged.is_file() else source)
             try:
                 new = lore_intake_classify(evidence_path, records, metadata)
+                new.update(lore_intake_review_evidence(evidence_path, records, metadata))
                 identity_fields = ("kind", "name", "world", "location", "matched_in",
-                                   "location_evidence", "location_candidates")
+                                   "location_evidence", "location_candidates", "candidate_mentions",
+                                   "duplicate_warnings", "hierarchy_warnings")
                 did_change = any(old.get(key) != new.get(key) for key in identity_fields)
                 if did_change:
                     item.setdefault("classification_refresh_history", []).append({
