@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "engine_version": "1.0",
-    "factory_version": "16.1",
+    "factory_version": "16.7",
     "series_id": "Nightmare Series",
     "name": "Nightmare Series",
     "status": "ACTIVE",
@@ -99,5 +99,5 @@
         "Some legacy Nightmare books do not have confirmed book numbers; assign the canonical order before creating the next numbered installment."
     ],
     "created": "2026-09-29T14:33:12",
-    "updated": "2026-09-30T20:27:32"
+    "updated": "2026-10-09T16:32:08"
 }

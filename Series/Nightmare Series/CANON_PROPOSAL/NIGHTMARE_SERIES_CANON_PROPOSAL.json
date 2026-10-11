@@ -1,0 +1,76 @@
+﻿{
+    "proposal_version":  1,
+    "status":  "PROPOSED_NOT_APPLIED",
+    "series_id":  "Nightmare Series",
+    "world_name":  "Nightmare World",
+    "central_mythology":  "Hollow Stitch Nursery",
+    "safety":  {
+                   "live_series_bible_modified":  false,
+                   "project_files_modified":  false,
+                   "artwork_moved_or_deleted":  false,
+                   "user_review_required":  true
+               },
+    "proposed_books":  [
+                           {
+                               "title":  "Nightmare Teddy Bears",
+                               "project_path":  "C:\\ColoringBookFactory\\Projects\\Nightmare Teddy Bears A Horror Coloring Adventure",
+                               "role":  "ORIGIN_STORY",
+                               "status":  "PROPOSED",
+                               "location":  "Hollow Stitch Nursery",
+                               "notes":  "Inspect the existing interior before establishing specific story events as canon."
+                           },
+                           {
+                               "title":  "Nightmare Llamas",
+                               "source_path":  "C:\\Users\\J\\Desktop\\nIGHTMAREllAMAS",
+                               "interior_candidate":  "NighgtmareLLamas.pdf",
+                               "cover_candidate":  "LlamaCover.pdf",
+                               "role":  "NURSERY_SECTION",
+                               "status":  "PROPOSED",
+                               "location":  "",
+                               "notes":  "Confirm final interior, cover, and section name."
+                           },
+                           {
+                               "title":  "Nightmare Unicorns",
+                               "project_path":  "C:\\ColoringBookFactory\\Projects\\Nightmare Unicorns",
+                               "role":  "NURSERY_SECTION",
+                               "status":  "PROPOSED",
+                               "location":  "",
+                               "notes":  "Other duplicate project copies exist. Confirm the canonical project."
+                           },
+                           {
+                               "title":  "Nightmare Cryptids",
+                               "project_path":  "C:\\ColoringBookFactory\\Projects\\Nightmare Cryptids (2)",
+                               "role":  "NURSERY_SECTION",
+                               "status":  "PROPOSED",
+                               "location":  "Intake Wing",
+                               "notes":  "Retain the existing Intake Wing connection pending review."
+                           },
+                           {
+                               "title":  "Nightmare Vending Machines",
+                               "project_path":  "C:\\ColoringBookFactory\\Projects\\Monster Vending Machines",
+                               "artwork_source_path":  "C:\\Users\\J\\Desktop\\MonsterVendingMachines",
+                               "configured_image_count":  34,
+                               "role":  "NURSERY_SECTION",
+                               "status":  "PROPOSED",
+                               "location":  "",
+                               "notes":  "Use Nightmare Vending Machines as the official publishing title. Preserve the existing project folder and source artwork."
+                           }
+                       ],
+    "proposed_continuity_rules":  [
+                                      "All five books belong to one connected Nightmare World.",
+                                      "The Hollow Stitch Nursery is the central mythology.",
+                                      "Nightmare Teddy Bears is the proposed origin story.",
+                                      "Each other book explores a different Nursery section or function.",
+                                      "Do not invent story events or cross-book clues without evidence or approval.",
+                                      "Track unresolved questions instead of inventing answers.",
+                                      "Never silently rewrite established canon or overwrite artwork.",
+                                      "Do not attach duplicate project copies as separate books."
+                                  ],
+    "unresolved_decisions":  [
+                                 "Confirm the final Llamas interior and cover.",
+                                 "Confirm the canonical Unicorns project.",
+                                 "Review the Teddy Bears interior for origin-story facts.",
+                                 "Choose section names for Llamas, Unicorns, and Vending Machines.",
+                                 "Approve the reading order before assigning book numbers."
+                             ]
+}

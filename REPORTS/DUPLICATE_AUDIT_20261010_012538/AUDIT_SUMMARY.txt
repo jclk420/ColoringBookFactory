@@ -1,0 +1,17 @@
+﻿COLORING BOOK FACTORY - READ-ONLY DUPLICATE AUDIT
+Run time: 10/10/2026 01:27:06
+Projects scanned: 19
+Files found: 1009
+Exact-duplicate file records: 422
+Hash failures: 0
+
+REPORT FILES
+ALL_FILES.csv
+EXACT_DUPLICATE_FILES.csv
+PROJECT_METADATA.csv
+PROJECT_INVENTORY.csv
+
+IMPORTANT
+Matching hashes indicate identical file contents.
+Identical files do not automatically mean an entire project folder is safe to remove.
+No project files were deleted, moved, renamed, or edited.
