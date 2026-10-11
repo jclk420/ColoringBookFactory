@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "27.2"
+FACTORY_VERSION = "27.4"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14999,6 +14999,125 @@ def lore_intake_refresh_pending():
     return {"refreshed": refreshed, "changed": changed, "errors": errors}
 
 
+
+def lore_intake_ocr_pending_file():
+    """OCR one existing pending intake file and attach low-confidence candidates for review."""
+    source_value = input("Path to the source or staged PDF/image: ").strip().strip('"')
+    if not source_value:
+        print("No file selected.")
+        return {"status": "CANCELLED", "attached": False}
+    source = Path(source_value).expanduser()
+    if not source.is_file():
+        print(f"File not found: {source}")
+        return {"status": "ERROR", "attached": False}
+
+    manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
+    if not manifest_path.exists():
+        print("No intake manifest exists yet. Run Lore Intake first.")
+        return {"status": "ERROR", "attached": False}
+    try:
+        manifest = load_json(manifest_path)
+    except Exception as error:
+        print(f"Cannot read intake manifest: {error}")
+        return {"status": "ERROR", "attached": False}
+
+    matches = []
+    for batch in manifest.get("batches", []) if isinstance(manifest, dict) else []:
+        record_value = batch.get("record") if isinstance(batch, dict) else None
+        if not record_value:
+            continue
+        report_path = Path(record_value)
+        if not report_path.is_absolute():
+            report_path = INTAKE_DIR / report_path
+        try:
+            report = load_json(report_path)
+        except Exception:
+            continue
+        for item in report.get("items", []) if isinstance(report, dict) else []:
+            if not isinstance(item, dict) or str(item.get("status", "")).upper() != "STAGED_FOR_REVIEW":
+                continue
+            paths = [item.get("source"), item.get("staged_path")]
+            for value in paths:
+                if not value:
+                    continue
+                candidate = Path(str(value))
+                try:
+                    same_path = candidate.resolve() == source.resolve()
+                except OSError:
+                    same_path = False
+                if same_path:
+                    matches.append((report_path, report, item))
+                    break
+
+    if len(matches) != 1:
+        if not matches:
+            print("No single STAGED_FOR_REVIEW item matched that exact path.")
+            print("Run intake first, then use the exact source or staged path recorded for that pending item.")
+        else:
+            print("More than one pending record matched. No record was changed.")
+        return {"status": "REVIEW", "attached": False, "matches": len(matches)}
+
+    try:
+        from lore_ocr import lore_ocr_extract_text
+    except Exception as error:
+        print(f"OCR helper unavailable: {error}")
+        return {"status": "UNAVAILABLE", "attached": False}
+    ocr = lore_ocr_extract_text(source)
+    if ocr.get("status") != "REVIEW":
+        print(f"OCR did not run: {ocr.get('status')}")
+        for warning in ocr.get("warnings", []):
+            print(f"  Warning: {warning}")
+        return {"status": ocr.get("status", "ERROR"), "attached": False, "warnings": ocr.get("warnings", [])}
+
+    extracted = lore_intake_extract_text_entities(ocr.get("text", ""))
+    report_path, report, item = matches[0]
+    classification = item.get("classification") if isinstance(item.get("classification"), dict) else {}
+    old_entities = classification.get("extracted_entity_candidates", [])
+    old_relationships = classification.get("extracted_relationships", [])
+    if not isinstance(old_entities, list):
+        old_entities = []
+    if not isinstance(old_relationships, list):
+        old_relationships = []
+
+    def merge_candidates(existing, incoming, keys):
+        merged = list(existing)
+        seen = {tuple(str(row.get(key, "")).casefold() for key in keys)
+                for row in merged if isinstance(row, dict)}
+        for row in incoming:
+            if not isinstance(row, dict):
+                continue
+            key = tuple(str(row.get(field, "")).casefold() for field in keys)
+            if key not in seen:
+                merged.append(row)
+                seen.add(key)
+        return merged
+
+    classification["extracted_entity_candidates"] = merge_candidates(
+        old_entities, extracted.get("entity_candidates", []), ("kind", "name"))
+    classification["extracted_relationships"] = merge_candidates(
+        old_relationships, extracted.get("relationships", []), ("subject", "relation", "object"))
+    item["classification"] = classification
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    metadata["ocr_status"] = "REVIEW"
+    metadata["ocr_pages_processed"] = ocr.get("pages_processed", 0)
+    metadata["ocr_warnings"] = ocr.get("warnings", [])
+    metadata["ocr_confidence"] = "LOW"
+    item["metadata"] = metadata
+    save_json(report_path, report)
+
+    print("\\nOCR review results attached to the pending intake record.")
+    print(f"Pages processed: {ocr.get('pages_processed', 0)}")
+    print(f"New entity candidates detected: {len(extracted.get('entity_candidates', []))}")
+    print(f"New relationship candidates detected: {len(extracted.get('relationships', []))}")
+    for warning in ocr.get("warnings", []):
+        print(f"  Warning: {warning}")
+    print("The primary classification, approval status, source file, and lore canon were not changed.")
+    return {"status": "REVIEW", "attached": True,
+            "entities": len(extracted.get("entity_candidates", [])),
+            "relationships": len(extracted.get("relationships", [])),
+            "pages_processed": ocr.get("pages_processed", 0)}
+
+
 def lore_intake_review_dashboard():
     """Read-only summary of staged intake records; never changes manifests or canon."""
     manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
@@ -15098,6 +15217,7 @@ def lore_intake_menu():
     print("3. Show approved intake registry")
     print("4. Lore Intake Review Dashboard (read-only)")
     print("5. Refresh pending classifications against current lore")
+    print("6. OCR a staged pending PDF/image (low-confidence review only)")
     choice = input("Choose: ").strip()
     if choice == "1":
         lore_intake_run()
@@ -15107,6 +15227,8 @@ def lore_intake_menu():
         lore_intake_review_dashboard()
     elif choice == "5":
         lore_intake_refresh_pending()
+    elif choice == "6":
+        lore_intake_ocr_pending_file()
     elif choice == "3":
         registry_path = INTAKE_DIR / "APPROVED_LORE.json"
         if registry_path.exists():
