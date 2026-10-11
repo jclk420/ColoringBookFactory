@@ -136,3 +136,11 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Leaves prices, categories, and other account-dependent selections blank rather than guessing. Marks drafts as unpublished and never claims a package was uploaded.
 - Writes listing files under each project's MARKETING/LISTINGS folder without rebuilding or modifying the master PDF.
 - Adds source-integrity tests for unique function definitions, menu wiring, missing-price safety, and unpublished status.
+
+
+### v27.0 — Contextual Lore Location Evidence
+- Keep the strongest registered entity match (book, creature, location, or world) as the primary proposal.
+- Independently scan filenames, PDF titles, and extracted PDF text for exact registered location names, even when the primary match came from the filename.
+- Attach a location only when the evidence resolves to one registered location compatible with the primary world's identity.
+- Preserve ambiguous location candidates as review information and leave the location unassigned; never invent a location or write to canon.
+- Add regression tests for contextual location enrichment and ambiguity handling.
