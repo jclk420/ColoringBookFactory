@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 26.0.
+# Current version: 27.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "26.0"
+FACTORY_VERSION = "27.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14279,44 +14279,51 @@ def lore_intake_collect_records():
 
 
 def lore_intake_classify(path, records, metadata=None):
-    """Suggest a lore match using exact registered phrases and traceable evidence.
+    """Suggest a registered lore match and independently enrich its location context.
 
-    Filename matches take precedence. If the filename has no match, PDF title and
-    extracted text may provide a suggestion. Metadata-only matches are MEDIUM
-    confidence and ambiguous matches remain unresolved; this function never edits canon.
+    The strongest entity match remains the primary proposal. A location is added
+    only when an exact registered location phrase appears in filename/PDF evidence
+    and resolves to one location compatible with the primary world's identity.
+    Ambiguous or unregistered locations remain unassigned; canon is never edited.
     """
     path = Path(path)
     metadata = metadata if isinstance(metadata, dict) else {}
-    stem = lore_intake_normalize(path.stem)
     evidence_sources = [
-        ("filename", stem, "HIGH"),
+        ("filename", lore_intake_normalize(path.stem), "HIGH"),
         ("pdf_title", lore_intake_normalize(metadata.get("pdf_title")), "MEDIUM"),
         ("pdf_text", lore_intake_normalize(metadata.get("text_preview")), "MEDIUM"),
     ]
-    matches_by_source = []
-    for source_name, haystack, confidence in evidence_sources:
+
+    def exact_matches(haystack, kinds=None):
+        found = []
         if not haystack:
-            continue
-        matches = []
+            return found
         for record in records or []:
+            if kinds and record.get("kind") not in kinds:
+                continue
             name = lore_intake_normalize(record.get("name"))
             if not name or len(name) < 3:
                 continue
-            # Match complete normalized phrases, never isolated short tokens.
             if name == haystack or re.search(r"(?<![a-z0-9])" + re.escape(name) + r"(?![a-z0-9])", haystack):
-                matches.append(record)
+                found.append(record)
+        return found
+
+    matches_by_source = []
+    for source_name, haystack, confidence in evidence_sources:
+        matches = exact_matches(haystack)
         if matches:
             matches_by_source.append((source_name, confidence, matches))
-            # Filename is the strongest signal. Only fall back to document metadata
-            # when the filename provides no registered-name evidence.
+            # Filename evidence remains the primary signal for the entity proposal.
             if source_name == "filename":
                 break
+
     if not matches_by_source:
         return {"kind": "unmatched", "name": "", "world": "Unassigned World",
                 "location": "Unassigned Location", "confidence": "LOW", "matched_in": [],
+                "location_evidence": [], "location_confidence": "LOW",
                 "reason": "No registered world, location, creature, or book name found in filename or readable PDF metadata"}
+
     source_name, confidence, matches = matches_by_source[0]
-    # Prefer the most specific registered entity; equal-specificity matches stay unresolved.
     priority = {"creature": 4, "location": 3, "book": 2, "world": 1}
     max_priority = max(priority.get(item.get("kind"), 0) for item in matches)
     best = [item for item in matches if priority.get(item.get("kind"), 0) == max_priority]
@@ -14325,15 +14332,63 @@ def lore_intake_classify(path, records, metadata=None):
     if len(identities) != 1:
         return {"kind": "ambiguous", "name": "", "world": "Unassigned World",
                 "location": "Unassigned Location", "confidence": "LOW", "matched_in": [source_name],
+                "location_evidence": [], "location_confidence": "LOW",
                 "reason": "Evidence matches multiple equally specific lore records"}
+
     match = best[0]
-    return {"kind": match.get("kind", "unmatched"), "name": match.get("name", ""),
-            "world": match.get("world") or "Unassigned World",
-            "location": match.get("location") or "Unassigned Location",
-            "bible": match.get("bible", ""), "confidence": confidence,
-            "matched_in": [source_name],
-            "reason": ("Exact registered lore name found in filename" if source_name == "filename"
-                       else f"Exact registered lore name found in readable PDF {source_name.replace('_', ' ')}")}
+    primary_world = str(match.get("world") or "Unassigned World").strip()
+    primary_location = str(match.get("location") or "Unassigned Location").strip()
+    result = {"kind": match.get("kind", "unmatched"), "name": match.get("name", ""),
+              "world": primary_world, "location": primary_location,
+              "bible": match.get("bible", ""), "confidence": confidence,
+              "matched_in": [source_name],
+              "location_evidence": [], "location_confidence": "LOW",
+              "location_candidates": [],
+              "reason": ("Exact registered lore name found in filename" if source_name == "filename"
+                         else f"Exact registered lore name found in readable PDF {source_name.replace('_', ' ')}")}
+
+    # Search all evidence sources for registered locations, even when the primary
+    # book/creature was matched in the filename. This enriches context without
+    # replacing the primary entity match or guessing new canon names.
+    location_hits = []
+    for location_source, haystack, location_confidence in evidence_sources:
+        for location_record in exact_matches(haystack, {"location"}):
+            hit_world = str(location_record.get("world") or "Unassigned World").strip()
+            if primary_world and primary_world != "Unassigned World" and hit_world not in {"", "Unassigned World", primary_world}:
+                continue
+            location_hits.append({
+                "name": str(location_record.get("name") or "").strip(),
+                "world": hit_world,
+                "location": str(location_record.get("location") or location_record.get("name") or "").strip(),
+                "source": location_source,
+                "confidence": location_confidence,
+            })
+
+    unique_locations = {}
+    for hit in location_hits:
+        key = (lore_intake_normalize(hit["name"]), lore_intake_normalize(hit["world"]),
+               lore_intake_normalize(hit["location"]))
+        unique_locations.setdefault(key, hit)
+
+    if len(unique_locations) == 1:
+        location_hit = next(iter(unique_locations.values()))
+        result["location"] = location_hit["location"] or location_hit["name"] or "Unassigned Location"
+        result["location_evidence"] = [location_hit["source"]]
+        result["location_confidence"] = location_hit["confidence"]
+        result["location_reason"] = "Exact registered location phrase found in file evidence"
+    elif len(unique_locations) > 1:
+        result["location_candidates"] = sorted({hit["name"] for hit in unique_locations.values() if hit["name"]})
+        result["location_reason"] = "Multiple registered locations appear in the evidence; location left unassigned"
+        if primary_location in {"", "Unassigned Location"}:
+            result["location"] = "Unassigned Location"
+    elif primary_location not in {"", "Unassigned Location"}:
+        result["location_evidence"] = list(result["matched_in"])
+        result["location_confidence"] = confidence
+        result["location_reason"] = "Location inherited from the matched registered lore record"
+    else:
+        result["location_reason"] = "No exact registered location phrase found; location remains unassigned"
+
+    return result
 
 def lore_intake_destination(review_root, source, classification):
     """Return a review-only destination; never returns a canon folder."""
