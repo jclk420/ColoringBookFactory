@@ -443,6 +443,47 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(match["confidence"], "LOW")
         self.assertEqual(match["matched_in"], ["pdf_title"])
 
+    def test_pending_lore_intake_refresh_is_menu_connected_and_review_safe(self):
+        node = self.functions.get("lore_intake_refresh_pending", [None])[0]
+        self.assertIsNotNone(node, "Pending intake refresh function must exist")
+        segment = ast.get_source_segment(self.source, node) or ""
+        for token in ("STAGED_FOR_REVIEW", "classification_refresh_history",
+                      "lore_intake_collect_records", "lore_intake_classify",
+                      "lore_intake_destination", "shutil.move", "save_json"):
+            with self.subTest(token=token):
+                self.assertIn(token, segment)
+        self.assertIn('print("5. Refresh pending classifications against current lore")', self.source)
+        menu = self.functions["lore_intake_menu"][0]
+        menu_segment = ast.get_source_segment(self.source, menu) or ""
+        self.assertIn('elif choice == "5":', menu_segment)
+        self.assertIn("lore_intake_refresh_pending()", menu_segment)
+        self.assertIn('item.get("status", "")).upper() != "STAGED_FOR_REVIEW"', segment)
+        self.assertNotIn("lore_intake_approved_registry_add", segment)
+        self.assertNotIn("save_series_bible", segment)
+
+    def test_registered_location_in_pdf_title_is_classified_as_location_context(self):
+        normalize = self.functions["lore_intake_normalize"][0]
+        classify = self.functions["lore_intake_classify"][0]
+        module = ast.Module(body=[normalize, classify], type_ignores=[])
+        namespace = {"Path": pathlib.Path, "re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        records = [
+            {"kind": "book", "name": "Nightmare Cryptids", "world": "Nightmare World",
+             "location": "Unassigned Location", "bible": "Nightmare Series"},
+            {"kind": "location", "name": "Hollow Stitch Nursery", "world": "Nightmare World",
+             "location": "Hollow Stitch Nursery", "bible": "Nightmare Series"},
+        ]
+        result = namespace["lore_intake_classify"](
+            pathlib.Path("cOPYCryptidsInterior.pdf"), records,
+            {"pdf_title": "Nightmare Cryptids: A Horror Coloring Adventure - Hollow Stitch Nursery Archive",
+             "text_preview": ""},
+        )
+        self.assertEqual(result["kind"], "book")
+        self.assertEqual(result["name"], "Nightmare Cryptids")
+        self.assertEqual(result["world"], "Nightmare World")
+        self.assertEqual(result["location"], "Hollow Stitch Nursery")
+        self.assertEqual(result["location_evidence"], ["pdf_title"])
+
     def test_lore_intake_uses_review_staging_and_is_menu_connected(self):
         for token in ('INTAKE_DIR = FACTORY / "INTAKE"', "INTAKE_MANIFEST_FILENAME",
                       "STAGED_FOR_REVIEW", "lore_intake_collect_records",

@@ -14324,7 +14324,7 @@ def lore_intake_classify(path, records, metadata=None):
                 "reason": "No registered world, location, creature, or book name found in filename or readable PDF metadata"}
 
     source_name, confidence, matches = matches_by_source[0]
-    priority = {"creature": 4, "location": 3, "book": 2, "world": 1}
+    priority = {"book": 4, "creature": 3, "location": 2, "world": 1}
     max_priority = max(priority.get(item.get("kind"), 0) for item in matches)
     best = [item for item in matches if priority.get(item.get("kind"), 0) == max_priority]
     identities = {(lore_intake_normalize(x.get("name")), lore_intake_normalize(x.get("world")),
@@ -14793,6 +14793,81 @@ def lore_intake_run(files=None):
             "batch_report": str(batch_root / "INTAKE_BATCH.json")}
 
 
+def lore_intake_refresh_pending():
+    """Reclassify pending intake records against current lore; preserve review decisions and canon."""
+    manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
+    if not manifest_path.exists():
+        print("No intake manifest exists yet. Run Lore Intake first.")
+        return {"refreshed": 0, "changed": 0, "errors": 0}
+    try:
+        manifest = load_json(manifest_path)
+    except Exception as error:
+        print(f"Cannot read intake manifest: {error}")
+        return {"refreshed": 0, "changed": 0, "errors": 1}
+    records = lore_intake_collect_records()
+    refreshed = changed = errors = 0
+    for batch in manifest.get("batches", []) if isinstance(manifest, dict) else []:
+        record_value = batch.get("record") if isinstance(batch, dict) else None
+        if not record_value:
+            continue
+        report_path = Path(record_value)
+        if not report_path.is_absolute():
+            report_path = INTAKE_DIR / report_path
+        try:
+            report = load_json(report_path)
+        except Exception as error:
+            print(f"Skipped unreadable batch report {report_path}: {error}")
+            errors += 1
+            continue
+        report_changed = False
+        for item in report.get("items", []) if isinstance(report, dict) else []:
+            if not isinstance(item, dict) or str(item.get("status", "")).upper() != "STAGED_FOR_REVIEW":
+                continue
+            old = item.get("classification") if isinstance(item.get("classification"), dict) else {}
+            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            source_value = item.get("source") or item.get("staged_path")
+            if not source_value:
+                errors += 1
+                continue
+            source = Path(source_value)
+            staged_value = item.get("staged_path")
+            staged = Path(staged_value) if staged_value else None
+            evidence_path = source if source.is_file() else (staged if staged and staged.is_file() else source)
+            try:
+                new = lore_intake_classify(evidence_path, records, metadata)
+                identity_fields = ("kind", "name", "world", "location", "matched_in",
+                                   "location_evidence", "location_candidates")
+                did_change = any(old.get(key) != new.get(key) for key in identity_fields)
+                if did_change:
+                    item.setdefault("classification_refresh_history", []).append({
+                        "refreshed_at": datetime.now().isoformat(timespec="seconds"),
+                        "previous": old,
+                        "updated": new,
+                    })
+                    item["classification"] = new
+                    changed += 1
+                    report_changed = True
+                    if staged and staged.is_file():
+                        destination = lore_intake_destination(INTAKE_DIR / "Review", staged, new)
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        if destination.resolve() != staged.resolve():
+                            if destination.exists():
+                                destination = destination.with_name(
+                                    f"{destination.stem}_{str(item.get('sha256', ''))[:8]}{destination.suffix}")
+                            if destination.resolve() != staged.resolve():
+                                shutil.move(str(staged), str(destination))
+                                item["staged_path"] = str(destination)
+                refreshed += 1
+            except Exception as error:
+                print(f"Could not refresh {Path(str(source_value)).name}: {error}")
+                errors += 1
+        if report_changed:
+            save_json(report_path, report)
+    print(f"\nPending intake refresh complete: {refreshed} checked, {changed} classification(s) changed, {errors} error(s).")
+    print("Only STAGED_FOR_REVIEW records were refreshed. Approved/rejected records, original source files, and canon were not changed.")
+    return {"refreshed": refreshed, "changed": changed, "errors": errors}
+
+
 def lore_intake_review_dashboard():
     """Read-only summary of staged intake records; never changes manifests or canon."""
     manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
@@ -14885,6 +14960,7 @@ def lore_intake_menu():
     print("2. Review / correct / approve staged files")
     print("3. Show approved intake registry")
     print("4. Lore Intake Review Dashboard (read-only)")
+    print("5. Refresh pending classifications against current lore")
     choice = input("Choose: ").strip()
     if choice == "1":
         lore_intake_run()
@@ -14892,6 +14968,8 @@ def lore_intake_menu():
         lore_intake_review_pending()
     elif choice == "4":
         lore_intake_review_dashboard()
+    elif choice == "5":
+        lore_intake_refresh_pending()
     elif choice == "3":
         registry_path = INTAKE_DIR / "APPROVED_LORE.json"
         if registry_path.exists():
