@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "24.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "25.0"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -195,7 +195,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "24.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "25.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -408,6 +408,41 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(match["kind"], "ambiguous")
         self.assertEqual(match["confidence"], "LOW")
 
+
+    def test_v25_lore_intake_uses_pdf_metadata_only_when_filename_has_no_match(self):
+        names = ("lore_intake_normalize", "lore_intake_classify")
+        namespace = {"re": re, "Path": pathlib.Path}
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        records = [
+            {"kind": "creature", "name": "Hollow Stag", "world": "Nightmare World",
+             "location": "Hollow Stitch Nursery", "bible": "Nightmare Series"}
+        ]
+        match = namespace["lore_intake_classify"](
+            pathlib.Path("scan_004.pdf"), records,
+            {"pdf_title": "Field Notes", "text_preview": "Recovered record: Hollow Stag was found."})
+        self.assertEqual(match["kind"], "creature")
+        self.assertEqual(match["name"], "Hollow Stag")
+        self.assertEqual(match["confidence"], "MEDIUM")
+        self.assertEqual(match["matched_in"], ["pdf_text"])
+        self.assertIn("readable PDF", match["reason"])
+
+    def test_v25_lore_intake_keeps_metadata_ambiguity_unresolved(self):
+        names = ("lore_intake_normalize", "lore_intake_classify")
+        namespace = {"re": re, "Path": pathlib.Path}
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        records = [
+            {"kind": "creature", "name": "Hollow Stag", "world": "World A", "location": "Nursery"},
+            {"kind": "creature", "name": "Hollow Stag", "world": "World B", "location": "Forest"},
+        ]
+        match = namespace["lore_intake_classify"](
+            pathlib.Path("scan_004.pdf"), records,
+            {"pdf_title": "Hollow Stag", "text_preview": ""})
+        self.assertEqual(match["kind"], "ambiguous")
+        self.assertEqual(match["confidence"], "LOW")
+        self.assertEqual(match["matched_in"], ["pdf_title"])
+
     def test_lore_intake_uses_review_staging_and_is_menu_connected(self):
         for token in ('INTAKE_DIR = FACTORY / "INTAKE"', "INTAKE_MANIFEST_FILENAME",
                       "STAGED_FOR_REVIEW", "lore_intake_collect_records",
@@ -532,7 +567,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "24.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "25.0"', self.source)
         self.assertIn('elif c=="20": v21_canon_tools_menu()', self.source)
 
     def test_v21_import_preview_is_read_only_and_blocks_unsupported_shapes(self):
@@ -568,7 +603,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "24.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "25.0"', self.source)
         self.assertIn('elif c=="21": v22_platform_listing_menu()', self.source)
         self.assertIn('"LISTING_READINESS.json"', self.source)
         self.assertIn('"published": False', self.source)
@@ -591,7 +626,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "24.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "25.0"', self.source)
         self.assertIn('elif c=="22": v23_reliability_toolkit_menu()', self.source)
         self.assertIn('"master_rebuilt": False', self.source)
         self.assertIn('"production_projects_modified": False', self.source)
