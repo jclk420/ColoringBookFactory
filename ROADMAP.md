@@ -4,6 +4,15 @@ This roadmap separates shipped work from future candidates. Planned items are no
 
 ## Implemented on the current upgrade branch
 
+### v24.0 — Preview-First Lore Repair & Reconciliation
+- Separates book attachment from repair: Nightmare Series reconciliation no longer opens the manual selector automatically or mistakes a cancelled/empty selection for a repair failure.
+- Adds a read-only repair preview for each registered book, listing missing metadata fields, existing-value conflicts, and missing/unreadable project folders.
+- Requires typing `REPAIR` before reconciliation writes; cancellation performs no repair writes.
+- Proposes filling only missing known fields; conflicting series names/IDs, book numbers, and world identity values remain untouched and are reported for review.
+- Saves the preview and continuity findings in the repair report; production PDFs and artwork are not rebuilt or modified.
+- Adds regression tests for read-only preview behavior, conflict preservation, explicit confirmation, and separation of attachment from repair.
+
+
 ### v23.0 — Factory Reliability & Safe Migration Toolkit
 - Adds a runtime capability report for optional image/PDF engines and drag-and-drop support without installing dependencies.
 - Verifies enabled platform package manifests for missing files, SHA-256 mismatches, unsafe manifest paths, and unlisted files; writes a diagnostic report without changing package contents.
