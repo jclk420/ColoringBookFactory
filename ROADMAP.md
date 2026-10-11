@@ -4,6 +4,13 @@ This roadmap separates shipped work from future candidates. Planned items are no
 
 ## Implemented on the current upgrade branch
 
+### v25.0 — Evidence-Aware Lore Intake
+- Uses exact registered-name matches in readable PDF titles and extracted text when filenames do not identify a known lore entity.
+- Records which evidence source produced each proposal and marks metadata-only suggestions as MEDIUM confidence; filename matches remain HIGH confidence.
+- Leaves ambiguous metadata matches unresolved instead of guessing between worlds or locations.
+- Inspects document metadata before classification and keeps the existing staged-copy workflow, duplicate checks, and explicit approval gate.
+- Preserves source files and Series Bible/world canon; adds regression tests for metadata-assisted matching and ambiguity safety.
+
 ### v24.0 — Preview-First Lore Repair & Reconciliation
 - Separates book attachment from repair: Nightmare Series reconciliation no longer opens the manual selector automatically or mistakes a cancelled/empty selection for a repair failure.
 - Adds a read-only repair preview for each registered book, listing missing metadata fields, existing-value conflicts, and missing/unreadable project folders.
