@@ -15722,7 +15722,7 @@ def v23_verify_package_root(root):
     checked = 0
     for raw_name in manifest.get("files", []):
         name = str(raw_name)
-        if not name or Path(name).name != name or name in {".", ".."}:
+        if not name or Path(name).name != name or "/" in name or "\\" in name or name in {".", ".."}:
             errors.append(f"Unsafe manifest path rejected: {name!r}")
             continue
         expected.add(name)
@@ -15938,6 +15938,8 @@ def v23_apply_project_migration(project, confirmation):
             "errors": [],
         }
     except Exception as error:
+        if not backup.is_file():
+            return {"status": "FAILED", "project": str(project), "errors": [str(error), "No verified backup was created; project.json was not intentionally modified."]}
         try:
             shutil.copy2(backup, config_path)
         except Exception as restore_error:
