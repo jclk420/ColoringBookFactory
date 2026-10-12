@@ -1033,6 +1033,32 @@ OBSERVED WEAKNESS: Silence
         self.assertTrue(any(row["relation"] == "reported_origin" and row["object"] == "Llanos region"
                             for row in result["relationships"]))
 
+    def test_v281_ocr_page_markers_are_not_creature_names(self):
+        node = self.functions["lore_intake_extract_text_entities"][0]
+        module = ast.Module(body=[node], type_ignores=[])
+        namespace = {"re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        sample = """[OCR PAGE 6]
+EL SILBON
+The Whistling One
+HSN. FILE HSN-CR-001
+CLASSIFICATION Cursed Revenant / Death Herald
+END FILE HSN-CR-001
+"""
+        result = namespace["lore_intake_extract_text_entities"](sample)
+        creature = next(row for row in result["entity_candidates"] if row["name"] == "EL SILBON")
+        self.assertEqual(creature["aliases"], ["The Whistling One"])
+        self.assertNotIn("[OCR PAGE 6]", [row["name"] for row in result["entity_candidates"]])
+        self.assertEqual(creature["confidence"], "LOW")
+
+    def test_v281_pdf_ocr_prefers_embedded_text_and_keeps_ocr_fallback(self):
+        node = self.functions.get("lore_ocr_extract_text")
+        self.assertIsNotNone(node)
+        source = ast.get_source_segment(self.lore_ocr_source, node[0]) or ""
+        self.assertIn("PdfReader", source)
+        self.assertIn("len(native_text) >= 80", source)
+        self.assertIn("else text", source)
+
     def test_v280_ocr_candidate_summary_reports_added_and_duplicate_counts(self):
         node = self.functions["lore_intake_ocr_pending_file"][0]
         segment = ast.get_source_segment(self.source, node) or ""
