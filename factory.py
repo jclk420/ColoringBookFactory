@@ -14368,11 +14368,6 @@ def lore_intake_extract_text_entities(text):
     # HSN archive format: creature name + epithet precede "H.S.N. FILE",
     # followed by a record ID and labeled metadata. OCR often confuses O with 0.
     archive_id_pattern = re.compile(r"HSN[- ]?CR[- ]?([0-9O]{3})", re.IGNORECASE)
-    archive_field_labels = {
-        "CLASSIFICATION", "THREAT LEVEL", "ORIGIN", "DOCUMENTED ABILITY",
-        "OBSERVED WEAKNESS", "STATUS", "LEGEND", "HOLLOW STITCH RECORD",
-        "NURSERY DIRECTIVE",
-    }
     for index, line in enumerate(lines):
         id_match = archive_id_pattern.fullmatch(line)
         if not id_match:
@@ -14380,7 +14375,7 @@ def lore_intake_extract_text_entities(text):
         archive_id = "HSN-CR-" + id_match.group(1).upper().replace("O", "0")
         prior = []
         for candidate in reversed(lines[max(0, index - 8):index]):
-            candidate = candidate.strip(" \\t-•")
+            candidate = candidate.strip(" \t-•")
             if is_archive_noise(candidate):
                 continue
             if re.fullmatch(r"[A-Z0-9 .’'()-]{3,100}", candidate) or len(candidate) >= 3:
@@ -14416,15 +14411,15 @@ def lore_intake_extract_text_entities(text):
             if archive_id_pattern.fullmatch(field_line):
                 break
             label_match = re.match(
-                r"^(CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)(?:\\s*[:\\-]\\s*(.*))?$",
+                r"^(CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)(?:\s*[:\-]\s*(.*))?$",
                 field_line, re.IGNORECASE)
             if label_match:
                 label = label_match.group(1).upper()
-                value = (label_match.group(2) or "").strip(" \\t:;,.|")
+                value = (label_match.group(2) or "").strip(" \t:;,.|")
                 if not value and field_index + 1 < field_limit:
                     next_line = lines[field_index + 1]
                     if not is_archive_noise(next_line) and not re.match(
-                            r"^(?:CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)\\b",
+                            r"^(?:CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)\b",
                             next_line, re.IGNORECASE):
                         value = next_line
                         field_index += 1
@@ -14437,7 +14432,7 @@ def lore_intake_extract_text_entities(text):
         if archive_fields:
             creature_row["archive_fields"] = archive_fields
 
-        return result
+    return result
 
 def lore_intake_review_evidence(path, records, metadata=None):
     """Collect exact registered mentions and flag review conflicts without changing canon."""
