@@ -70,7 +70,7 @@ class ReleasePreflightRuntimeTests(unittest.TestCase):
             empty_file.write_bytes(b"")
             blocked = preflight(project)
             self.assertFalse(blocked["ready"])
-            self.assertTrue(any("ZERO_BYTE_FILE:PLATFORMS/KDP/empty.txt" in item["detail"]
+            self.assertTrue(any("ZERO_BYTE_FILE:PLATFORMS/KDP/empty.txt" in item["detail"].replace("\\\\", "/")
                                 for item in blocked["blockers"]))
 
             master.unlink()
