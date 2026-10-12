@@ -94,6 +94,7 @@ def lore_ocr_extract_text(
     page_limit: int = DEFAULT_PAGE_LIMIT,
     dpi: int = DEFAULT_DPI,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    ocr_start_page: int = 1,
 ) -> dict[str, Any]:
     """Extract review-only text, preferring embedded PDF text and OCRing only gaps.
 
@@ -124,6 +125,14 @@ def lore_ocr_extract_text(
         result["status"] = "ERROR"
         result["warnings"].append(f"page_limit must be an integer from 1 to {MAX_PAGE_LIMIT}.")
         return result
+    if not isinstance(ocr_start_page, int) or isinstance(ocr_start_page, bool) or ocr_start_page < 1:
+        result["status"] = "ERROR"
+        result["warnings"].append("ocr_start_page must be a positive 1-based page number.")
+        return result
+    if suffix != ".pdf" and ocr_start_page != 1:
+        result["status"] = "ERROR"
+        result["warnings"].append("ocr_start_page can be changed only for PDF sources.")
+        return result
     if not isinstance(dpi, int) or isinstance(dpi, bool) or not 72 <= dpi <= MAX_DPI:
         result["status"] = "ERROR"
         result["warnings"].append(f"dpi must be an integer from 72 to {MAX_DPI}.")
@@ -142,19 +151,24 @@ def lore_ocr_extract_text(
         native_texts, total_pages, native_warning = _extract_native_pdf_pages(path)
         if native_warning:
             result["warnings"].append(native_warning)
-        selected_count = min(total_pages, page_limit) if total_pages is not None else page_limit
+        ocr_start_index = ocr_start_page - 1
+        ocr_end_index = ocr_start_index + page_limit
+        selected_count = (
+            max(0, min(total_pages, ocr_end_index) - ocr_start_index)
+            if total_pages is not None else page_limit
+        )
         skipped_ocr_pages = 0
         for index, native_text in enumerate(native_texts):
             if len(native_text) >= 80:
                 # Embedded text is cheap to extract, so keep it from every page;
-                # the OCR page limit applies only to expensive rendered fallback.
+                # only OCR fallback is restricted to the selected batch range.
                 texts_by_page[index] = ("PDF TEXT", native_text)
-            elif index < page_limit:
+            elif ocr_start_index <= index < ocr_end_index:
                 fallback_indices.append(index)
             else:
                 skipped_ocr_pages += 1
         if not native_texts:
-            fallback_indices = list(range(min(selected_count, page_limit)))
+            fallback_indices = list(range(ocr_start_index, ocr_start_index + selected_count))
         if fallback_indices and not tesseract:
             result["warnings"].append(
                 f"Tesseract OCR was not found; {len(fallback_indices)} PDF page(s) without substantial embedded text could not be OCRed."
@@ -201,9 +215,13 @@ def lore_ocr_extract_text(
         elif any(label == "PDF TEXT" for label, _ in texts_by_page.values()):
             result["method"] = "pdf_text"
         if skipped_ocr_pages:
+            batch_end_page = (
+                min(total_pages, ocr_start_page + page_limit - 1)
+                if total_pages is not None else ocr_start_page + page_limit - 1
+            )
             result["warnings"].append(
-                f"OCR page limit reached: {skipped_ocr_pages} page(s) beyond the first {page_limit} PDF pages "
-                "had insufficient embedded text and were not OCRed."
+                f"OCR batch pages {ocr_start_page}-{batch_end_page}: {skipped_ocr_pages} page(s) outside "
+                "this batch had insufficient embedded text and were not OCRed. Run another batch to cover them."
             )
     else:
         if not tesseract:
@@ -308,11 +326,14 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="Extract low-confidence OCR text for lore review.")
     parser.add_argument("source", help="PDF or image file to OCR")
-    parser.add_argument("--pages", type=int, default=DEFAULT_PAGE_LIMIT, help="Maximum PDF pages eligible for OCR fallback (1-25); embedded text is extracted from all pages")
+    parser.add_argument("--pages", type=int, default=DEFAULT_PAGE_LIMIT, help="Maximum PDF pages eligible for OCR fallback per batch (1-25); embedded text is extracted from all pages")
+    parser.add_argument("--ocr-start", type=int, default=1, help="First 1-based PDF page eligible for OCR fallback; use with --pages to process later batches")
     parser.add_argument("--dpi", type=int, default=DEFAULT_DPI, help="PDF render DPI (72-220)")
     parser.add_argument("--output", help="Optional text output path; defaults to stdout JSON")
     args = parser.parse_args(argv)
-    result = lore_ocr_extract_text(args.source, page_limit=args.pages, dpi=args.dpi)
+    result = lore_ocr_extract_text(
+        args.source, page_limit=args.pages, dpi=args.dpi, ocr_start_page=args.ocr_start
+    )
     if args.output:
         output_path = Path(args.output)
         output_path.write_text(result["text"], encoding="utf-8")
