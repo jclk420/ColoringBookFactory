@@ -15326,7 +15326,8 @@ def lore_intake_build_evidence_graph(records):
             if not isinstance(candidate, dict):
                 continue
             add_entity(candidate.get("kind", "entity"), candidate.get("name"),
-                       record.get("world"), record.get("location"), source_file,
+                       candidate.get("world") or record.get("world"),
+                       candidate.get("location") or record.get("location"), source_file,
                        candidate.get("confidence", "LOW"),
                        candidate.get("evidence") or candidate.get("source") or "extracted text",
                        candidate.get("archive_id"), candidate.get("archive_fields"),
