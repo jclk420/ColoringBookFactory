@@ -99,6 +99,22 @@ def lore_ocr_extract_text(
         result["warnings"].append(str(exc))
         return result
 
+    # Prefer a PDF's embedded text when available; it is often more accurate
+    # than OCR for books with selectable text. OCR remains the fallback for scanned pages.
+    native_page_texts: list[str] = []
+    if path.suffix.lower() == ".pdf":
+        try:
+            from PyPDF2 import PdfReader
+            reader = PdfReader(str(path))
+            native_page_texts = [
+                str(page.extract_text() or "").strip()
+                for page in list(reader.pages)[:len(page_images)]
+            ]
+            if any(len(value) >= 80 for value in native_page_texts):
+                result["method"] = "pdf_text_with_tesseract_fallback"
+        except Exception:
+            native_page_texts = []
+
     texts: list[str] = []
     for page_number, image in enumerate(page_images, start=1):
         try:
@@ -120,8 +136,17 @@ def lore_ocr_extract_text(
                 )
                 continue
             text = completed.stdout.strip()
-            if text:
-                texts.append(f"[OCR PAGE {page_number}]\n{text}")
+            native_text = (
+                native_page_texts[page_number - 1]
+                if page_number - 1 < len(native_page_texts) else ""
+            )
+            # Keep the page marker for traceability, but prefer higher-quality
+            # embedded text when it is substantial.
+            use_native_text = len(native_text) >= 80
+            selected_text = native_text if use_native_text else text
+            if selected_text:
+                source_label = "PDF TEXT" if use_native_text else "OCR"
+                texts.append(f"[{source_label} PAGE {page_number}]\n{selected_text}")
             result["pages_processed"] += 1
         except subprocess.TimeoutExpired:
             result["warnings"].append(f"OCR timed out on page {page_number}.")
