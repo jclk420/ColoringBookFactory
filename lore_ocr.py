@@ -160,11 +160,15 @@ def lore_ocr_extract_text(
                 rendered, rendered_total = _render_pdf_pages_by_index(path, fallback_indices, dpi)
                 if total_pages is None:
                     total_pages = rendered_total
-                for index in fallback_indices:
-                    image = rendered.get(index)
-                    if image is None:
-                        result["warnings"].append(f"Could not render PDF page {index + 1} for OCR.")
-                        continue
+            except (ImportError, OSError, ValueError, RuntimeError) as exc:
+                rendered = {}
+                result["warnings"].append(str(exc))
+            for index in fallback_indices:
+                image = rendered.get(index)
+                if image is None:
+                    result["warnings"].append(f"Could not render PDF page {index + 1} for OCR.")
+                    continue
+                try:
                     with tempfile.TemporaryDirectory(prefix="cbf_lore_ocr_") as tmp:
                         image_path = Path(tmp) / "page.png"
                         image.save(image_path, format="PNG")
@@ -184,10 +188,10 @@ def lore_ocr_extract_text(
                         continue
                     if completed.stdout.strip():
                         texts_by_page[index] = ("OCR", completed.stdout.strip())
-            except subprocess.TimeoutExpired:
-                result["warnings"].append("OCR timed out while processing a PDF page.")
-            except (ImportError, OSError, ValueError, RuntimeError) as exc:
-                result["warnings"].append(str(exc))
+                except subprocess.TimeoutExpired:
+                    result["warnings"].append(f"OCR timed out on page {index + 1}.")
+                except OSError as exc:
+                    result["warnings"].append(f"OCR could not process page {index + 1}: {exc}")
         if any(label == "OCR" for label, _ in texts_by_page.values()):
             result["method"] = "pdf_text_with_tesseract_fallback" if any(label == "PDF TEXT" for label, _ in texts_by_page.values()) else "tesseract_ocr"
         elif any(label == "PDF TEXT" for label, _ in texts_by_page.values()):
