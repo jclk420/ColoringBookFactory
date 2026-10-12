@@ -65,6 +65,57 @@ class ListingQualityGateTests(unittest.TestCase):
         for platform, segment in branches.items():
             self.assertIn('"author": author', segment, f"{platform} must pass the author to the quality gate")
 
+    def test_platform_builder_status_matches_quality_gate(self):
+        source = FACTORY_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(FACTORY_PATH))
+        nodes = {
+            node.name: node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in {
+                "v29_listing_quality_gate", "v22_build_platform_listing"
+            }
+        }
+        self.assertEqual(set(nodes), {"v29_listing_quality_gate", "v22_build_platform_listing"})
+        import datetime
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp:
+            master = pathlib.Path(temp) / "MASTER.pdf"
+            master.write_bytes(b"test placeholder")
+            namespace = {
+                "Path": pathlib.Path,
+                "datetime": datetime.datetime,
+                "FACTORY_VERSION": "30.0",
+                "GUMROAD_DEFAULT_LICENSE": "Personal use only.",
+                "_gl_clean_list": lambda value: list(value or []),
+                "find_master_pdf": lambda project: master,
+                "pdf_page_count": lambda path: 64,
+                "inspect_pdf": lambda path: {"sizes": [{"width": 8.5, "height": 11}]},
+                "_gl_num": lambda value: str(value),
+                "_platform_cover": lambda project: None,
+                "load_platform_profiles": lambda: {"Payhip": {"enabled": True}},
+            }
+            helper_module = ast.Module(body=[nodes["v29_listing_quality_gate"]], type_ignores=[])
+            exec(compile(helper_module, "<listing-gate>", "exec"), namespace)
+            builder_module = ast.Module(body=[nodes["v22_build_platform_listing"]], type_ignores=[])
+            exec(compile(builder_module, "<listing-builder>", "exec"), namespace)
+            project = pathlib.Path(temp)
+            incomplete = namespace["v22_build_platform_listing"](
+                project, "Payhip",
+                {"title": "Test Book", "author": "J.A.C.",
+                 "description": "A verified description.", "keywords": [],
+                 "license_terms": "Personal use only."},
+            )
+            self.assertEqual(incomplete["quality_gate"]["status"], "NEEDS_INPUT")
+            self.assertEqual(incomplete["status"], "REVIEW")
+            complete = namespace["v22_build_platform_listing"](
+                project, "Payhip",
+                {"title": "Test Book", "author": "J.A.C.",
+                 "description": "A verified description.", "keywords": ["horror"],
+                 "license_terms": "Personal use only."},
+            )
+            self.assertEqual(complete["quality_gate"]["status"], "READY_FOR_REVIEW")
+            self.assertEqual(complete["status"], "READY_FOR_REVIEW")
+
     def test_missing_master_blocks_release_without_guessing(self):
         result = self.gate(
             "Digital PDF",

@@ -16449,6 +16449,15 @@ def v22_build_platform_listing(project, platform_name, settings=None):
         status = "BLOCKED_MISSING_MASTER"
     elif not author or not raw_description:
         status = "REVIEW"
+    quality_gate = v29_listing_quality_gate(
+        platform_name,
+        fields,
+        master_exists=bool(master and Path(master).exists()),
+        cover_exists=bool(cover),
+        profile_enabled=bool(profile_enabled),
+    )
+    if status != "BLOCKED_MISSING_MASTER" and quality_gate["status"] == "NEEDS_INPUT":
+        status = "REVIEW"
     return {
         "schema_version": 1,
         "factory_version": FACTORY_VERSION,
@@ -16463,13 +16472,7 @@ def v22_build_platform_listing(project, platform_name, settings=None):
         "status": status,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "fields": fields,
-        "quality_gate": v29_listing_quality_gate(
-            platform_name,
-            fields,
-            master_exists=bool(master and Path(master).exists()),
-            cover_exists=bool(cover),
-            profile_enabled=bool(profile_enabled),
-        ),
+        "quality_gate": quality_gate,
         "assets": assets,
         "warnings": list(dict.fromkeys(warnings)),
         "published": False,
