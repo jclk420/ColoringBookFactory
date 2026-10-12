@@ -14376,8 +14376,17 @@ def lore_intake_extract_text_entities(text):
         if not id_match:
             continue
         archive_id = "HSN-CR-" + id_match.group(1).upper().replace("O", "0")
+        # Legacy files put "H.S.N. FILE" on its own line and the ID below it.
+        # OCR files may put the marker and ID together. In either case, creature
+        # headings must be collected from before the file marker, not before the ID.
+        heading_end = index
+        if not re.search(r"H\.?\s*S\.?\s*N\.?\s*FILE", line, re.IGNORECASE):
+            for marker_index in range(index - 1, max(-1, index - 4), -1):
+                if re.match(r"^H\.?\s*S\.?\s*N\.?\s*FILE\b", lines[marker_index], re.IGNORECASE):
+                    heading_end = marker_index
+                    break
         prior = []
-        for candidate in reversed(lines[max(0, index - 8):index]):
+        for candidate in reversed(lines[max(0, heading_end - 8):heading_end]):
             candidate = candidate.strip(" \t-•")
             if re.match(r"^(?:H\.?\s*S\.?\s*N\.?\s*FILE|END\s+FILE)\b", candidate, re.IGNORECASE):
                 break
