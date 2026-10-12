@@ -766,9 +766,14 @@ class FactoryIntegrityTests(unittest.TestCase):
     def test_v26_lore_intake_dashboard_summarizes_without_writing(self):
         node = self.functions.get("lore_intake_review_dashboard", [None])[0]
         self.assertIsNotNone(node, "v26 read-only lore intake dashboard must exist")
+        helper = self.functions["lore_intake_build_evidence_graph"][0]
         namespace = {"Path": pathlib.Path, "INTAKE_DIR": pathlib.Path("."),
-                     "INTAKE_MANIFEST_FILENAME": "manifest.json",
+                     "INTAKE_MANIFEST_FILENAME": "manifest.json", "re": re,
+                     "lore_intake_build_evidence_graph": None,
                      "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8"))}
+        helper_namespace = {"re": re}
+        exec(compile(ast.Module(body=[helper], type_ignores=[]), "<v30-evidence-graph>", "exec"), helper_namespace)
+        namespace["lore_intake_build_evidence_graph"] = helper_namespace["lore_intake_build_evidence_graph"]
         exec(compile(ast.Module(body=[node], type_ignores=[]), "<v26-dashboard-test>", "exec"), namespace)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
@@ -1158,7 +1163,7 @@ END FILE HSN-CR-003
         self.assertFalse(result["canon_written"])
         self.assertEqual(result["source_record_count"], 2)
         hollow_rows = [row for row in result["entities"] if row["name"] == "The Hollow"]
-        self.assertEqual(len(hollow_rows), 2)
+        self.assertEqual(len(hollow_rows), 3)
         combined = next(row for row in hollow_rows if row["archive_id"] == "HSN-CR-001")
         self.assertEqual(combined["source_files"], ["cryptids-a.pdf"])
         self.assertEqual(combined["aliases"], ["The Stitcher"])
