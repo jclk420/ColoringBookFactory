@@ -34,7 +34,7 @@ class ListingQualityGateTests(unittest.TestCase):
             "tags": ["horror", "coloring"],
             "author": "J.A.C.",
             "license_terms": "Personal use only.",
-            "price": "7.99",
+            "price": 7.99,
         }
         result = self.gate(
             "Gumroad", fields, master_exists=True, cover_exists=True, profile_enabled=True
