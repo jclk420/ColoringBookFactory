@@ -1,6 +1,9 @@
 """Regression tests for the v29 platform listing quality gate."""
 import ast
+import datetime as datetime_module
+import json
 import pathlib
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -115,6 +118,92 @@ class ListingQualityGateTests(unittest.TestCase):
             )
             self.assertEqual(complete["quality_gate"]["status"], "READY_FOR_REVIEW")
             self.assertEqual(complete["status"], "READY_FOR_REVIEW")
+
+    def test_all_platform_listing_builder_writes_consistent_drafts_and_readiness_report(self):
+        source = FACTORY_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(FACTORY_PATH))
+        wanted = {
+            "v29_listing_quality_gate",
+            "v22_listing_text",
+            "v22_build_platform_listing",
+            "v22_build_all_platform_listings",
+        }
+        nodes = [node for node in tree.body
+                 if isinstance(node, ast.FunctionDef) and node.name in wanted]
+        self.assertEqual({node.name for node in nodes}, wanted)
+
+        class FixedDateTime:
+            @staticmethod
+            def now():
+                return datetime_module.datetime(2026, 10, 12, 12, 0, 0)
+
+        def save_json(path, value):
+            path = pathlib.Path(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(value, indent=2), encoding="utf-8")
+
+        with tempfile.TemporaryDirectory() as temp:
+            project = pathlib.Path(temp) / "Nightmare Cryptids"
+            project.mkdir()
+            master = project / "MASTER.pdf"
+            master.write_bytes(b"verified master placeholder")
+            profiles = {
+                "KDP": {"enabled": True, "output_dir": "KDP"},
+                "Gumroad": {"enabled": True, "output_dir": "GUMROAD"},
+                "Payhip": {"enabled": True, "output_dir": "PAYHIP"},
+                "Digital PDF": {"enabled": True, "output_dir": "DIGITAL_PDF"},
+            }
+            settings = {
+                "title": "Nightmare Cryptids", "author": "J.A.C.",
+                "description": "A horror coloring adventure.", "keywords": ["horror", "coloring"],
+                "license_terms": "Personal use only.", "subtitle": "A Horror Coloring Adventure",
+            }
+            namespace = {
+                "Path": pathlib.Path,
+                "datetime": FixedDateTime,
+                "FACTORY_VERSION": "30.0",
+                "MARKETING_DIR_NAME": "MARKETING",
+                "GUMROAD_DEFAULT_LICENSE": "Personal use only.",
+                "_gl_clean_list": lambda value: list(value or []),
+                "_gl_num": lambda value: str(value),
+                "_gl_first_sentences": lambda value, limit: str(value)[:limit],
+                "_platform_cover": lambda project: None,
+                "_platform_sanitized_filename": lambda value, limit: str(value).replace(" ", "_")[:limit],
+                "find_master_pdf": lambda project: master,
+                "pdf_page_count": lambda path: 64,
+                "inspect_pdf": lambda path: {"sizes": [{"width": 8.5, "height": 11}]},
+                "load_platform_profiles": lambda: profiles,
+                "load_project_settings_safe": lambda project: settings,
+                "gumroad_build_listing": lambda project, settings: {
+                    "name": settings["title"], "price": 799, "summary": "Horror coloring book",
+                    "description": settings["description"], "tags": settings["keywords"],
+                    "details": [("Format", "PDF")], "files": [], "warnings": [],
+                },
+                "gumroad_load_overrides": lambda project: {"content_note": "", "license": "Personal use only."},
+                "save_json": save_json,
+            }
+            exec(compile(ast.Module(body=nodes, type_ignores=[]), "<listing-batch-runtime>", "exec"), namespace)
+            report = namespace["v22_build_all_platform_listings"](project)
+
+            self.assertEqual(report["listing_count"], 4)
+            self.assertEqual(report["ready_for_review"], 4)
+            self.assertEqual(report["review"], 0)
+            self.assertEqual(report["blocked"], 0)
+            self.assertIn("not uploaded or published", report["note"].lower())
+            readiness_path = project / "MARKETING" / "LISTINGS" / "LISTING_READINESS.json"
+            self.assertTrue(readiness_path.is_file())
+            saved_report = json.loads(readiness_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved_report["listing_count"], 4)
+            for platform in ("KDP", "Gumroad", "Payhip", "Digital PDF"):
+                folder = project / "MARKETING" / "LISTINGS" / platform.replace(" ", "_")
+                json_path = folder / "LISTING.json"
+                text_path = folder / "LISTING.txt"
+                self.assertTrue(json_path.is_file(), platform)
+                self.assertTrue(text_path.is_file(), platform)
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+                self.assertEqual(data["quality_gate"]["status"], "READY_FOR_REVIEW", platform)
+                self.assertFalse(data["published"], platform)
+                self.assertIn("not uploaded or published", data["note"].lower())
 
     def test_missing_master_blocks_release_without_guessing(self):
         result = self.gate(
