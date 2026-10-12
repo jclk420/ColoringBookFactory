@@ -1053,5 +1053,36 @@ OBSERVED WEAKNESS: Silence
 
 
 
+    def test_v281_ocr_inline_hsn_file_metadata_is_low_confidence_and_flags_mismatched_end_id(self):
+        node = self.functions["lore_intake_extract_text_entities"][0]
+        module = ast.Module(body=[node], type_ignores=[])
+        namespace = {"re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        sample = """EL SILBON
+The Whistling One
+HSN. FILE HSN-CR-001
+CLASSIFICATION Cursed Revenant / Death Herald
+THREAT LEVEL V EXTREME
+ORIGIN The Llanos of Venezuela and Colombia
+DOCUMENTED ABILITY Acoustic disorientation
+OBSERVED WEAKNESS Silence
+END FILE HSN-CR-003
+"""
+        result = namespace["lore_intake_extract_text_entities"](sample)
+        creature = next(row for row in result["entity_candidates"] if row["name"] == "EL SILBON")
+        self.assertEqual(creature["archive_id"], "HSN-CR-001")
+        self.assertEqual(creature["aliases"], ["The Whistling One"])
+        self.assertEqual(creature["archive_fields"]["classification"], "Cursed Revenant / Death Herald")
+        self.assertEqual(creature["archive_fields"]["threat_level"], "V EXTREME")
+        self.assertEqual(creature["archive_fields"]["origin"], "The Llanos of Venezuela and Colombia")
+        self.assertEqual(creature["archive_fields"]["documented_ability"], "Acoustic disorientation")
+        self.assertEqual(creature["archive_fields"]["observed_weakness"], "Silence")
+        self.assertTrue(any("Mismatched closing archive ID: HSN-CR-003" in warning
+                            for warning in creature.get("archive_warnings", [])))
+        self.assertEqual(creature["confidence"], "LOW")
+        self.assertIn("verify before approval", creature["note"])
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
