@@ -40,7 +40,17 @@
                 "ocr_warnings": [
                     "Page limit reached: processed 10 of 68 PDF pages."
                 ],
-                "ocr_confidence": "LOW"
+                "ocr_confidence": "LOW",
+                "ocr_candidate_summary": {
+                    "extracted_entities": 0,
+                    "extracted_relationships": 0,
+                    "new_entities_added": 0,
+                    "new_relationships_added": 0,
+                    "duplicate_entities_skipped": 0,
+                    "duplicate_relationships_skipped": 0,
+                    "archive_records": 0,
+                    "review_only": true
+                }
             },
             "staged_path": "C:\\ColoringBookFactory\\INTAKE\\Review\\Nightmare World\\Books\\Nightmare Cryptids\\cOPYCryptidsInterior.pdf",
             "batch": "20261011_070139",
