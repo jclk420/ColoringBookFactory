@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "27.6"', self.source)
+        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -195,7 +195,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "27.6"', self.source)
+        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -608,7 +608,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "27.6"', self.source)
+        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
         self.assertIn('elif c=="20": v21_canon_tools_menu()', self.source)
 
     def test_v21_import_preview_is_read_only_and_blocks_unsupported_shapes(self):
@@ -644,7 +644,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "27.6"', self.source)
+        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
         self.assertIn('elif c=="21": v22_platform_listing_menu()', self.source)
         self.assertIn('"LISTING_READINESS.json"', self.source)
         self.assertIn('"published": False', self.source)
@@ -667,7 +667,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "27.6"', self.source)
+        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
         self.assertIn('elif c=="22": v23_reliability_toolkit_menu()', self.source)
         self.assertIn('"master_rebuilt": False', self.source)
         self.assertIn('"production_projects_modified": False', self.source)
@@ -791,7 +791,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         segment = ast.get_source_segment(self.source, self.functions["lore_intake_menu"][0]) or ""
         self.assertIn('choice == "4"', segment)
         self.assertIn("lore_intake_review_dashboard()", segment)
-        self.assertIn('FACTORY_VERSION = "27.6"', self.source)
+        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
 
     def test_v27_location_context_enriches_book_without_replacing_primary_match(self):
         names = ("lore_intake_normalize", "lore_intake_classify")
@@ -954,7 +954,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('print("6. OCR a staged pending PDF/image (low-confidence review only)")', menu)
         self.assertIn('choice == "6"', menu)
         self.assertIn("lore_intake_ocr_pending_file()", menu)
-        self.assertIn('FACTORY_VERSION = "27.6"', self.source)
+        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
 
 
     def test_v276_extractor_recognizes_hsn_archive_creature_headings(self):
@@ -1003,6 +1003,54 @@ END FILE HSN-CR-002
         self.assertTrue(result["entity_candidates"])
         self.assertTrue(all(row["confidence"] == "LOW" for row in result["entity_candidates"]))
         self.assertIn("verify before approval", result["entity_candidates"][0]["note"])
+
+    def test_v280_archive_fields_and_id_are_retained_as_review_metadata(self):
+        node = self.functions["lore_intake_extract_text_entities"][0]
+        module = ast.Module(body=[node], type_ignores=[])
+        namespace = {"re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        sample = """EL SILBON
+The Whistling One
+H.S.N. FILE
+HSN-CR-00O
+CLASSIFICATION: Cursed Revenant
+THREAT LEVEL
+Severe
+ORIGIN: Llanos region
+DOCUMENTED ABILITY
+Acoustic disorientation
+OBSERVED WEAKNESS: Silence
+"""
+        result = namespace["lore_intake_extract_text_entities"](sample)
+        creature = next(row for row in result["entity_candidates"] if row["name"] == "EL SILBON")
+        self.assertEqual(creature["archive_id"], "HSN-CR-000")
+        self.assertEqual(creature["archive_fields"]["classification"], "Cursed Revenant")
+        self.assertEqual(creature["archive_fields"]["threat_level"], "Severe")
+        self.assertEqual(creature["archive_fields"]["documented_ability"], "Acoustic disorientation")
+        self.assertEqual(creature["archive_fields"]["observed_weakness"], "Silence")
+        self.assertIn("HSN-CR-00O", creature["archive_evidence_lines"])
+        self.assertEqual(creature["confidence"], "LOW")
+        self.assertTrue(any(row["relation"] == "reported_origin" and row["object"] == "Llanos region"
+                            for row in result["relationships"]))
+
+    def test_v280_ocr_candidate_summary_reports_added_and_duplicate_counts(self):
+        node = self.functions["lore_intake_ocr_pending_file"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertIn('"ocr_candidate_summary"', segment)
+        self.assertIn('"new_entities_added": len(added_entities)', segment)
+        self.assertIn('"duplicate_entities_skipped"', segment)
+        self.assertIn('f"New entity candidates added: {len(added_entities)}"', segment)
+        self.assertIn('"review_only": True', segment)
+        self.assertNotIn("write_world_bible(", segment)
+        self.assertNotIn("APPROVED_LORE.json", segment)
+
+    def test_v280_archive_id_ocr_tolerance_is_narrow_and_explicit(self):
+        node = self.functions["lore_intake_extract_text_entities"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertIn(r'HSN[- ]?CR[- ]?([0-9O]{3})', segment)
+        self.assertIn('.replace("O", "0")', segment)
+        self.assertIn('"archive_fields"', segment)
+
 
 
 if __name__ == "__main__":
