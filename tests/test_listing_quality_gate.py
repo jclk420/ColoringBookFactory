@@ -25,7 +25,7 @@ def load_gate():
 class ListingQualityGateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.gate = load_gate()
+        cls.gate = staticmethod(load_gate())
 
     def test_complete_gumroad_listing_is_ready_for_review(self):
         fields = {
