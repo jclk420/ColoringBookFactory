@@ -14409,12 +14409,18 @@ def lore_intake_extract_text_entities(text):
 
         # Keep labeled archive fields as unverified source metadata; do not promote them to canon.
         archive_fields = {}
+        archive_warnings = []
         field_index = index + 1
         field_limit = min(len(lines), index + 50)
         while field_index < field_limit:
             field_line = lines[field_index]
-            if (archive_id_pattern.search(field_line) or
-                    re.match(r"^END\s+FILE\b", field_line, re.IGNORECASE)):
+            end_match = re.match(r"^END\s+FILE\s+(HSN[- ]?CR[- ]?[0-9O]{3})", field_line, re.IGNORECASE)
+            if end_match:
+                end_id = "HSN-CR-" + re.search(r"([0-9O]{3})$", end_match.group(1), re.IGNORECASE).group(1).upper().replace("O", "0")
+                if end_id != archive_id:
+                    archive_warnings.append("Mismatched closing archive ID: " + end_id + " (expected " + archive_id + ")")
+                break
+            if archive_id_pattern.search(field_line):
                 break
             label_match = re.match(
                 r"^(CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)(?:\s*[:\-]\s*|\s+)?(.*)$",
@@ -14437,6 +14443,8 @@ def lore_intake_extract_text_entities(text):
             field_index += 1
         if archive_fields:
             creature_row["archive_fields"] = archive_fields
+        if archive_warnings:
+            creature_row["archive_warnings"] = archive_warnings
 
     return result
 
