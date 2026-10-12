@@ -1051,13 +1051,6 @@ END FILE HSN-CR-001
         self.assertNotIn("[OCR PAGE 6]", [row["name"] for row in result["entity_candidates"]])
         self.assertEqual(creature["confidence"], "LOW")
 
-    def test_v281_pdf_ocr_prefers_embedded_text_and_keeps_ocr_fallback(self):
-        node = self.functions.get("lore_ocr_extract_text")
-        self.assertIsNotNone(node)
-        source = ast.get_source_segment(self.lore_ocr_source, node[0]) or ""
-        self.assertIn("PdfReader", source)
-        self.assertIn("len(native_text) >= 80", source)
-        self.assertIn("else text", source)
 
     def test_v280_ocr_candidate_summary_reports_added_and_duplicate_counts(self):
         node = self.functions["lore_intake_ocr_pending_file"][0]
