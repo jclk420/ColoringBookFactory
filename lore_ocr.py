@@ -308,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="Extract low-confidence OCR text for lore review.")
     parser.add_argument("source", help="PDF or image file to OCR")
-    parser.add_argument("--pages", type=int, default=DEFAULT_PAGE_LIMIT, help="Maximum PDF pages (1-25)")
+    parser.add_argument("--pages", type=int, default=DEFAULT_PAGE_LIMIT, help="Maximum PDF pages eligible for OCR fallback (1-25); embedded text is extracted from all pages")
     parser.add_argument("--dpi", type=int, default=DEFAULT_DPI, help="PDF render DPI (72-220)")
     parser.add_argument("--output", help="Optional text output path; defaults to stdout JSON")
     args = parser.parse_args(argv)
