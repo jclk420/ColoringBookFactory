@@ -183,6 +183,12 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Attach normalized archive record IDs and nearby heading/evidence lines to extracted creature candidates.
 - Preserve aliases/epithets and the LOW-confidence review marker.
 
+### v29.0 — Platform Listing Quality Gate
+- Adds a structured per-platform completeness score and field-by-field checks to generated listing JSON and paste-ready text.
+- Separates missing required product facts from explicit marketplace actions such as setting price or choosing KDP categories.
+- Reports a missing master PDF as blocked, keeps disabled platform profiles visible, and never guesses prices/categories or claims upload/publication.
+- Adds actionable quality summaries to the project-wide listing readiness report and regression tests for complete, incomplete, blocked, and disabled-profile cases.
+
 ### v28.0 — Accurate OCR Review Accounting
 - Report newly added candidates separately from duplicates already present in the pending record.
 - Persist an OCR candidate summary with extracted, added, duplicate-skipped, archive-record, and review-only counts.
