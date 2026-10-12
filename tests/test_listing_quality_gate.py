@@ -189,7 +189,7 @@ class ListingQualityGateTests(unittest.TestCase):
             self.assertEqual(report["ready_for_review"], 4)
             self.assertEqual(report["review"], 0)
             self.assertEqual(report["blocked"], 0)
-            self.assertIn("not uploaded or published", report["note"].lower())
+            self.assertIn("nothing was uploaded or published", report["note"].lower())
             readiness_path = project / "MARKETING" / "LISTINGS" / "LISTING_READINESS.json"
             self.assertTrue(readiness_path.is_file())
             saved_report = json.loads(readiness_path.read_text(encoding="utf-8"))
