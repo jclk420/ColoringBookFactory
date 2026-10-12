@@ -183,6 +183,13 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Attach normalized archive record IDs and nearby heading/evidence lines to extracted creature candidates.
 - Preserve aliases/epithets and the LOW-confidence review marker.
 
+### v30.0 — Cross-Batch Lore Evidence Graph
+- Aggregates staged intake classifications, extracted entities, aliases, archive IDs, and relationships across readable intake batches into one review-only evidence graph.
+- Preserves source-file provenance and low-confidence markers while deduplicating identical evidence records.
+- Flags candidate-name collisions across kinds/worlds/locations, conflicting archive IDs, and relationship endpoints that have no matching extracted entity.
+- Adds evidence-graph counts to the existing read-only Lore Intake Review Dashboard; it does not write a new report automatically or modify source files, approved registry, Series Bible, or world canon.
+- Adds dependency-free regression tests for provenance, collisions, unresolved relationships, empty inputs, and no-canon-write guarantees.
+
 ### v29.0 — Platform Listing Quality Gate
 - Adds a structured per-platform completeness score and field-by-field checks to generated listing JSON and paste-ready text.
 - Separates missing required product facts from explicit marketplace actions such as setting price or choosing KDP categories.
