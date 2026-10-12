@@ -14329,7 +14329,7 @@ def lore_intake_extract_text_entities(text):
     def is_archive_noise(line):
         if not line or len(line) > 140:
             return True
-        if re.fullmatch(r"(?:H\.?\s*S\.?\s*N\.?\s*FILE.*|HSN[- ]?CR[- ]?[0-9O]{3}|NIGHTMARE CRYPTIDS.*|HOLLOW STITCH.*|ARCHIVE COPY.*|END FILE.*|\d{1,3}|PAGE \d+)", line, re.I):
+        if re.fullmatch(r"(?:\[?(?:OCR|PDF TEXT) PAGE \d+\]?|H\.?\s*S\.?\s*N\.?\s*FILE.*|HSN[- ]?CR[- ]?[0-9O]{3}|NIGHTMARE CRYPTIDS.*|HOLLOW STITCH.*|ARCHIVE COPY.*|END FILE.*|\d{1,3}|PAGE \d+)", line, re.I):
             return True
         if re.fullmatch(r"(?:CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)", line, re.I):
             return True
