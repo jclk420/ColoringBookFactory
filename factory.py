@@ -14413,8 +14413,30 @@ def lore_intake_extract_text_entities(text):
             aliases=[alias] if alias and alias.casefold() != canonical.casefold() else None)
         if creature_row is None:
             continue
-        creature_row["archive_id"] = archive_id
-        creature_row["archive_evidence_lines"] = prior + [line]
+        # Never silently overwrite an archive ID when OCR encounters the same
+        # creature heading more than once. Preserve every distinct ID as evidence.
+        existing_archive_id = str(creature_row.get("archive_id") or "").strip().upper()
+        if not existing_archive_id:
+            creature_row["archive_id"] = archive_id
+        elif existing_archive_id != archive_id:
+            alternatives = creature_row.setdefault("archive_id_candidates", [])
+            known_ids = {str(row.get("archive_id", "")).upper()
+                         for row in alternatives if isinstance(row, dict)}
+            known_ids.add(existing_archive_id)
+            if archive_id not in known_ids:
+                alternatives.append({
+                    "archive_id": archive_id,
+                    "evidence": " | ".join(prior + [line]),
+                    "confidence": "LOW",
+                    "review_required": True,
+                })
+            warnings = creature_row.setdefault("archive_warnings", [])
+            warning = ("Conflicting archive IDs for the same creature candidate: "
+                       + ", ".join(sorted(known_ids | {archive_id})))
+            if warning not in warnings:
+                warnings.append(warning)
+        creature_row["archive_evidence_lines"] = list(dict.fromkeys(
+            list(creature_row.get("archive_evidence_lines", [])) + prior + [line]))
 
         # Keep labeled archive fields as unverified source metadata; do not promote them to canon.
         archive_fields = {}
@@ -15332,6 +15354,14 @@ def lore_intake_build_evidence_graph(records):
                        candidate.get("evidence") or candidate.get("source") or "extracted text",
                        candidate.get("archive_id"), candidate.get("archive_fields"),
                        candidate.get("aliases"))
+            # Include alternative OCR IDs in conflict detection without choosing
+            # a winner or changing the candidate's primary ID.
+            for alternate in candidate.get("archive_id_candidates", []):
+                if not isinstance(alternate, dict):
+                    continue
+                alternate_id = str(alternate.get("archive_id") or "").strip().upper()
+                if alternate_id:
+                    archive_id_names.setdefault(alternate_id, set()).add(norm(candidate.get("name")))
         links = record.get("extracted_relationships", [])
         if not isinstance(links, list):
             links = []
