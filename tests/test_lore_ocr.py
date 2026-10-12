@@ -67,6 +67,27 @@ class LoreOCRTests(unittest.TestCase):
         self.assertFalse(result["canon_write"])
         self.assertFalse(result["auto_approval"])
 
+    def test_all_embedded_pdf_pages_are_processed_beyond_ocr_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = pathlib.Path(tmp) / "long-selectable.pdf"
+            source.write_bytes(b"PDF placeholder")
+            pages = [
+                f"CREATURE PAGE {number}\n" + ("Selectable archive text. " * 8)
+                for number in range(1, 41)
+            ]
+            with mock.patch.object(
+                lore_ocr, "_extract_native_pdf_pages",
+                return_value=(pages, 40, None),
+            ), mock.patch.object(
+                lore_ocr.shutil, "which", return_value=None
+            ), mock.patch.object(lore_ocr, "_render_pdf_pages_by_index") as render:
+                result = lore_ocr.lore_ocr_extract_text(source, page_limit=10)
+        self.assertEqual(result["status"], "REVIEW")
+        self.assertEqual(result["pages_processed"], 40)
+        self.assertIn("[PDF TEXT PAGE 40]", result["text"])
+        self.assertFalse(render.called)
+        self.assertFalse(any("page limit reached" in warning.lower() for warning in result["warnings"]))
+
     def test_pdf_ocr_fallback_runs_only_for_pages_without_embedded_text(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = pathlib.Path(tmp) / "mixed.pdf"
