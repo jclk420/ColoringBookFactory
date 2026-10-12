@@ -14329,7 +14329,7 @@ def lore_intake_extract_text_entities(text):
     def is_archive_noise(line):
         if not line or len(line) > 140:
             return True
-        if re.fullmatch(r"(?:H\.?\s*S\.?\s*N\.?\s*FILE|HSN-CR-\d{3}|NIGHTMARE CRYPTIDS.*|HOLLOW STITCH.*|ARCHIVE COPY.*|END FILE.*|\d{1,3}|PAGE \d+)", line, re.I):
+        if re.fullmatch(r"(?:\[?(?:OCR|PDF TEXT) PAGE \d+\]?|H\.?\s*S\.?\s*N\.?\s*FILE.*|HSN[- ]?CR[- ]?[0-9O]{3}|NIGHTMARE CRYPTIDS.*|HOLLOW STITCH.*|ARCHIVE COPY.*|END FILE.*|\d{1,3}|PAGE \d+)", line, re.I):
             return True
         if re.fullmatch(r"(?:CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)", line, re.I):
             return True
@@ -14369,13 +14369,27 @@ def lore_intake_extract_text_entities(text):
     # followed by a record ID and labeled metadata. OCR often confuses O with 0.
     archive_id_pattern = re.compile(r"HSN[- ]?CR[- ]?([0-9O]{3})", re.IGNORECASE)
     for index, line in enumerate(lines):
-        id_match = archive_id_pattern.fullmatch(line)
+        # OCR may put the ID on an "HSN. FILE ..." line; ignore closing markers.
+        if re.match(r"^END\s+FILE\b", line, re.IGNORECASE):
+            continue
+        id_match = archive_id_pattern.search(line)
         if not id_match:
             continue
         archive_id = "HSN-CR-" + id_match.group(1).upper().replace("O", "0")
+        # Legacy files put "H.S.N. FILE" on its own line and the ID below it.
+        # OCR files may put the marker and ID together. In either case, creature
+        # headings must be collected from before the file marker, not before the ID.
+        heading_end = index
+        if not re.search(r"H\.?\s*S\.?\s*N\.?\s*FILE", line, re.IGNORECASE):
+            for marker_index in range(index - 1, max(-1, index - 4), -1):
+                if re.match(r"^H\.?\s*S\.?\s*N\.?\s*FILE\b", lines[marker_index], re.IGNORECASE):
+                    heading_end = marker_index
+                    break
         prior = []
-        for candidate in reversed(lines[max(0, index - 8):index]):
+        for candidate in reversed(lines[max(0, heading_end - 8):heading_end]):
             candidate = candidate.strip(" \t-•")
+            if re.match(r"^(?:H\.?\s*S\.?\s*N\.?\s*FILE|END\s+FILE)\b", candidate, re.IGNORECASE):
+                break
             if is_archive_noise(candidate):
                 continue
             if re.fullmatch(r"[A-Z0-9 .’'()-]{3,100}", candidate) or len(candidate) >= 3:
@@ -14404,14 +14418,21 @@ def lore_intake_extract_text_entities(text):
 
         # Keep labeled archive fields as unverified source metadata; do not promote them to canon.
         archive_fields = {}
+        archive_warnings = []
         field_index = index + 1
         field_limit = min(len(lines), index + 50)
         while field_index < field_limit:
             field_line = lines[field_index]
-            if archive_id_pattern.fullmatch(field_line):
+            end_match = re.match(r"^END\s+FILE\s+(HSN[- ]?CR[- ]?[0-9O]{3})", field_line, re.IGNORECASE)
+            if end_match:
+                end_id = "HSN-CR-" + re.search(r"([0-9O]{3})$", end_match.group(1), re.IGNORECASE).group(1).upper().replace("O", "0")
+                if end_id != archive_id:
+                    archive_warnings.append("Mismatched closing archive ID: " + end_id + " (expected " + archive_id + ")")
+                break
+            if archive_id_pattern.search(field_line):
                 break
             label_match = re.match(
-                r"^(CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)(?:\s*[:\-]\s*(.*))?$",
+                r"^(CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)(?:\s*[:\-]\s*|\s+)?(.*)$",
                 field_line, re.IGNORECASE)
             if label_match:
                 label = label_match.group(1).upper()
@@ -14431,6 +14452,8 @@ def lore_intake_extract_text_entities(text):
             field_index += 1
         if archive_fields:
             creature_row["archive_fields"] = archive_fields
+        if archive_warnings:
+            creature_row["archive_warnings"] = archive_warnings
 
     return result
 
