@@ -38,6 +38,56 @@ def _module_available(name: str) -> bool:
     return True
 
 
+def _extract_native_pdf_pages(path: Path, page_limit: int) -> tuple[list[str], int | None, str | None]:
+    """Return embedded text for the first bounded set of PDF pages, if available."""
+    Reader = None
+    try:
+        from pypdf import PdfReader as Reader
+    except ImportError:
+        try:
+            from PyPDF2 import PdfReader as Reader
+        except ImportError:
+            return [], None, "Neither pypdf nor PyPDF2 is installed for embedded PDF text extraction."
+    try:
+        reader = Reader(str(path), strict=False)
+        total_pages = len(reader.pages)
+        texts = [
+            str(page.extract_text() or "").strip()
+            for page in list(reader.pages)[:page_limit]
+        ]
+        return texts, total_pages, None
+    except Exception as exc:
+        return [], None, f"Embedded PDF text extraction failed: {exc}"
+
+
+def _render_pdf_pages_by_index(path: Path, page_indices: list[int], dpi: int) -> tuple[dict[int, Any], int]:
+    """Render only PDF pages that need OCR; indices are zero-based."""
+    try:
+        import pypdfium2 as pdfium
+    except ImportError as exc:
+        raise ImportError(
+            "PDF OCR needs optional package pypdfium2. Install it with: python -m pip install pypdfium2"
+        ) from exc
+    rendered: dict[int, Any] = {}
+    pdf = pdfium.PdfDocument(str(path))
+    try:
+        total_pages = len(pdf)
+        scale = dpi / 72.0
+        for index in page_indices:
+            if index < 0 or index >= total_pages:
+                continue
+            page = pdf[index]
+            bitmap = page.render(scale=scale)
+            image = bitmap.to_pil().convert("RGB")
+            image.thumbnail((5000, 5000))
+            rendered[index] = image.copy()
+            bitmap.close()
+            page.close()
+    finally:
+        pdf.close()
+    return rendered, total_pages
+
+
 def lore_ocr_extract_text(
     source_path: str | Path,
     *,
@@ -45,10 +95,11 @@ def lore_ocr_extract_text(
     dpi: int = DEFAULT_DPI,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
-    """OCR a PDF or image and return review-only text with explicit warnings.
+    """Extract review-only text, preferring embedded PDF text and OCRing only gaps.
 
-    The caller should pass the returned text to the existing conservative
-    entity extractor. A page limit prevents unbounded work on large PDFs.
+    Selectable PDF text does not require Tesseract or PDF rendering. OCR is used
+    only for pages without substantial embedded text, keeping work bounded by
+    page_limit and avoiding unnecessary OCR on text-based documents.
     """
     path = Path(source_path)
     result: dict[str, Any] = {
@@ -64,7 +115,8 @@ def lore_ocr_extract_text(
         result["status"] = "ERROR"
         result["warnings"].append("Source file does not exist or is not a file.")
         return result
-    if path.suffix.lower() not in SUPPORTED_SUFFIXES:
+    suffix = path.suffix.lower()
+    if suffix not in SUPPORTED_SUFFIXES:
         result["status"] = "ERROR"
         result["warnings"].append("Unsupported file type; use PDF or a supported image.")
         return result
@@ -82,100 +134,124 @@ def lore_ocr_extract_text(
         return result
 
     tesseract = shutil.which("tesseract")
-    if not tesseract:
-        result["status"] = "UNAVAILABLE"
-        result["warnings"].append(
-            "Tesseract OCR was not found. Install Tesseract and ensure its executable is on PATH."
-        )
-        return result
+    texts_by_page: dict[int, tuple[str, str]] = {}
+    total_pages: int | None = None
+    fallback_indices: list[int] = []
 
-    try:
-        if path.suffix.lower() == ".pdf":
-            page_images = _render_pdf_pages(path, page_limit=page_limit, dpi=dpi)
-        else:
-            page_images = _load_image_pages(path)
-    except (ImportError, OSError, ValueError, RuntimeError) as exc:
-        result["status"] = "UNAVAILABLE" if isinstance(exc, ImportError) else "ERROR"
-        result["warnings"].append(str(exc))
-        return result
-
-    # Prefer a PDF's embedded text when available; it is often more accurate
-    # than OCR for books with selectable text. OCR remains the fallback for scanned pages.
-    native_page_texts: list[str] = []
-    if path.suffix.lower() == ".pdf":
-        try:
-            from PyPDF2 import PdfReader
-            reader = PdfReader(str(path))
-            native_page_texts = [
-                str(page.extract_text() or "").strip()
-                for page in list(reader.pages)[:len(page_images)]
-            ]
-            if any(len(value) >= 80 for value in native_page_texts):
-                result["method"] = "pdf_text_with_tesseract_fallback"
-        except Exception:
-            native_page_texts = []
-
-    texts: list[str] = []
-    for page_number, image in enumerate(page_images, start=1):
-        try:
-            with tempfile.TemporaryDirectory(prefix="cbf_lore_ocr_") as tmp:
-                image_path = Path(tmp) / "page.png"
-                image.save(image_path, format="PNG")
-                completed = subprocess.run(
-                    [tesseract, str(image_path), "stdout", "--psm", "6"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout_seconds,
-                    shell=False,
-                )
-            if completed.returncode != 0:
-                result["warnings"].append(
-                    f"OCR failed on page {page_number}: "
-                    + (completed.stderr.strip()[:300] or f"exit code {completed.returncode}")
-                )
-                continue
-            text = completed.stdout.strip()
-            native_text = (
-                native_page_texts[page_number - 1]
-                if page_number - 1 < len(native_page_texts) else ""
+    if suffix == ".pdf":
+        native_texts, total_pages, native_warning = _extract_native_pdf_pages(path, page_limit)
+        if native_warning:
+            result["warnings"].append(native_warning)
+        selected_count = min(total_pages, page_limit) if total_pages is not None else max(len(native_texts), page_limit if not native_texts else len(native_texts))
+        for index in range(min(len(native_texts), page_limit)):
+            native_text = native_texts[index]
+            if len(native_text) >= 80:
+                texts_by_page[index] = ("PDF TEXT", native_text)
+            else:
+                fallback_indices.append(index)
+        if not native_texts:
+            fallback_indices = list(range(min(selected_count, page_limit)))
+        if fallback_indices and not tesseract:
+            result["warnings"].append(
+                f"Tesseract OCR was not found; {len(fallback_indices)} PDF page(s) without substantial embedded text could not be OCRed."
             )
-            # Keep the page marker for traceability, but prefer higher-quality
-            # embedded text when it is substantial.
-            use_native_text = len(native_text) >= 80
-            selected_text = native_text if use_native_text else text
-            if selected_text:
-                source_label = "PDF TEXT" if use_native_text else "OCR"
-                texts.append(f"[{source_label} PAGE {page_number}]\n{selected_text}")
-            result["pages_processed"] += 1
-        except subprocess.TimeoutExpired:
-            result["warnings"].append(f"OCR timed out on page {page_number}.")
-        except OSError as exc:
-            result["warnings"].append(f"OCR could not process page {page_number}: {exc}")
-
-    result["text"] = "\n\n".join(texts)
-    if path.suffix.lower() == ".pdf":
+        elif fallback_indices:
+            try:
+                rendered, rendered_total = _render_pdf_pages_by_index(path, fallback_indices, dpi)
+                if total_pages is None:
+                    total_pages = rendered_total
+                for index in fallback_indices:
+                    image = rendered.get(index)
+                    if image is None:
+                        result["warnings"].append(f"Could not render PDF page {index + 1} for OCR.")
+                        continue
+                    with tempfile.TemporaryDirectory(prefix="cbf_lore_ocr_") as tmp:
+                        image_path = Path(tmp) / "page.png"
+                        image.save(image_path, format="PNG")
+                        completed = subprocess.run(
+                            [tesseract, str(image_path), "stdout", "--psm", "6"],
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=timeout_seconds,
+                            shell=False,
+                        )
+                    if completed.returncode != 0:
+                        result["warnings"].append(
+                            f"OCR failed on page {index + 1}: "
+                            + (completed.stderr.strip()[:300] or f"exit code {completed.returncode}")
+                        )
+                        continue
+                    if completed.stdout.strip():
+                        texts_by_page[index] = ("OCR", completed.stdout.strip())
+            except subprocess.TimeoutExpired:
+                result["warnings"].append("OCR timed out while processing a PDF page.")
+            except (ImportError, OSError, ValueError, RuntimeError) as exc:
+                result["warnings"].append(str(exc))
+        if any(label == "OCR" for label, _ in texts_by_page.values()):
+            result["method"] = "pdf_text_with_tesseract_fallback" if any(label == "PDF TEXT" for label, _ in texts_by_page.values()) else "tesseract_ocr"
+        elif any(label == "PDF TEXT" for label, _ in texts_by_page.values()):
+            result["method"] = "pdf_text"
+        if total_pages is not None and total_pages > page_limit:
+            result["warnings"].append(f"Page limit reached: processed at most {page_limit} of {total_pages} PDF pages.")
+    else:
+        if not tesseract:
+            result["status"] = "UNAVAILABLE"
+            result["warnings"].append(
+                "Tesseract OCR was not found. Install Tesseract and ensure its executable is on PATH."
+            )
+            return result
         try:
-            import pypdfium2 as pdfium
-            pdf = pdfium.PdfDocument(str(path))
-            total_pages = len(pdf)
-            pdf.close()
-            if total_pages > len(page_images):
-                result["warnings"].append(
-                    f"Page limit reached: processed {len(page_images)} of {total_pages} PDF pages."
-                )
-        except Exception:
-            pass
+            page_images = _load_image_pages(path)
+        except (ImportError, OSError, ValueError, RuntimeError) as exc:
+            result["status"] = "UNAVAILABLE" if isinstance(exc, ImportError) else "ERROR"
+            result["warnings"].append(str(exc))
+            return result
+        for index, image in enumerate(page_images[:page_limit]):
+            try:
+                with tempfile.TemporaryDirectory(prefix="cbf_lore_ocr_") as tmp:
+                    image_path = Path(tmp) / "page.png"
+                    image.save(image_path, format="PNG")
+                    completed = subprocess.run(
+                        [tesseract, str(image_path), "stdout", "--psm", "6"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout_seconds,
+                        shell=False,
+                    )
+                if completed.returncode != 0:
+                    result["warnings"].append(
+                        f"OCR failed on page {index + 1}: "
+                        + (completed.stderr.strip()[:300] or f"exit code {completed.returncode}")
+                    )
+                    continue
+                if completed.stdout.strip():
+                    texts_by_page[index] = ("OCR", completed.stdout.strip())
+            except subprocess.TimeoutExpired:
+                result["warnings"].append(f"OCR timed out on page {index + 1}.")
+            except OSError as exc:
+                result["warnings"].append(f"OCR could not process page {index + 1}: {exc}")
+        result["method"] = "tesseract_ocr"
+
+    result["text"] = "\n\n".join(
+        f"[{label} PAGE {index + 1}]\n{text}"
+        for index, (label, text) in sorted(texts_by_page.items())
+    )
+    result["pages_processed"] = len(texts_by_page)
     if not result["text"]:
+        if not tesseract and suffix == ".pdf":
+            result["status"] = "UNAVAILABLE"
         result["warnings"].append(
             "No readable text was recognized. Check scan quality, language, and page orientation."
         )
+        if result["status"] == "UNAVAILABLE":
+            return result
     result["status"] = "REVIEW"
     result["confidence"] = "LOW"
     result["canon_write"] = False
     result["auto_approval"] = False
     return result
-
 
 def _load_image_pages(path: Path) -> list[Any]:
     try:
