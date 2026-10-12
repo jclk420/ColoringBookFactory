@@ -947,11 +947,15 @@ class FactoryIntegrityTests(unittest.TestCase):
         graph = namespace["lore_intake_build_evidence_graph"]([{
             "file": "cryptids.pdf", "kind": "book", "name": "Nightmare Cryptids",
             "world": "Nightmare World", "location": "Hollow Stitch Nursery",
-            "extracted_entity_candidates": [ahool],
+            "extracted_entity_candidates": [ahool, {
+                "kind": "creature", "name": "Dover Demon",
+                "archive_id": "HSN-CR-008", "confidence": "LOW",
+            }],
         }])
         self.assertTrue(graph["review_only"])
         self.assertFalse(graph["canon_written"])
-        self.assertTrue(any(row["archive_id"] == "HSN-CR-003"
+        self.assertTrue(any(row["archive_id"] == "HSN-CR-008"
+                            and set(row["candidate_names"]) == {"ahool", "dover demon"}
                             for row in graph["archive_id_conflicts"]))
 
     def test_v272_text_extraction_is_empty_safe_and_does_not_promote_canon(self):
