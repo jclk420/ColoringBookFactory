@@ -45,6 +45,26 @@ class ListingQualityGateTests(unittest.TestCase):
         self.assertEqual(result["user_actions"], [])
         self.assertFalse(result["published"])
 
+    def test_gumroad_and_payhip_listing_builders_supply_author_to_quality_gate(self):
+        source = FACTORY_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(FACTORY_PATH))
+        matches = [node for node in tree.body
+                   if isinstance(node, ast.FunctionDef) and node.name == "v22_build_platform_listing"]
+        self.assertEqual(len(matches), 1)
+        node = matches[0]
+        branches = {}
+        for child in ast.walk(node):
+            if isinstance(child, ast.If) and isinstance(child.test, ast.Compare):
+                left = child.test.left
+                if isinstance(left, ast.Name) and left.id == "platform_name" and child.test.comparators:
+                    comp = child.test.comparators[0]
+                    if isinstance(comp, ast.Constant) and comp.value in {"Gumroad", "Payhip"}:
+                        branches[comp.value] = ast.get_source_segment(source, child) or ""
+        self.assertIn("Gumroad", branches)
+        self.assertIn("Payhip", branches)
+        for platform, segment in branches.items():
+            self.assertIn('"author": author', segment, f"{platform} must pass the author to the quality gate")
+
     def test_missing_master_blocks_release_without_guessing(self):
         result = self.gate(
             "Digital PDF",
