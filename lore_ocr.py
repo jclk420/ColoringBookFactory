@@ -39,7 +39,7 @@ def _module_available(name: str) -> bool:
 
 
 def _extract_native_pdf_pages(path: Path) -> tuple[list[str], int | None, str | None]:
-    """Return embedded text for the first bounded set of PDF pages, if available."""
+    """Return embedded text from all PDF pages, if available; OCR remains separately bounded."""
     Reader = None
     try:
         from pypdf import PdfReader as Reader
