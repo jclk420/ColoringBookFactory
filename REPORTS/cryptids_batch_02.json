@@ -1,0 +1,12 @@
+{
+  "source": "C:\\Users\\J\\Desktop\\cOPYCryptidsInterior.pdf",
+  "status": "REVIEW",
+  "pages_processed": 49,
+  "warnings": [
+    "OCR batch pages 26-50: 19 page(s) outside this batch had insufficient embedded text and were not OCRed. Run another batch to cover them."
+  ],
+  "method": "pdf_text_with_tesseract_fallback",
+  "confidence": "LOW",
+  "canon_write": false,
+  "auto_approval": false
+}

@@ -336,7 +336,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.output:
         output_path = Path(args.output)
-        output_path.write_text(result["text"], encoding="utf-8")
+        import re
+        output_path = Path(args.output)
+        page_blocks = re.finditer(
+            r"(?ms)^\[(?:PDF TEXT|OCR) PAGE (\d+)\]\n.*?(?=^\[(?:PDF TEXT|OCR) PAGE \d+\]\n|\Z)",
+            result["text"],
+        )
+        batch_text = "\n\n".join(
+            match.group(0).rstrip()
+            for match in page_blocks
+            if args.ocr_start <= int(match.group(1)) < args.ocr_start + args.pages
+        )
+        output_path.write_text(batch_text, encoding="utf-8")
         summary = {key: value for key, value in result.items() if key != "text"}
         print(json.dumps(summary, indent=2, ensure_ascii=False))
     else:
