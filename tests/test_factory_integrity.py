@@ -26,7 +26,19 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
+
+    def test_listing_quality_gate_is_registered_once(self):
+        self.assertEqual(
+            len(self.functions.get("v29_listing_quality_gate", [])), 1,
+            "Listing quality gate must have exactly one definition",
+        )
+        segment = ast.get_source_segment(
+            self.source, self.functions["v29_listing_quality_gate"][0]
+        ) or ""
+        for token in ("missing_required", "user_actions", "published", "READY_FOR_REVIEW"):
+            with self.subTest(token=token):
+                self.assertIn(token, segment)
 
     def test_critical_functions_are_defined_exactly_once(self):
         critical = (
@@ -195,7 +207,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -608,7 +620,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
         self.assertIn('elif c=="20": v21_canon_tools_menu()', self.source)
 
     def test_v21_import_preview_is_read_only_and_blocks_unsupported_shapes(self):
@@ -644,7 +656,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
         self.assertIn('elif c=="21": v22_platform_listing_menu()', self.source)
         self.assertIn('"LISTING_READINESS.json"', self.source)
         self.assertIn('"published": False', self.source)
@@ -667,7 +679,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
         self.assertIn('elif c=="22": v23_reliability_toolkit_menu()', self.source)
         self.assertIn('"master_rebuilt": False', self.source)
         self.assertIn('"production_projects_modified": False', self.source)
@@ -791,7 +803,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         segment = ast.get_source_segment(self.source, self.functions["lore_intake_menu"][0]) or ""
         self.assertIn('choice == "4"', segment)
         self.assertIn("lore_intake_review_dashboard()", segment)
-        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
 
     def test_v27_location_context_enriches_book_without_replacing_primary_match(self):
         names = ("lore_intake_normalize", "lore_intake_classify")
@@ -954,7 +966,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('print("6. OCR a staged pending PDF/image (low-confidence review only)")', menu)
         self.assertIn('choice == "6"', menu)
         self.assertIn("lore_intake_ocr_pending_file()", menu)
-        self.assertIn('FACTORY_VERSION = "28.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
 
 
     def test_v276_extractor_recognizes_hsn_archive_creature_headings(self):
