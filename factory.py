@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "28.0"
+FACTORY_VERSION = "29.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -16043,6 +16043,80 @@ def v21_canon_tools_menu():
 
 
 # ============================================================
+# v29.0 — PLATFORM LISTING QUALITY GATE
+# Structured, actionable completeness checks; never invents price or category.
+# ============================================================
+
+def v29_listing_quality_gate(platform_name, fields, *, master_exists, cover_exists, profile_enabled):
+    """Return an explainable listing-completeness score and action list.
+
+    The score covers required product facts, not marketplace choices. Blank
+    price/category values are explicit user actions, never guessed defaults.
+    """
+    fields = fields if isinstance(fields, dict) else {}
+
+    def has_value(keys):
+        for key in keys:
+            value = fields.get(key)
+            if isinstance(value, str) and value.strip():
+                return True
+            if isinstance(value, (list, tuple)) and any(str(item).strip() for item in value):
+                return True
+            if isinstance(value, dict) and any(str(item).strip() for item in value.values()):
+                return True
+        return False
+
+    checks = []
+
+    def add_check(key, label, passed, required=True, note=""):
+        checks.append({
+            "key": key,
+            "label": label,
+            "status": "PASS" if passed else ("MISSING" if required else "RECOMMENDED"),
+            "required": required,
+            "note": note if note else ("" if passed else ("Required information is missing." if required else "Recommended before publishing.")),
+        })
+
+    add_check("title", "Product title", has_value(("book_title", "product_name", "product_title", "name", "title")))
+    add_check("description", "Product description", has_value(("description", "full_description")))
+    add_check("author", "Author/byline", has_value(("author",)))
+    add_check("keywords", "Keywords or tags", has_value(("keywords", "tags", "tags_or_keywords")))
+    if platform_name in {"Gumroad", "Payhip", "Digital PDF"}:
+        add_check("license", "License terms", has_value(("license_terms",)))
+    add_check("master_pdf", "Finished master PDF", bool(master_exists), note="" if master_exists else "Build or locate the verified master PDF before release.")
+    add_check("cover", "Cover image", bool(cover_exists), required=False, note="" if cover_exists else "A listing cover/thumbnail was not detected; confirm the platform's image requirements.")
+    add_check("platform_profile", "Platform profile enabled", bool(profile_enabled), required=False, note="" if profile_enabled else "Profile is disabled; this draft is for planning only.")
+
+    user_actions = []
+    if not has_value(("price", "list_price")):
+        user_actions.append({"key": "price", "label": "Set the selling price", "reason": "No price was invented; enter and verify it in the target platform."})
+    if platform_name == "KDP" and not has_value(("categories",)):
+        user_actions.append({"key": "categories", "label": "Choose KDP categories", "reason": "Select categories in KDP; the factory will not guess marketplace placement."})
+    required = [item for item in checks if item["required"]]
+    passed = sum(1 for item in required if item["status"] == "PASS")
+    score = round((passed / len(required)) * 100) if required else 100
+    missing = [item for item in checks if item["required"] and item["status"] != "PASS"]
+    if not master_exists:
+        status = "BLOCKED"
+    elif missing:
+        status = "NEEDS_INPUT"
+    else:
+        status = "READY_FOR_REVIEW"
+    return {
+        "schema_version": 1,
+        "status": status,
+        "score_percent": score,
+        "required_checks_passed": passed,
+        "required_checks_total": len(required),
+        "checks": checks,
+        "missing_required": [item["key"] for item in missing],
+        "user_actions": user_actions,
+        "published": False,
+        "note": "Readiness describes draft completeness only; it does not mean uploaded, approved, or published.",
+    }
+
+
+# ============================================================
 # v22.0 — PLATFORM LISTING PACKAGE BUILDER
 # Generates platform-specific listing fields from verified project data.
 # Never invents prices, categories, sales claims, or unverified page counts.
@@ -16065,6 +16139,14 @@ def v22_listing_text(data):
             lines.extend(f"{k}: {v}" for k, v in value.items())
         else:
             lines.append(str(value) if value not in (None, "") else "(not set — fill in on the platform)")
+    gate = data.get("quality_gate") or {}
+    if gate:
+        lines += ["", f"QUALITY GATE: {gate.get('status', 'REVIEW')} — {gate.get('score_percent', 0)}% required-field completeness"]
+        for check in gate.get("checks", []):
+            if check.get("status") != "PASS":
+                lines.append(f"- {check.get('status')}: {check.get('label')} — {check.get('note', '')}".rstrip())
+        for action in gate.get("user_actions", []):
+            lines.append(f"- USER ACTION: {action.get('label')} — {action.get('reason', '')}")
     lines += ["", "FILES / ASSETS"]
     lines.extend(f"- {item}" for item in data.get("assets", []))
     if not data.get("assets"):
@@ -16238,6 +16320,13 @@ def v22_build_platform_listing(project, platform_name, settings=None):
         "status": status,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "fields": fields,
+        "quality_gate": v29_listing_quality_gate(
+            platform_name,
+            fields,
+            master_exists=bool(master and Path(master).exists()),
+            cover_exists=bool(cover),
+            profile_enabled=bool(profile_enabled),
+        ),
         "assets": assets,
         "warnings": list(dict.fromkeys(warnings)),
         "published": False,
@@ -16268,6 +16357,9 @@ def v22_build_all_platform_listings(project=None):
             "status": data["status"],
             "profile_enabled": data["profile_enabled"],
             "warnings": len(data["warnings"]),
+            "quality_score": data["quality_gate"]["score_percent"],
+            "quality_status": data["quality_gate"]["status"],
+            "user_actions": len(data["quality_gate"]["user_actions"]),
             "folder": str(folder),
         })
     report = {
@@ -16287,7 +16379,9 @@ def v22_build_all_platform_listings(project=None):
     print(f"PLATFORM LISTING BUILDER v{FACTORY_VERSION} — {project.name}")
     print("=" * 72)
     for row in results:
-        print(f"[{row['status']}] {row['platform']} — {row['warnings']} warning(s)" +
+        print(f"[{row['status']}] {row['platform']} — {row['warnings']} warning(s) — "
+              f"quality {row['quality_score']}% / {row['quality_status']} — "
+              f"{row['user_actions']} user action(s)" +
               (" [PROFILE DISABLED]" if not row["profile_enabled"] else ""))
     print(f"Listing files: {root}")
     print("Prepared drafts only — no platform was uploaded or published.")
