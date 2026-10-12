@@ -157,3 +157,15 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Preserve primary classification and review status; reject ambiguous path matches and never OCR/modify approved or rejected items.
 - Add regression checks for menu wiring and review-only guardrails.
 
+### v27.6 — Archive-Aware OCR Entity Extraction
+- Recognize Hollow Stitch Nursery archive records using `HSN-CR-NNN`, `H.S.N. FILE`, creature headings, aliases/epithets, and labeled `ORIGIN` fields.
+- Attach low-confidence creature candidates and reported-origin relationship candidates to the pending intake report.
+- Deduplicate repeated records and retain evidence lines so OCR remains a review aid, not canonical truth.
+- Preserve staged status, primary classification, source files, approved registry, Series Bible, and world canon.
+- Add regression tests for the Nightmare Cryptids archive format and review-only safeguards.
+
+### v27.5 — Robust Relative-Path Matching for OCR Review
+- Resolve relative manifest paths against the intake directory and factory root before matching the selected file.
+- Keep exact-path matching and the one-pending-record-only guard; no fuzzy matching or automatic selection.
+- Add dependency-free tests for relative, absolute, missing, and non-matching paths.
+

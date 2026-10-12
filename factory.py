@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 27.1.
+# Current version: 27.6.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "27.4"
+FACTORY_VERSION = "27.6"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14280,35 +14280,69 @@ def lore_intake_collect_records():
 
 
 def lore_intake_extract_text_entities(text):
-    """Extract only explicitly labeled entity names and relationships from selectable PDF text.
-
-    This is a low-confidence review aid, not canon data. It deliberately avoids
-    guessing names from arbitrary title-case lines or automatically registering entities.
-    """
+    """Extract conservative, low-confidence lore candidates from labeled text and HSN archive files."""
     result = {"entity_candidates": [], "relationships": []}
     if not isinstance(text, str) or not text.strip():
         return result
-    current_creature = ""
+
+    lines = [re.sub(r"\s+", " ", raw).strip(" \t-•") for raw in text.splitlines()]
     seen_entities = set()
     seen_relationships = set()
-    for raw_line in text.splitlines():
-        line = re.sub(r"\s+", " ", raw_line).strip(" \t-•")
+    current_creature = ""
+
+    def add_entity(kind, name, evidence, aliases=None):
+        name = str(name or "").strip(" \t:;,.|")
+        if len(name) < 3:
+            return
+        key = (kind.casefold(), name.casefold())
+        if key in seen_entities:
+            return
+        row = {
+            "kind": kind, "name": name, "source": "pdf_text",
+            "evidence": evidence, "confidence": "LOW",
+            "note": "Text-derived candidate; verify before approval",
+        }
+        if aliases:
+            row["aliases"] = [str(alias).strip() for alias in aliases if str(alias).strip()]
+        result["entity_candidates"].append(row)
+        seen_entities.add(key)
+
+    def add_relationship(subject, relation, object_kind, object_name, evidence):
+        object_name = str(object_name or "").strip(" \t:;,.|")
+        if not subject or len(object_name) < 3:
+            return
+        key = (subject.casefold(), relation.casefold(), object_name.casefold())
+        if key in seen_relationships:
+            return
+        result["relationships"].append({
+            "subject_kind": "creature", "subject": subject,
+            "relation": relation, "object_kind": object_kind,
+            "object": object_name, "source": "pdf_text", "evidence": evidence,
+            "confidence": "LOW",
+            "note": "Textual relationship candidate; verify before approval",
+        })
+        seen_relationships.add(key)
+
+    def is_archive_noise(line):
+        if not line or len(line) > 140:
+            return True
+        if re.fullmatch(r"(?:H\.?\s*S\.?\s*N\.?\s*FILE|HSN-CR-\d{3}|NIGHTMARE CRYPTIDS.*|HOLLOW STITCH.*|ARCHIVE COPY.*|END FILE.*|\d{1,3}|PAGE \d+)", line, re.I):
+            return True
+        if re.fullmatch(r"(?:CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)", line, re.I):
+            return True
+        return False
+
+    # Preserve the original explicit-label parser for documents that use labels such
+    # as "Creature: ..." or "Location: ...".
+    for index, line in enumerate(lines):
         if not line or len(line) > 180:
             continue
         creature_match = re.match(
             r"^(?:creature|monster|cryptid|entity)(?:\s+name)?\s*[:\-]\s*(.{3,100})$",
             line, re.IGNORECASE)
         if creature_match:
-            name = creature_match.group(1).strip(" \t:;,.|")
-            if len(name) >= 3:
-                current_creature = name
-                key = ("creature", name.casefold())
-                if key not in seen_entities:
-                    result["entity_candidates"].append({
-                        "kind": "creature", "name": name, "source": "pdf_text",
-                        "evidence": line, "confidence": "LOW",
-                        "note": "Explicit label detected; verify before approval"})
-                    seen_entities.add(key)
+            current_creature = creature_match.group(1).strip(" \t:;,.|")
+            add_entity("creature", current_creature, line)
             continue
         labeled_match = re.match(
             r"^(location|world|book|series)(?:\s+name)?\s*[:\-]\s*(.{3,100})$",
@@ -14316,43 +14350,64 @@ def lore_intake_extract_text_entities(text):
         if labeled_match:
             kind = labeled_match.group(1).casefold()
             name = labeled_match.group(2).strip(" \t:;,.|")
-            if len(name) >= 3:
-                key = (kind, name.casefold())
-                if key not in seen_entities:
-                    result["entity_candidates"].append({
-                        "kind": kind, "name": name, "source": "pdf_text",
-                        "evidence": line, "confidence": "LOW",
-                        "note": "Explicit label detected; verify before approval"})
-                    seen_entities.add(key)
-                if current_creature and kind == "location":
-                    rel_key = (current_creature.casefold(), "located_at", name.casefold())
-                    if rel_key not in seen_relationships:
-                        result["relationships"].append({
-                            "subject_kind": "creature", "subject": current_creature,
-                            "relation": "located_at", "object_kind": "location",
-                            "object": name, "source": "pdf_text", "evidence": line,
-                            "confidence": "LOW",
-                            "note": "Textual relationship candidate; verify before approval"})
-                        seen_relationships.add(rel_key)
+            add_entity(kind, name, line)
+            if current_creature and kind == "location":
+                add_relationship(current_creature, "located_at", "location", name, line)
             continue
         relation_match = re.match(
             r"^(?:found|located|contained|discovered|originates)\s+"
             r"(?:in|at|within|from)\s*[:\-]?\s*(.{3,100})$",
             line, re.IGNORECASE)
         if current_creature and relation_match:
-            name = relation_match.group(1).strip(" \t:;,.|")
-            if len(name) >= 3:
-                rel_key = (current_creature.casefold(), "located_at", name.casefold())
-                if rel_key not in seen_relationships:
-                    result["relationships"].append({
-                        "subject_kind": "creature", "subject": current_creature,
-                        "relation": "located_at", "object_kind": "location",
-                        "object": name, "source": "pdf_text", "evidence": line,
-                        "confidence": "LOW",
-                        "note": "Textual relationship candidate; verify before approval"})
-                    seen_relationships.add(rel_key)
-    return result
+            add_relationship(current_creature, "located_at", "location",
+                             relation_match.group(1), line)
 
+    # HSN archive format: creature name + epithet precede "H.S.N. FILE",
+    # followed by an HSN-CR-NNN identifier and labeled ORIGIN/CLASSIFICATION fields.
+    for index, line in enumerate(lines):
+        if not re.fullmatch(r"HSN-CR-\d{3}", line, re.IGNORECASE):
+            continue
+        prior = []
+        for candidate in reversed(lines[max(0, index - 8):index]):
+            candidate = candidate.strip(" \t-•")
+            if is_archive_noise(candidate):
+                continue
+            if re.fullmatch(r"[A-Z0-9 .’'()-]{3,100}", candidate) or len(candidate) >= 3:
+                prior.append(candidate)
+            if len(prior) == 2:
+                break
+        prior.reverse()
+        if not prior:
+            continue
+        # In this book the canonical name is typically uppercase and the following
+        # line is a descriptive epithet. Keep the epithet as an alias, not a second creature.
+        canonical = prior[0]
+        alias = prior[1] if len(prior) > 1 else ""
+        if canonical.casefold() in {
+            "table of contents", "the hollow stitch nursery", "department of unnatural fauna",
+            "recovered archive", "how to read the files", "archivist notice",
+        }:
+            continue
+        current_creature = canonical
+        add_entity("creature", canonical, " | ".join(prior + [line]),
+                   aliases=[alias] if alias and alias.casefold() != canonical.casefold() else None)
+
+        # Capture a clearly labeled ORIGIN value as a review-only relationship.
+        for field_index in range(index + 1, min(len(lines), index + 35)):
+            field_line = lines[field_index]
+            if re.fullmatch(r"HSN-CR-\d{3}", field_line, re.IGNORECASE):
+                break
+            origin_match = re.match(r"^ORIGIN(?:\s*[:\-]\s*|\s+)?(.*)$", field_line, re.IGNORECASE)
+            if origin_match:
+                origin = origin_match.group(1).strip(" \t:;,.|")
+                if not origin and field_index + 1 < len(lines):
+                    origin = lines[field_index + 1]
+                if origin and not is_archive_noise(origin):
+                    add_relationship(current_creature, "reported_origin", "origin", origin,
+                                     "ORIGIN | " + origin)
+                break
+
+    return result
 
 def lore_intake_review_evidence(path, records, metadata=None):
     """Collect exact registered mentions and flag review conflicts without changing canon."""
@@ -15000,6 +15055,25 @@ def lore_intake_refresh_pending():
 
 
 
+def lore_intake_paths_match(recorded_path, selected_path, base_dirs=()):
+    """Compare recorded and selected paths, resolving relative records against known roots."""
+    try:
+        selected = Path(selected_path).expanduser().resolve()
+        recorded = Path(str(recorded_path)).expanduser()
+    except (TypeError, ValueError, OSError):
+        return False
+    candidates = [recorded]
+    if not recorded.is_absolute():
+        candidates.extend(Path(root).expanduser() / recorded for root in base_dirs)
+    for candidate in candidates:
+        try:
+            if candidate.resolve() == selected:
+                return True
+        except (OSError, RuntimeError, ValueError):
+            continue
+    return False
+
+
 def lore_intake_ocr_pending_file():
     """OCR one existing pending intake file and attach low-confidence candidates for review."""
     source_value = input("Path to the source or staged PDF/image: ").strip().strip('"')
@@ -15040,12 +15114,7 @@ def lore_intake_ocr_pending_file():
             for value in paths:
                 if not value:
                     continue
-                candidate = Path(str(value))
-                try:
-                    same_path = candidate.resolve() == source.resolve()
-                except OSError:
-                    same_path = False
-                if same_path:
+                if lore_intake_paths_match(value, source, (INTAKE_DIR, FACTORY)):
                     matches.append((report_path, report, item))
                     break
 
