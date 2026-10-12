@@ -38,7 +38,7 @@ def _module_available(name: str) -> bool:
     return True
 
 
-def _extract_native_pdf_pages(path: Path, page_limit: int) -> tuple[list[str], int | None, str | None]:
+def _extract_native_pdf_pages(path: Path) -> tuple[list[str], int | None, str | None]:
     """Return embedded text for the first bounded set of PDF pages, if available."""
     Reader = None
     try:
@@ -53,7 +53,7 @@ def _extract_native_pdf_pages(path: Path, page_limit: int) -> tuple[list[str], i
         total_pages = len(reader.pages)
         texts = [
             str(page.extract_text() or "").strip()
-            for page in list(reader.pages)[:page_limit]
+            for page in reader.pages
         ]
         return texts, total_pages, None
     except Exception as exc:
@@ -139,16 +139,20 @@ def lore_ocr_extract_text(
     fallback_indices: list[int] = []
 
     if suffix == ".pdf":
-        native_texts, total_pages, native_warning = _extract_native_pdf_pages(path, page_limit)
+        native_texts, total_pages, native_warning = _extract_native_pdf_pages(path)
         if native_warning:
             result["warnings"].append(native_warning)
-        selected_count = min(total_pages, page_limit) if total_pages is not None else max(len(native_texts), page_limit if not native_texts else len(native_texts))
-        for index in range(min(len(native_texts), page_limit)):
-            native_text = native_texts[index]
+        selected_count = min(total_pages, page_limit) if total_pages is not None else page_limit
+        skipped_ocr_pages = 0
+        for index, native_text in enumerate(native_texts):
             if len(native_text) >= 80:
+                # Embedded text is cheap to extract, so keep it from every page;
+                # the OCR page limit applies only to expensive rendered fallback.
                 texts_by_page[index] = ("PDF TEXT", native_text)
-            else:
+            elif index < page_limit:
                 fallback_indices.append(index)
+            else:
+                skipped_ocr_pages += 1
         if not native_texts:
             fallback_indices = list(range(min(selected_count, page_limit)))
         if fallback_indices and not tesseract:
@@ -196,8 +200,11 @@ def lore_ocr_extract_text(
             result["method"] = "pdf_text_with_tesseract_fallback" if any(label == "PDF TEXT" for label, _ in texts_by_page.values()) else "tesseract_ocr"
         elif any(label == "PDF TEXT" for label, _ in texts_by_page.values()):
             result["method"] = "pdf_text"
-        if total_pages is not None and total_pages > page_limit:
-            result["warnings"].append(f"Page limit reached: processed at most {page_limit} of {total_pages} PDF pages.")
+        if skipped_ocr_pages:
+            result["warnings"].append(
+                f"OCR page limit reached: {skipped_ocr_pages} page(s) beyond the first {page_limit} PDF pages "
+                "had insufficient embedded text and were not OCRed."
+            )
     else:
         if not tesseract:
             result["status"] = "UNAVAILABLE"
