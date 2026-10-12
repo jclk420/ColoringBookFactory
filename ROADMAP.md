@@ -169,3 +169,21 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Keep exact-path matching and the one-pending-record-only guard; no fuzzy matching or automatic selection.
 - Add dependency-free tests for relative, absolute, missing, and non-matching paths.
 
+
+
+### v27.7 — OCR-Tolerant Archive Identifiers
+- Recognize the narrow OCR confusion between the letter O and zero in HSN-CR record numbers, normalize the ID, and preserve the exact source line as evidence.
+- Keep matching constrained to the known HSN-CR pattern; do not use fuzzy matching for file selection or identity approval.
+
+### v27.8 — Structured Archive Field Capture
+- Preserve labeled CLASSIFICATION, THREAT LEVEL, ORIGIN, DOCUMENTED ABILITY, OBSERVED WEAKNESS, STATUS, LEGEND, HOLLOW STITCH RECORD, and NURSERY DIRECTIVE values as source metadata on low-confidence candidates.
+- Keep these fields attached to the review candidate rather than writing them into world canon.
+
+### v27.9 — Candidate Provenance
+- Attach normalized archive record IDs and nearby heading/evidence lines to extracted creature candidates.
+- Preserve aliases/epithets and the LOW-confidence review marker.
+
+### v28.0 — Accurate OCR Review Accounting
+- Report newly added candidates separately from duplicates already present in the pending record.
+- Persist an OCR candidate summary with extracted, added, duplicate-skipped, archive-record, and review-only counts.
+- Keep source files, primary classification, approval state, approved registry, Series Bible, and canon unchanged.

@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 27.6.
+# Current version: 28.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "27.6"
+FACTORY_VERSION = "28.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14293,10 +14293,12 @@ def lore_intake_extract_text_entities(text):
     def add_entity(kind, name, evidence, aliases=None):
         name = str(name or "").strip(" \t:;,.|")
         if len(name) < 3:
-            return
+            return None
         key = (kind.casefold(), name.casefold())
         if key in seen_entities:
-            return
+            return next((row for row in result["entity_candidates"]
+                         if (str(row.get("kind", "")).casefold(),
+                             str(row.get("name", "")).casefold()) == key), None)
         row = {
             "kind": kind, "name": name, "source": "pdf_text",
             "evidence": evidence, "confidence": "LOW",
@@ -14306,6 +14308,7 @@ def lore_intake_extract_text_entities(text):
             row["aliases"] = [str(alias).strip() for alias in aliases if str(alias).strip()]
         result["entity_candidates"].append(row)
         seen_entities.add(key)
+        return row
 
     def add_relationship(subject, relation, object_kind, object_name, evidence):
         object_name = str(object_name or "").strip(" \t:;,.|")
@@ -14363,10 +14366,13 @@ def lore_intake_extract_text_entities(text):
                              relation_match.group(1), line)
 
     # HSN archive format: creature name + epithet precede "H.S.N. FILE",
-    # followed by an HSN-CR-NNN identifier and labeled ORIGIN/CLASSIFICATION fields.
+    # followed by a record ID and labeled metadata. OCR often confuses O with 0.
+    archive_id_pattern = re.compile(r"HSN[- ]?CR[- ]?([0-9O]{3})", re.IGNORECASE)
     for index, line in enumerate(lines):
-        if not re.fullmatch(r"HSN-CR-\d{3}", line, re.IGNORECASE):
+        id_match = archive_id_pattern.fullmatch(line)
+        if not id_match:
             continue
+        archive_id = "HSN-CR-" + id_match.group(1).upper().replace("O", "0")
         prior = []
         for candidate in reversed(lines[max(0, index - 8):index]):
             candidate = candidate.strip(" \t-•")
@@ -14379,8 +14385,7 @@ def lore_intake_extract_text_entities(text):
         prior.reverse()
         if not prior:
             continue
-        # In this book the canonical name is typically uppercase and the following
-        # line is a descriptive epithet. Keep the epithet as an alias, not a second creature.
+        # The first heading is canonical; the following line is an optional epithet.
         canonical = prior[0]
         alias = prior[1] if len(prior) > 1 else ""
         if canonical.casefold() in {
@@ -14389,23 +14394,43 @@ def lore_intake_extract_text_entities(text):
         }:
             continue
         current_creature = canonical
-        add_entity("creature", canonical, " | ".join(prior + [line]),
-                   aliases=[alias] if alias and alias.casefold() != canonical.casefold() else None)
+        creature_row = add_entity(
+            "creature", canonical, " | ".join(prior + [line]),
+            aliases=[alias] if alias and alias.casefold() != canonical.casefold() else None)
+        if creature_row is None:
+            continue
+        creature_row["archive_id"] = archive_id
+        creature_row["archive_evidence_lines"] = prior + [line]
 
-        # Capture a clearly labeled ORIGIN value as a review-only relationship.
-        for field_index in range(index + 1, min(len(lines), index + 35)):
+        # Keep labeled archive fields as unverified source metadata; do not promote them to canon.
+        archive_fields = {}
+        field_index = index + 1
+        field_limit = min(len(lines), index + 50)
+        while field_index < field_limit:
             field_line = lines[field_index]
-            if re.fullmatch(r"HSN-CR-\d{3}", field_line, re.IGNORECASE):
+            if archive_id_pattern.fullmatch(field_line):
                 break
-            origin_match = re.match(r"^ORIGIN(?:\s*[:\-]\s*|\s+)?(.*)$", field_line, re.IGNORECASE)
-            if origin_match:
-                origin = origin_match.group(1).strip(" \t:;,.|")
-                if not origin and field_index + 1 < len(lines):
-                    origin = lines[field_index + 1]
-                if origin and not is_archive_noise(origin):
-                    add_relationship(current_creature, "reported_origin", "origin", origin,
-                                     "ORIGIN | " + origin)
-                break
+            label_match = re.match(
+                r"^(CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)(?:\s*[:\-]\s*(.*))?$",
+                field_line, re.IGNORECASE)
+            if label_match:
+                label = label_match.group(1).upper()
+                value = (label_match.group(2) or "").strip(" \t:;,.|")
+                if not value and field_index + 1 < field_limit:
+                    next_line = lines[field_index + 1]
+                    if not is_archive_noise(next_line) and not re.match(
+                            r"^(?:CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)\b",
+                            next_line, re.IGNORECASE):
+                        value = next_line
+                        field_index += 1
+                if value:
+                    archive_fields[label.lower().replace(" ", "_")] = value
+                    if label == "ORIGIN":
+                        add_relationship(current_creature, "reported_origin", "origin", value,
+                                         "ORIGIN | " + value + " | " + archive_id)
+            field_index += 1
+        if archive_fields:
+            creature_row["archive_fields"] = archive_fields
 
     return result
 
@@ -15161,29 +15186,56 @@ def lore_intake_ocr_pending_file():
                 seen.add(key)
         return merged
 
+    def candidate_key(row, keys):
+        return tuple(str(row.get(key, "")).casefold() for key in keys)
+
+    old_entity_keys = {candidate_key(row, ("kind", "name"))
+                       for row in old_entities if isinstance(row, dict)}
+    old_relationship_keys = {candidate_key(row, ("subject", "relation", "object"))
+                             for row in old_relationships if isinstance(row, dict)}
+    incoming_entities = [row for row in extracted.get("entity_candidates", []) if isinstance(row, dict)]
+    incoming_relationships = [row for row in extracted.get("relationships", []) if isinstance(row, dict)]
+    added_entities = [row for row in incoming_entities
+                      if candidate_key(row, ("kind", "name")) not in old_entity_keys]
+    added_relationships = [row for row in incoming_relationships
+                           if candidate_key(row, ("subject", "relation", "object")) not in old_relationship_keys]
     classification["extracted_entity_candidates"] = merge_candidates(
-        old_entities, extracted.get("entity_candidates", []), ("kind", "name"))
+        old_entities, incoming_entities, ("kind", "name"))
     classification["extracted_relationships"] = merge_candidates(
-        old_relationships, extracted.get("relationships", []), ("subject", "relation", "object"))
+        old_relationships, incoming_relationships, ("subject", "relation", "object"))
     item["classification"] = classification
     metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
     metadata["ocr_status"] = "REVIEW"
     metadata["ocr_pages_processed"] = ocr.get("pages_processed", 0)
     metadata["ocr_warnings"] = ocr.get("warnings", [])
     metadata["ocr_confidence"] = "LOW"
+    metadata["ocr_candidate_summary"] = {
+        "extracted_entities": len(incoming_entities),
+        "extracted_relationships": len(incoming_relationships),
+        "new_entities_added": len(added_entities),
+        "new_relationships_added": len(added_relationships),
+        "duplicate_entities_skipped": len(incoming_entities) - len(added_entities),
+        "duplicate_relationships_skipped": len(incoming_relationships) - len(added_relationships),
+        "archive_records": sum(1 for row in incoming_entities if row.get("archive_id")),
+        "review_only": True,
+    }
     item["metadata"] = metadata
     save_json(report_path, report)
 
     print("\nOCR review results attached to the pending intake record.")
     print(f"Pages processed: {ocr.get('pages_processed', 0)}")
-    print(f"New entity candidates detected: {len(extracted.get('entity_candidates', []))}")
-    print(f"New relationship candidates detected: {len(extracted.get('relationships', []))}")
+    print(f"New entity candidates added: {len(added_entities)}")
+    print(f"New relationship candidates added: {len(added_relationships)}")
+    print(f"Duplicate entity candidates skipped: {len(incoming_entities) - len(added_entities)}")
     for warning in ocr.get("warnings", []):
         print(f"  Warning: {warning}")
     print("The primary classification, approval status, source file, and lore canon were not changed.")
     return {"status": "REVIEW", "attached": True,
-            "entities": len(extracted.get("entity_candidates", [])),
-            "relationships": len(extracted.get("relationships", [])),
+            "entities": len(added_entities), "relationships": len(added_relationships),
+            "extracted_entities": len(incoming_entities),
+            "extracted_relationships": len(incoming_relationships),
+            "duplicates_skipped": (len(incoming_entities) - len(added_entities)) +
+                                  (len(incoming_relationships) - len(added_relationships)),
             "pages_processed": ocr.get("pages_processed", 0)}
 
 
