@@ -116,6 +116,53 @@ class LoreOCRTests(unittest.TestCase):
         self.assertEqual(render.call_args.args[1], [1])
         self.assertEqual(run.call_count, 1)
 
+    def test_ocr_start_page_selects_a_later_batch_without_limiting_native_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = pathlib.Path(tmp) / "long-mixed.pdf"
+            source.write_bytes(b"PDF placeholder")
+            pages = [
+                f"CREATURE PAGE {number} " + ("Selectable archive text. " * 8)
+                for number in range(1, 61)
+            ]
+            pages[29] = "short page 30"
+            pages[54] = "short page 55"
+            rendered_page = mock.Mock()
+            completed = __import__("subprocess").CompletedProcess(
+                args=["tesseract"], returncode=0, stdout="OCR fallback page 30", stderr=""
+            )
+            with mock.patch.object(
+                lore_ocr, "_extract_native_pdf_pages",
+                return_value=(pages, 60, None),
+            ), mock.patch.object(
+                lore_ocr.shutil, "which", return_value="tesseract"
+            ), mock.patch.object(
+                lore_ocr, "_render_pdf_pages_by_index",
+                return_value=({29: rendered_page}, 60),
+            ) as render, mock.patch.object(
+                lore_ocr.subprocess, "run", return_value=completed
+            ) as run:
+                result = lore_ocr.lore_ocr_extract_text(
+                    source, page_limit=25, ocr_start_page=26
+                )
+        self.assertEqual(result["status"], "REVIEW")
+        self.assertEqual(result["pages_processed"], 59)
+        self.assertIn("[PDF TEXT PAGE 60]", result["text"])
+        self.assertIn("[OCR PAGE 30]", result["text"])
+        self.assertNotIn("[PDF TEXT PAGE 55]", result["text"])
+        self.assertEqual(render.call_args.args[1], [29])
+        self.assertEqual(run.call_count, 1)
+        self.assertTrue(any("outside this batch" in warning for warning in result["warnings"]))
+        self.assertFalse(result["canon_write"])
+        self.assertFalse(result["auto_approval"])
+
+    def test_ocr_start_page_must_be_positive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = pathlib.Path(tmp) / "input.pdf"
+            source.write_bytes(b"PDF placeholder")
+            result = lore_ocr.lore_ocr_extract_text(source, ocr_start_page=0)
+        self.assertEqual(result["status"], "ERROR")
+        self.assertIn("ocr_start_page", result["warnings"][0])
+
     def test_capabilities_are_read_only_and_well_shaped(self):
         result = lore_ocr.lore_ocr_capabilities()
         self.assertIn("tesseract", result)
