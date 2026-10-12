@@ -18,7 +18,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 29.0.
+# Current version: 30.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +31,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "29.0"
+FACTORY_VERSION = "30.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15262,6 +15262,139 @@ def lore_intake_ocr_pending_file():
             "pages_processed": ocr.get("pages_processed", 0)}
 
 
+def lore_intake_build_evidence_graph(records):
+    """Aggregate staged lore evidence across batches without promoting candidates to canon."""
+    entities = {}
+    relationships = {}
+    archive_id_names = {}
+    if not isinstance(records, list):
+        records = []
+
+    def norm(value):
+        return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+    def add_entity(kind, name, world, location, source_file, confidence, evidence,
+                   archive_id="", archive_fields=None, aliases=None):
+        name = str(name or "").strip()
+        key_name = norm(name)
+        if not key_name:
+            return
+        key = (str(kind or "entity").casefold(), key_name,
+               norm(world), norm(location), str(archive_id or "").strip().upper())
+        row = entities.setdefault(key, {
+            "kind": str(kind or "entity"), "name": name,
+            "world": str(world or "Unassigned World"),
+            "location": str(location or "Unassigned Location"),
+            "archive_id": str(archive_id or ""),
+            "confidence": str(confidence or "LOW"),
+            "source_files": [], "evidence": [], "aliases": [],
+            "archive_fields": {},
+        })
+        if source_file and source_file not in row["source_files"]:
+            row["source_files"].append(source_file)
+        if evidence and evidence not in row["evidence"]:
+            row["evidence"].append(evidence)
+        if str(confidence or "LOW").upper() == "HIGH":
+            row["confidence"] = "HIGH"
+        for alias in aliases if isinstance(aliases, list) else []:
+            alias = str(alias or "").strip()
+            if alias and alias not in row["aliases"]:
+                row["aliases"].append(alias)
+        if isinstance(archive_fields, dict):
+            for field, value in archive_fields.items():
+                value = str(value or "").strip()
+                if value:
+                    row["archive_fields"].setdefault(str(field), [])
+                    if value not in row["archive_fields"][str(field)]:
+                        row["archive_fields"][str(field)].append(value)
+        if archive_id:
+            archive_id_names.setdefault(str(archive_id).strip().upper(), set()).add(key_name)
+
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        source_file = str(record.get("file") or "(unknown source)")
+        kind = str(record.get("kind") or "unmatched")
+        name = str(record.get("name") or "").strip()
+        if name and name != "(unresolved)" and kind not in {"unmatched", "ambiguous"}:
+            add_entity(kind, name, record.get("world"), record.get("location"),
+                       source_file, record.get("confidence"), record.get("evidence"))
+        candidates = record.get("extracted_entity_candidates", [])
+        if not isinstance(candidates, list):
+            candidates = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            add_entity(candidate.get("kind", "entity"), candidate.get("name"),
+                       candidate.get("world") or record.get("world"),
+                       candidate.get("location") or record.get("location"), source_file,
+                       candidate.get("confidence", "LOW"),
+                       candidate.get("evidence") or candidate.get("source") or "extracted text",
+                       candidate.get("archive_id"), candidate.get("archive_fields"),
+                       candidate.get("aliases"))
+        links = record.get("extracted_relationships", [])
+        if not isinstance(links, list):
+            links = []
+        for link in links:
+            if not isinstance(link, dict):
+                continue
+            subject = str(link.get("subject") or "").strip()
+            obj = str(link.get("object") or "").strip()
+            relation = str(link.get("relation") or "").strip()
+            if not subject or not obj or not relation:
+                continue
+            key = (norm(link.get("subject_kind") or "creature"), norm(subject),
+                   norm(relation), norm(link.get("object_kind") or "entity"), norm(obj))
+            row = relationships.setdefault(key, {
+                "subject_kind": link.get("subject_kind") or "creature",
+                "subject": subject, "relation": relation,
+                "object_kind": link.get("object_kind") or "entity", "object": obj,
+                "confidence": str(link.get("confidence") or "LOW"),
+                "source_files": [], "evidence": [],
+            })
+            if source_file not in row["source_files"]:
+                row["source_files"].append(source_file)
+            evidence = str(link.get("evidence") or "").strip()
+            if evidence and evidence not in row["evidence"]:
+                row["evidence"].append(evidence)
+
+    entity_rows = sorted(entities.values(), key=lambda row: (row["kind"].casefold(), row["name"].casefold()))
+    relationship_rows = sorted(relationships.values(), key=lambda row: (row["subject"].casefold(), row["relation"], row["object"].casefold()))
+    names = {}
+    for row in entity_rows:
+        names.setdefault(norm(row["name"]), []).append(row)
+    duplicate_name_warnings = []
+    for group in names.values():
+        identities = {(row["kind"].casefold(), norm(row["world"]), norm(row["location"])) for row in group}
+        if len(identities) > 1:
+            duplicate_name_warnings.append({
+                "name": group[0]["name"],
+                "reason": "Same normalized candidate name appears under multiple kinds, worlds, or locations",
+                "candidates": [{"kind": row["kind"], "world": row["world"], "location": row["location"],
+                                "source_files": list(row["source_files"])} for row in group],
+            })
+    archive_id_conflicts = [
+        {"archive_id": archive_id, "candidate_names": sorted(candidate_names)}
+        for archive_id, candidate_names in sorted(archive_id_names.items())
+        if len(candidate_names) > 1
+    ]
+    entity_names = {norm(row["name"]) for row in entity_rows}
+    unresolved_relationships = [
+        row for row in relationship_rows
+        if norm(row["subject"]) not in entity_names or norm(row["object"]) not in entity_names
+    ]
+    return {
+        "schema_version": 1, "review_only": True,
+        "source_record_count": len(records), "entity_count": len(entity_rows),
+        "relationship_count": len(relationship_rows), "entities": entity_rows,
+        "relationships": relationship_rows,
+        "duplicate_name_warnings": duplicate_name_warnings,
+        "archive_id_conflicts": archive_id_conflicts,
+        "unresolved_relationships": unresolved_relationships,
+        "canon_written": False,
+    }
+
+
 def lore_intake_review_dashboard():
     """Read-only summary of staged intake records; never changes manifests or canon."""
     manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
@@ -15321,12 +15454,18 @@ def lore_intake_review_dashboard():
                 summary["duplicates"] += 1
             if unresolved:
                 summary["unresolved"] += 1
+    summary["evidence_graph"] = lore_intake_build_evidence_graph(summary["records"])
+    graph = summary["evidence_graph"]
     print("\n" + "=" * 100)
     print("LORE INTAKE REVIEW DASHBOARD — READ ONLY")
     print("=" * 100)
     print(f"Batches: {summary['batches']} | Items: {summary['items']} | Pending: {summary['pending']} | "
           f"Approved: {summary['approved']} | Rejected: {summary['rejected']}")
     print(f"Unresolved: {summary['unresolved']} | Duplicate warnings: {summary['duplicates']}")
+    print(f"Evidence graph: {graph['entity_count']} entities | {graph['relationship_count']} relationships | "
+          f"{len(graph['duplicate_name_warnings'])} name conflicts | "
+          f"{len(graph['archive_id_conflicts'])} archive-ID conflicts | "
+          f"{len(graph['unresolved_relationships'])} unresolved links")
     if not summary["records"]:
         print("No readable intake items found.")
     for row in summary["records"]:

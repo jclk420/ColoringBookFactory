@@ -26,7 +26,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "30.0"', self.source)
 
     def test_listing_quality_gate_is_registered_once(self):
         self.assertEqual(
@@ -207,7 +207,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('"warning_count"', segment)
         self.assertIn('"LORE_REPAIR_REPORT.json"', segment)
         self.assertIn("lore_validate_series_continuity(bible)", segment)
-        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "30.0"', self.source)
 
     def test_world_series_link_repair_is_explicit_and_non_creating(self):
         node = self.functions["lore_ensure_series_world_link"][0]
@@ -620,7 +620,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "30.0"', self.source)
         self.assertIn('elif c=="20": v21_canon_tools_menu()', self.source)
 
     def test_v21_import_preview_is_read_only_and_blocks_unsupported_shapes(self):
@@ -656,7 +656,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "30.0"', self.source)
         self.assertIn('elif c=="21": v22_platform_listing_menu()', self.source)
         self.assertIn('"LISTING_READINESS.json"', self.source)
         self.assertIn('"published": False', self.source)
@@ -679,7 +679,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         for name in required:
             with self.subTest(function=name):
                 self.assertEqual(len(self.functions.get(name, [])), 1)
-        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "30.0"', self.source)
         self.assertIn('elif c=="22": v23_reliability_toolkit_menu()', self.source)
         self.assertIn('"master_rebuilt": False', self.source)
         self.assertIn('"production_projects_modified": False', self.source)
@@ -766,9 +766,14 @@ class FactoryIntegrityTests(unittest.TestCase):
     def test_v26_lore_intake_dashboard_summarizes_without_writing(self):
         node = self.functions.get("lore_intake_review_dashboard", [None])[0]
         self.assertIsNotNone(node, "v26 read-only lore intake dashboard must exist")
+        helper = self.functions["lore_intake_build_evidence_graph"][0]
         namespace = {"Path": pathlib.Path, "INTAKE_DIR": pathlib.Path("."),
-                     "INTAKE_MANIFEST_FILENAME": "manifest.json",
+                     "INTAKE_MANIFEST_FILENAME": "manifest.json", "re": re,
+                     "lore_intake_build_evidence_graph": None,
                      "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8"))}
+        helper_namespace = {"re": re}
+        exec(compile(ast.Module(body=[helper], type_ignores=[]), "<v30-evidence-graph>", "exec"), helper_namespace)
+        namespace["lore_intake_build_evidence_graph"] = helper_namespace["lore_intake_build_evidence_graph"]
         exec(compile(ast.Module(body=[node], type_ignores=[]), "<v26-dashboard-test>", "exec"), namespace)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
@@ -803,7 +808,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         segment = ast.get_source_segment(self.source, self.functions["lore_intake_menu"][0]) or ""
         self.assertIn('choice == "4"', segment)
         self.assertIn("lore_intake_review_dashboard()", segment)
-        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "30.0"', self.source)
 
     def test_v27_location_context_enriches_book_without_replacing_primary_match(self):
         names = ("lore_intake_normalize", "lore_intake_classify")
@@ -966,7 +971,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIn('print("6. OCR a staged pending PDF/image (low-confidence review only)")', menu)
         self.assertIn('choice == "6"', menu)
         self.assertIn("lore_intake_ocr_pending_file()", menu)
-        self.assertIn('FACTORY_VERSION = "29.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "30.0"', self.source)
 
 
     def test_v276_extractor_recognizes_hsn_archive_creature_headings(self):
@@ -1112,6 +1117,75 @@ END FILE HSN-CR-003
                             for warning in creature.get("archive_warnings", [])))
         self.assertEqual(creature["confidence"], "LOW")
         self.assertIn("verify before approval", creature["note"])
+
+
+    def test_v30_evidence_graph_aggregates_provenance_and_flags_conflicts_without_writes(self):
+        names = ("lore_intake_build_evidence_graph",)
+        namespace = {"re": re}
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        records = [
+            {
+                "file": "cryptids-a.pdf", "kind": "book", "name": "Nightmare Cryptids",
+                "world": "Nightmare World", "location": "Intake Wing", "confidence": "HIGH",
+                "evidence": "filename",
+                "extracted_entity_candidates": [
+                    {"kind": "creature", "name": "The Hollow", "archive_id": "HSN-CR-001",
+                     "aliases": ["The Stitcher"], "archive_fields": {"classification": "Entity"},
+                     "confidence": "LOW", "evidence": "pdf_text"}
+                ],
+                "extracted_relationships": [
+                    {"subject_kind": "creature", "subject": "The Hollow", "relation": "located_at",
+                     "object_kind": "location", "object": "Intake Wing", "confidence": "LOW",
+                     "evidence": "Found at: Intake Wing"}
+                ],
+            },
+            {
+                "file": "cryptids-b.pdf", "kind": "book", "name": "Nightmare Cryptids",
+                "world": "Nightmare World", "location": "Intake Wing", "confidence": "MEDIUM",
+                "evidence": "pdf_title",
+                "extracted_entity_candidates": [
+                    {"kind": "creature", "name": "The Hollow", "archive_id": "HSN-CR-002",
+                     "aliases": ["The Stitcher"], "archive_fields": {"classification": "Entity"},
+                     "confidence": "LOW", "evidence": "pdf_text"},
+                    {"kind": "location", "name": "Intake Wing", "confidence": "LOW"},
+                    {"kind": "creature", "name": "The Hollow", "world": "AREA 420",
+                     "location": "Forbidden Grow Lab", "confidence": "LOW"}
+                ],
+                "extracted_relationships": [
+                    {"subject_kind": "creature", "subject": "The Hollow", "relation": "located_at",
+                     "object_kind": "location", "object": "Unregistered Annex", "confidence": "LOW"}
+                ],
+            },
+        ]
+        result = namespace["lore_intake_build_evidence_graph"](records)
+        self.assertTrue(result["review_only"])
+        self.assertFalse(result["canon_written"])
+        self.assertEqual(result["source_record_count"], 2)
+        hollow_rows = [row for row in result["entities"] if row["name"] == "The Hollow"]
+        self.assertEqual(len(hollow_rows), 3)
+        combined = next(row for row in hollow_rows if row["archive_id"] == "HSN-CR-001")
+        self.assertEqual(combined["source_files"], ["cryptids-a.pdf"])
+        self.assertEqual(combined["aliases"], ["The Stitcher"])
+        self.assertTrue(result["duplicate_name_warnings"])
+        self.assertEqual(result["archive_id_conflicts"], [])
+        self.assertTrue(any(row["object"] == "Unregistered Annex"
+                            for row in result["unresolved_relationships"]))
+        self.assertEqual(namespace["lore_intake_build_evidence_graph"]([])["entity_count"], 0)
+
+    def test_v30_evidence_graph_is_unique_and_dashboard_connected(self):
+        self.assertEqual(len(self.functions.get("lore_intake_build_evidence_graph", [])), 1)
+        dashboard = ast.get_source_segment(
+            self.source, self.functions["lore_intake_review_dashboard"][0]
+        ) or ""
+        self.assertIn("lore_intake_build_evidence_graph(summary[\"records\"])", dashboard)
+        self.assertIn("evidence_graph", dashboard)
+        node = self.functions["lore_intake_build_evidence_graph"][0]
+        segment = ast.get_source_segment(self.source, node) or ""
+        self.assertNotIn("save_json(", segment)
+        self.assertNotIn("save_series_bible(", segment)
+        self.assertIn('"canon_written": False', segment)
+
 
 
 
