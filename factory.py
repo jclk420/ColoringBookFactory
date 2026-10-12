@@ -16064,6 +16064,8 @@ def v29_listing_quality_gate(platform_name, fields, *, master_exists, cover_exis
                 return True
             if isinstance(value, dict) and any(str(item).strip() for item in value.values()):
                 return True
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return True
         return False
 
     checks = []
