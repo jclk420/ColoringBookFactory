@@ -930,10 +930,10 @@ class FactoryIntegrityTests(unittest.TestCase):
         namespace = {"re": re}
         exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
         text = (
-            "Ahool\\nWinged cryptid\\nH.S.N. FILE\\nHSN-CR-008\\n"
-            "CLASSIFICATION: Aerial\\nEND FILE HSN-CR-003\\n"
-            "Ahool\\nWinged cryptid\\nH.S.N. FILE\\nHSN-CR-003\\n"
-            "CLASSIFICATION: Aerial\\nEND FILE HSN-CR-003\\n"
+            "Ahool\nWinged cryptid\nH.S.N. FILE\nHSN-CR-008\n"
+            "CLASSIFICATION: Aerial\nEND FILE HSN-CR-003\n"
+            "Ahool\nWinged cryptid\nH.S.N. FILE\nHSN-CR-003\n"
+            "CLASSIFICATION: Aerial\nEND FILE HSN-CR-003\n"
         )
         extracted = namespace["lore_intake_extract_text_entities"](text)
         ahool = next(row for row in extracted["entity_candidates"]
