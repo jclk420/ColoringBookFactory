@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "55.0"
+FACTORY_VERSION = "56.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -13346,10 +13346,64 @@ def production_menu():
         input("\nPress Enter to continue...")
 
 
+def v56_publishing_release_audit(project=None):
+    """Run release preflight and package-manifest verification together."""
+    if project is None:
+        project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected. No audit was run.")
+        return {"status": "CANCELLED", "project": None, "read_only": True}
+    project = Path(project)
+    preflight = v20_release_preflight(project)
+    package_report = v23_package_manifest_verify(project)
+    blockers = list(preflight.get("blockers", []))
+    package_errors = []
+    package_warnings = []
+    for platform, result in package_report.get("platforms", {}).items():
+        for item in result.get("errors", []):
+            package_errors.append({"platform": platform, "detail": item})
+        for item in result.get("warnings", []):
+            package_warnings.append({"platform": platform, "detail": item})
+    ready = bool(preflight.get("ready")) and not package_errors
+    report = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "project": project.name,
+        "status": "READY" if ready and not package_warnings else ("REVIEW" if ready else "BLOCKED"),
+        "ready_to_upload": ready,
+        "preflight": preflight,
+        "package_manifest_verification": package_report,
+        "blockers": blockers,
+        "package_errors": package_errors,
+        "package_warnings": package_warnings,
+        "read_only": True,
+        "note": "No MASTER PDF, artwork, package contents, listing data, or upload state was changed. A diagnostic report may be written under REPORTS.",
+    }
+    target = project / "REPORTS" / "PUBLISHING_RELEASE_AUDIT.json"
+    try:
+        save_json(target, report)
+        report["report_path"] = str(target)
+    except Exception as error:
+        report["report_write_error"] = f"{type(error).__name__}: {error}"
+    print("\nPUBLISHING RELEASE AUDIT")
+    print(f"Project: {project.name}")
+    print(f"Status: {report['status']} | ready to upload: {'YES' if ready else 'NO'}")
+    print(f"Preflight blockers: {len(blockers)} | package errors: {len(package_errors)} | package warnings: {len(package_warnings)}")
+    for item in blockers:
+        print(f"  BLOCKER [{item.get('code', 'UNKNOWN')}] {item.get('detail', '')}")
+    for item in package_errors:
+        print(f"  PACKAGE ERROR [{item['platform']}] {item['detail']}")
+    for item in package_warnings:
+        print(f"  REVIEW [{item['platform']}] {item['detail']}")
+    print("This audit does not upload or publish anything.")
+    return report
+
+
 def publishing_menu():
     while True:
         print("\n" + "=" * 78); print(f"PUBLISH / EXPORT — v{FACTORY_VERSION}"); print("=" * 78)
-        print("1. Publish Current Book\n2. Platform & Publishing Center\n3. Rebuild One Platform\n4. Production Release Center\n5. Marketing Center\n6. Open Delivery Folder\n7. Back")
+        print("1. Publish Current Book\\n2. Platform & Publishing Center\\n3. Rebuild One Platform\\n4. Production Release Center\\n5. Marketing Center\\n6. Open Delivery Folder\\n7. Publishing Release Audit (preflight + package checks)\\n8. Back")
         c=input("Choose: ").strip()
         if c=="1": cb13_build_and_publish_project()
         elif c=="2": platform_center()
@@ -13359,7 +13413,8 @@ def publishing_menu():
         elif c=="6":
             project=v12_active_project() or choose_project()
             if project: v12_open_folder(project / "DELIVERY")
-        elif c=="7": return
+        elif c=="7": v56_publishing_release_audit()
+        elif c=="8": return
         else: print("Invalid choice.")
         input("\nPress Enter to continue...")
 
