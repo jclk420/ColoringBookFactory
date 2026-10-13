@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 47.0.
+# Current version: 48.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "47.0"
+FACTORY_VERSION = "48.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14892,10 +14892,11 @@ def lore_intake_next_ocr_page_start(metadata):
 
 
 def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=()):
-    """Verify all retained OCR batch files and ranges without modifying any artifact."""
+    """Verify retained OCR files, references, and ranges without modifying any artifact."""
     keys = ("malformed_ocr_batches", "missing_ocr_text_paths", "invalid_ocr_text_paths",
             "missing_ocr_text_files", "invalid_ocr_text_hashes", "ocr_text_hash_mismatches",
-            "unreadable_ocr_text_files", "invalid_ocr_page_ranges", "overlapping_ocr_page_ranges")
+            "unreadable_ocr_text_files", "invalid_ocr_page_ranges", "overlapping_ocr_page_ranges",
+            "duplicate_ocr_text_paths", "ocr_text_paths_outside_roots")
     counts = {key: 0 for key in keys}
     if not isinstance(metadata, dict):
         return {"integrity": "NOT_PRESENT", "page_ranges": "", "latest_text_path": "", "counts": counts}
@@ -14910,8 +14911,35 @@ def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=()):
             "page_start": metadata.get("ocr_page_start"), "page_limit": metadata.get("ocr_page_limit"),
             "page_end_requested": metadata.get("ocr_page_end_requested"),
         }]
+
+    allowed_roots = []
+    if report_path is not None:
+        try:
+            allowed_roots.append(Path(report_path).parent.resolve())
+        except (OSError, RuntimeError, TypeError, ValueError):
+            pass
+    for root in base_dirs if isinstance(base_dirs, (list, tuple, set)) else ():
+        try:
+            resolved_root = Path(root).expanduser().resolve()
+            if resolved_root not in allowed_roots:
+                allowed_roots.append(resolved_root)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            continue
+
+    def inside_allowed_root(path):
+        if not allowed_roots:
+            return True
+        for root in allowed_roots:
+            try:
+                if path.is_relative_to(root):
+                    return True
+            except (OSError, RuntimeError, ValueError):
+                continue
+        return False
+
     statuses, ranges, valid_ranges = [], [], []
     latest_text_path = ""
+    seen_text_paths = set()
     for batch in batches:
         if not isinstance(batch, dict):
             counts["malformed_ocr_batches"] += 1
@@ -14927,18 +14955,39 @@ def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=()):
         else:
             latest_text_path = raw_path
             artifact_path = lore_intake_resolve_recorded_path(raw_path, report_path, base_dirs)
-            if artifact_path is None or not artifact_path.is_file():
+            duplicate_path = False
+            if artifact_path is not None:
+                try:
+                    resolved_path = artifact_path.resolve()
+                    path_key = str(resolved_path).casefold()
+                    duplicate_path = path_key in seen_text_paths
+                    if duplicate_path:
+                        counts["duplicate_ocr_text_paths"] += 1
+                    else:
+                        seen_text_paths.add(path_key)
+                    if not inside_allowed_root(resolved_path):
+                        counts["ocr_text_paths_outside_roots"] += 1
+                        artifact_status = "OUTSIDE_ALLOWED_ROOT"
+                    elif not resolved_path.is_file():
+                        counts["missing_ocr_text_files"] += 1
+                        artifact_status = "MISSING_FILE"
+                    else:
+                        verification = lore_intake_verify_artifact(resolved_path, batch.get("text_sha256"))
+                        artifact_status = verification["status"]
+                        if artifact_status == "INVALID_HASH":
+                            counts["invalid_ocr_text_hashes"] += 1
+                        elif artifact_status == "HASH_MISMATCH":
+                            counts["ocr_text_hash_mismatches"] += 1
+                        elif artifact_status == "UNREADABLE":
+                            counts["unreadable_ocr_text_files"] += 1
+                        elif duplicate_path and artifact_status == "VERIFIED":
+                            artifact_status = "DUPLICATE_PATH"
+                except (OSError, RuntimeError, TypeError, ValueError):
+                    counts["invalid_ocr_text_paths"] += 1
+                    artifact_status = "INVALID_PATH"
+            else:
                 counts["missing_ocr_text_files"] += 1
                 artifact_status = "MISSING_FILE"
-            else:
-                verification = lore_intake_verify_artifact(artifact_path, batch.get("text_sha256"))
-                artifact_status = verification["status"]
-                if artifact_status == "INVALID_HASH":
-                    counts["invalid_ocr_text_hashes"] += 1
-                elif artifact_status == "HASH_MISMATCH":
-                    counts["ocr_text_hash_mismatches"] += 1
-                elif artifact_status == "UNREADABLE":
-                    counts["unreadable_ocr_text_files"] += 1
         start, limit, end = batch.get("page_start"), batch.get("page_limit"), batch.get("page_end_requested")
         valid = (isinstance(start, int) and not isinstance(start, bool) and start >= 1
                  and isinstance(limit, int) and not isinstance(limit, bool) and 1 <= limit <= 25
@@ -14965,7 +15014,6 @@ def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=()):
         integrity = next((status for status in statuses if status != "VERIFIED"), "REVIEW_REQUIRED")
     return {"integrity": integrity, "page_ranges": ", ".join(ranges),
             "latest_text_path": latest_text_path, "counts": counts, "batch_count": len(batches)}
-
 
 def lore_intake_write_text_atomic(path, text):
     """Atomically persist OCR evidence text without touching the source or canon."""
