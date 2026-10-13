@@ -6,6 +6,7 @@
 - Corrects the queue item schema to match production_queue_menu, which stores project paths as strings.
 - Validates each path stays inside the configured Projects folder before queue load/save.
 - Fails closed on malformed or out-of-root items without rewriting the queue file.
+- Keeps build-state `last_build` compatible with the ISO timestamp written by successful builds.
 - Adds regression tests for valid project paths and rejected unsafe entries.
 
 

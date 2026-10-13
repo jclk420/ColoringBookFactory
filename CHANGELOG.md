@@ -5,6 +5,7 @@
 - Aligns queue records with the actual workflow: non-empty project path strings, not dictionaries.
 - Validates queue paths remain inside the configured Projects folder before load or save.
 - Rejects malformed, empty, and out-of-root queue entries without overwriting the stored queue.
+- Accepts the production pipeline's ISO timestamp string for build-state `last_build`, while rejecting malformed types.
 - Adds regression coverage for queue round-trips, unsafe paths, and the production menu’s string-path format.
 
 

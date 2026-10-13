@@ -229,7 +229,10 @@ def load_build_state(project):
             if malformed_count:
                 print(f"WARNING: Build state contains {malformed_count} malformed image record(s) in {path}; invalid records were ignored in memory.")
                 data["images"] = valid_images
-        if data.get("last_build") is not None and not isinstance(data.get("last_build"), dict):
+        last_build = data.get("last_build")
+        if (last_build is not None
+                and not isinstance(last_build, dict)
+                and not (isinstance(last_build, str) and last_build.strip())):
             print(f"WARNING: Build state last_build field is malformed in {path}; using None in memory.")
             data["last_build"] = None
         data.setdefault("version", FACTORY_VERSION)
@@ -249,8 +252,10 @@ def save_build_state(project, state):
     if any(not isinstance(record, dict) for record in images.values()):
         raise ValueError("every build-state image record must be a dictionary")
     last_build = state.get("last_build")
-    if last_build is not None and not isinstance(last_build, dict):
-        raise ValueError("build state last_build must be a dictionary or None")
+    if (last_build is not None
+            and not isinstance(last_build, dict)
+            and not (isinstance(last_build, str) and last_build.strip())):
+        raise ValueError("build state last_build must be a non-empty timestamp string, dictionary, or None")
     save_json(project / BUILD_STATE_FILE, state)
 
 

@@ -61,7 +61,7 @@ class JsonStateResilienceTests(unittest.TestCase):
             project.mkdir()
             path = project / "build_state.json"
             original = {"version": "legacy", "images": ["not", "a", "map"],
-                        "last_build": "bad", "custom": "preserve"}
+                        "last_build": [], "custom": "preserve"}
             path.write_text(json.dumps(original), encoding="utf-8")
             helpers = load_state_helpers(root / "projects", root / "worlds")
             result = helpers["load_build_state"](project)
@@ -164,7 +164,7 @@ class JsonStateResilienceTests(unittest.TestCase):
             original = '{"images":{"keep":{"hash":"old"}}}'
             path.write_text(original, encoding="utf-8")
             helpers = load_state_helpers(root / "projects", root / "worlds")
-            invalid_values = (None, [], {"images": []}, {"images": {"bad": "not-a-record"}}, {"images": {}, "last_build": "bad"})
+            invalid_values = (None, [], {"images": []}, {"images": {"bad": "not-a-record"}}, {"images": {}, "last_build": []})
             for invalid in invalid_values:
                 with self.subTest(invalid=invalid):
                     with self.assertRaises(ValueError):
@@ -281,6 +281,21 @@ class JsonStateResilienceTests(unittest.TestCase):
             path.write_text(json.dumps(invalid), encoding="utf-8")
             self.assertEqual(helpers["load_queue"](), {"version": "53.0", "items": []})
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), invalid)
+
+
+
+    def test_build_state_accepts_production_timestamp_last_build(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            project = root / "project"
+            project.mkdir()
+            helpers = load_state_helpers(root / "projects", root / "worlds")
+            timestamp = "2026-10-13T19:30:00"
+            state = {"images": {}, "last_build": timestamp}
+            helpers["save_build_state"](project, state)
+            loaded = helpers["load_build_state"](project)
+            self.assertEqual(loaded["last_build"], timestamp)
+            self.assertEqual(json.loads((project / "build_state.json").read_text(encoding="utf-8"))["last_build"], timestamp)
 
 
 if __name__ == "__main__":
