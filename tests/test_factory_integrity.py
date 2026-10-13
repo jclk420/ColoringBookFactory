@@ -967,8 +967,10 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(empty_result["entity_candidates"], [])
         self.assertEqual(empty_result["relationships"], [])
         self.assertEqual(empty_result["extraction_summary"]["entity_count"], 0)
-        self.assertEqual(namespace["lore_intake_extract_text_entities"](None), {
-            "entity_candidates": [], "relationships": []})
+        none_result = namespace["lore_intake_extract_text_entities"](None)
+        self.assertEqual(none_result["entity_candidates"], [])
+        self.assertEqual(none_result["relationships"], [])
+        self.assertEqual(none_result["extraction_summary"]["entity_count"], 0)
         node = self.functions["lore_intake_extract_text_entities"][0]
         segment = ast.get_source_segment(self.source, node) or ""
         self.assertNotIn("save_json(", segment)
