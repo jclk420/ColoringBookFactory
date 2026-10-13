@@ -1321,5 +1321,45 @@ END FILE HSN-CR-011
 
 
 
+    def test_v30_next_bundle_tracks_world_book_series_alias_and_relation_types(self):
+        node = self.functions["lore_intake_extract_text_entities"][0]
+        module = ast.Module(body=[node], type_ignores=[])
+        namespace = {"re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        sample = """[OCR PAGE 7]
+Creature: Night Warden
+Also known as: The Gate Keeper / The Black Sentinel
+Realm: Nightmare World
+Setting: Hollow Stitch Nursery
+Book: Nightmare Teddy Bears
+Series: Nightmare Series
+The Night Warden haunts in the east nursery wing
+"""
+        result = namespace["lore_intake_extract_text_entities"](sample)
+        creature = next(row for row in result["entity_candidates"]
+                        if row["kind"] == "creature" and row["name"] == "Night Warden")
+        self.assertIn("The Gate Keeper", creature["aliases"])
+        self.assertIn("The Black Sentinel", creature["aliases"])
+        self.assertTrue(any(row["relation"] == "associated_with_world"
+                            and row["object"] == "Nightmare World"
+                            for row in result["relationships"]))
+        self.assertTrue(any(row["relation"] == "located_at"
+                            and row["object"] == "Hollow Stitch Nursery"
+                            for row in result["relationships"]))
+        self.assertTrue(any(row["relation"] == "appears_in_book"
+                            and row["object"] == "Nightmare Teddy Bears"
+                            for row in result["relationships"]))
+        self.assertTrue(any(row["relation"] == "belongs_to_series"
+                            and row["object"] == "Nightmare Series"
+                            for row in result["relationships"]))
+        self.assertTrue(any(row["relation"] == "haunts_location"
+                            and row["object"] == "the east nursery wing"
+                            for row in result["relationships"]))
+        summary = result["extraction_summary"]
+        self.assertEqual(summary["entity_kind_counts"]["creature"], 1)
+        self.assertEqual(summary["relationship_type_counts"]["associated_with_world"], 1)
+        self.assertEqual(summary["relationship_type_counts"]["belongs_to_series"], 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
