@@ -13536,7 +13536,8 @@ def publishing_menu():
             project=v12_active_project() or choose_project()
             if project: v12_open_folder(project / "DELIVERY")
         elif c=="7": v56_publishing_release_audit()
-        elif c=="8": return
+        elif c=="8": v57_publishing_readiness_bundle()
+        elif c=="9": return
         else: print("Invalid choice.")
         input("\nPress Enter to continue...")
 
