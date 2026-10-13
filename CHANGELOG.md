@@ -1,5 +1,14 @@
 # Changelog
 
+## v43.0 — Staged Artifact and OCR Provenance Audit
+
+- Verifies staged review files still exist and match the intake record SHA-256 without modifying them.
+- Audits OCR evidence text-file paths, file existence, recorded SHA-256, and requested page-range metadata.
+- Distinguishes missing files, malformed hashes, hash mismatches, unreadable artifacts, and invalid page ranges in dashboard diagnostics.
+- Corrects OCR text digest calculation to include the final newline actually persisted to disk.
+- Adds runtime tests for artifact hash verification and report-relative path resolution.
+- Keeps all checks read-only; no staged files are repaired, approvals are changed, or canon is written.
+
 ## v42.0 — Collision-Safe, Verified Intake Staging
 
 - Reserves unique batch directories even when intake runs occur in the same second.

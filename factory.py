@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 42.0.
+# Current version: 43.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "42.0"
+FACTORY_VERSION = "43.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14789,6 +14789,58 @@ def lore_intake_sha256(path):
     return digest.hexdigest()
 
 
+def lore_intake_resolve_recorded_path(recorded_path, report_path=None, base_dirs=()):
+    """Resolve a recorded file path against its report and known intake roots without writing."""
+    if not isinstance(recorded_path, str) or not recorded_path.strip():
+        return None
+    try:
+        path = Path(recorded_path).expanduser()
+        if path.is_absolute():
+            return path.resolve()
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return None
+    candidates = []
+    if report_path is not None:
+        try:
+            candidates.append(Path(report_path).parent / path)
+        except (OSError, TypeError, ValueError):
+            pass
+    for root in base_dirs:
+        try:
+            candidates.append(Path(root).expanduser() / path)
+        except (OSError, TypeError, ValueError):
+            continue
+    resolved_candidates = []
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+            resolved_candidates.append(resolved)
+            if resolved.exists():
+                return resolved
+        except (OSError, RuntimeError, TypeError, ValueError):
+            continue
+    return resolved_candidates[0] if resolved_candidates else None
+
+
+def lore_intake_verify_artifact(path, expected_sha256):
+    """Read-only verification of an artifact's existence and recorded SHA-256."""
+    try:
+        artifact = Path(path)
+        if not artifact.is_file():
+            return {"status": "MISSING", "actual_sha256": None}
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return {"status": "MISSING", "actual_sha256": None}
+    if not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
+        return {"status": "INVALID_HASH", "actual_sha256": None}
+    try:
+        actual = lore_intake_sha256(artifact)
+    except (OSError, RuntimeError, ValueError) as error:
+        return {"status": "UNREADABLE", "actual_sha256": None, "error": str(error)}
+    if actual.casefold() != expected_sha256.casefold():
+        return {"status": "HASH_MISMATCH", "actual_sha256": actual}
+    return {"status": "VERIFIED", "actual_sha256": actual}
+
+
 def lore_intake_write_text_atomic(path, text):
     """Atomically persist OCR evidence text without touching the source or canon."""
     path = Path(path)
@@ -15428,6 +15480,7 @@ def lore_intake_ocr_pending_file():
     text_path = report_path.parent / (
         f"OCR_TEXT_{safe_stem}_{source_digest}_P{ocr_start_page}-{page_end}.txt"
     )
+    persisted_text = batch_text if batch_text.endswith("\n") else batch_text + "\n"
     try:
         lore_intake_write_text_atomic(text_path, batch_text)
     except OSError as error:
@@ -15487,7 +15540,7 @@ def lore_intake_ocr_pending_file():
     metadata["ocr_page_end_requested"] = page_end
     metadata["ocr_text_path"] = str(text_path)
     metadata["ocr_text_characters"] = len(batch_text)
-    metadata["ocr_text_sha256"] = sha256(batch_text.encode("utf-8")).hexdigest()
+    metadata["ocr_text_sha256"] = sha256(persisted_text.encode("utf-8")).hexdigest()
     metadata["ocr_warnings"] = ocr.get("warnings", [])
     metadata["ocr_confidence"] = "LOW"
     metadata["ocr_candidate_summary"] = {
@@ -16430,7 +16483,13 @@ def lore_intake_review_dashboard():
                "missing_reports": 0, "malformed_items": 0, "missing_statuses": 0,
                "unknown_statuses": 0, "malformed_classifications": 0, "malformed_metadata": 0,
                "malformed_candidates": 0, "malformed_relationship_candidates": 0,
-               "missing_sources": 0, "malformed_evidence": 0, "duplicate_report_paths": 0}
+               "missing_sources": 0, "malformed_evidence": 0, "duplicate_report_paths": 0,
+               "missing_staged_files": 0, "invalid_staged_hashes": 0,
+               "staged_hash_mismatches": 0, "unreadable_staged_files": 0,
+               "missing_ocr_text_paths": 0, "invalid_ocr_text_paths": 0,
+               "missing_ocr_text_files": 0, "invalid_ocr_text_hashes": 0,
+               "ocr_text_hash_mismatches": 0, "unreadable_ocr_text_files": 0,
+               "invalid_ocr_page_ranges": 0}
     if not manifest_path.exists():
         print("No intake manifest exists yet. Run Lore Intake first.")
         return summary
@@ -16506,6 +16565,76 @@ def lore_intake_review_dashboard():
             status = str(raw_status or "UNKNOWN").upper()
             if status not in {"STAGED_FOR_REVIEW", "APPROVED", "REJECTED", "DUPLICATE_IN_BATCH", "DUPLICATE_ACROSS_BATCHES", "UNKNOWN"}:
                 summary["unknown_statuses"] += 1
+
+            staged_integrity = "NOT_CHECKED"
+            if status == "STAGED_FOR_REVIEW":
+                raw_staged_path = item.get("staged_path")
+                if not isinstance(raw_staged_path, str) or not raw_staged_path.strip():
+                    summary["missing_staged_files"] += 1
+                    staged_integrity = "MISSING_PATH"
+                else:
+                    staged_path = lore_intake_resolve_recorded_path(
+                        raw_staged_path, report_path, (INTAKE_DIR, FACTORY)
+                    )
+                    if staged_path is None or not staged_path.is_file():
+                        summary["missing_staged_files"] += 1
+                        staged_integrity = "MISSING"
+                    else:
+                        verification = lore_intake_verify_artifact(staged_path, item.get("sha256"))
+                        staged_integrity = verification["status"]
+                        if staged_integrity == "INVALID_HASH":
+                            summary["invalid_staged_hashes"] += 1
+                        elif staged_integrity == "HASH_MISMATCH":
+                            summary["staged_hash_mismatches"] += 1
+                        elif staged_integrity == "UNREADABLE":
+                            summary["unreadable_staged_files"] += 1
+
+            ocr_integrity = "NOT_PRESENT"
+            ocr_page_range = ""
+            has_ocr_metadata = "ocr_status" in metadata or "ocr_text_path" in metadata
+            if has_ocr_metadata:
+                raw_ocr_path = metadata.get("ocr_text_path")
+                if not raw_ocr_path:
+                    summary["missing_ocr_text_paths"] += 1
+                    ocr_integrity = "MISSING_PATH"
+                elif not isinstance(raw_ocr_path, str):
+                    summary["invalid_ocr_text_paths"] += 1
+                    ocr_integrity = "INVALID_PATH"
+                else:
+                    ocr_path = lore_intake_resolve_recorded_path(
+                        raw_ocr_path, report_path, (INTAKE_DIR, FACTORY)
+                    )
+                    if ocr_path is None or not ocr_path.is_file():
+                        summary["missing_ocr_text_files"] += 1
+                        ocr_integrity = "MISSING_FILE"
+                    else:
+                        verification = lore_intake_verify_artifact(
+                            ocr_path, metadata.get("ocr_text_sha256")
+                        )
+                        ocr_integrity = verification["status"]
+                        if ocr_integrity == "INVALID_HASH":
+                            summary["invalid_ocr_text_hashes"] += 1
+                        elif ocr_integrity == "HASH_MISMATCH":
+                            summary["ocr_text_hash_mismatches"] += 1
+                        elif ocr_integrity == "UNREADABLE":
+                            summary["unreadable_ocr_text_files"] += 1
+                page_start = metadata.get("ocr_page_start")
+                page_limit = metadata.get("ocr_page_limit")
+                page_end = metadata.get("ocr_page_end_requested")
+                valid_page_range = (
+                    isinstance(page_start, int) and not isinstance(page_start, bool) and page_start >= 1
+                    and isinstance(page_limit, int) and not isinstance(page_limit, bool) and 1 <= page_limit <= 25
+                    and (page_end is None or (
+                        isinstance(page_end, int) and not isinstance(page_end, bool)
+                        and page_end == page_start + page_limit - 1
+                    ))
+                )
+                if valid_page_range:
+                    ocr_page_range = f"{page_start}-{page_start + page_limit - 1}"
+                else:
+                    summary["invalid_ocr_page_ranges"] += 1
+                    ocr_integrity = "INVALID_PAGE_RANGE"
+
             kind = str(classification.get("kind") or "unmatched")
             name = str(classification.get("name") or "(unresolved)")
             world = str(classification.get("world") or "Unassigned World")
@@ -16529,6 +16658,8 @@ def lore_intake_review_dashboard():
                    "status": status, "kind": kind, "name": name, "world": world,
                    "location": location, "confidence": str(classification.get("confidence") or "LOW"),
                    "evidence": evidence or "none", "duplicate": duplicate, "unresolved": unresolved,
+                   "staged_integrity": staged_integrity, "ocr_integrity": ocr_integrity,
+                   "ocr_page_range": ocr_page_range, "ocr_text_path": str(metadata.get("ocr_text_path") or ""),
                    "pdf_title": str(metadata.get("pdf_title") or ""),
                    "extracted_entity_candidates": [candidate for candidate in classification.get("extracted_entity_candidates", []) if isinstance(candidate, dict)] if isinstance(classification.get("extracted_entity_candidates", []), list) else [],
                    "extracted_relationships": [relationship for relationship in classification.get("extracted_relationships", []) if isinstance(relationship, dict)] if isinstance(classification.get("extracted_relationships", []), list) else []}
@@ -16564,12 +16695,18 @@ def lore_intake_review_dashboard():
     print(f"Batches: {summary['batches']} | Items: {summary['items']} | Pending: {summary['pending']} | "
           f"Approved: {summary['approved']} | Rejected: {summary['rejected']}")
     print(f"Unresolved: {summary['unresolved']} | Duplicate warnings: {summary['duplicates']}")
-    if any(summary[key] for key in ("unreadable_reports", "malformed_reports", "malformed_batches", "malformed_manifests", "missing_record_paths", "invalid_record_paths", "missing_reports", "malformed_items", "missing_statuses", "unknown_statuses", "malformed_classifications", "malformed_metadata", "malformed_candidates", "malformed_relationship_candidates", "missing_sources", "malformed_evidence", "duplicate_report_paths")):
+    if any(summary[key] for key in ("unreadable_reports", "malformed_reports", "malformed_batches", "malformed_manifests", "missing_record_paths", "invalid_record_paths", "missing_reports", "malformed_items", "missing_statuses", "unknown_statuses", "malformed_classifications", "malformed_metadata", "malformed_candidates", "malformed_relationship_candidates", "missing_sources", "malformed_evidence", "duplicate_report_paths", "missing_staged_files",
+                      "invalid_staged_hashes", "staged_hash_mismatches", "unreadable_staged_files",
+                      "missing_ocr_text_paths", "invalid_ocr_text_paths", "missing_ocr_text_files",
+                      "invalid_ocr_text_hashes", "ocr_text_hash_mismatches", "unreadable_ocr_text_files",
+                      "invalid_ocr_page_ranges")):
         print("INTAKE DATA WARNINGS — read-only; no source or canon data was changed")
         print(f"  Malformed manifests: {summary['malformed_manifests']} | Malformed batch entries: {summary['malformed_batches']} | Missing record paths: {summary['missing_record_paths']} | Invalid record paths: {summary['invalid_record_paths']}")
         print(f"  Missing reports: {summary['missing_reports']} | Unreadable reports: {summary['unreadable_reports']} | Malformed reports: {summary['malformed_reports']} | Malformed items: {summary['malformed_items']} | Missing statuses: {summary['missing_statuses']} | Unknown statuses: {summary['unknown_statuses']}")
         print(f"  Malformed classifications: {summary['malformed_classifications']} | Malformed metadata: {summary['malformed_metadata']} | Bad entity candidates: {summary['malformed_candidates']} | Bad relationship candidates: {summary['malformed_relationship_candidates']}")
         print(f"  Missing source paths: {summary['missing_sources']} | Malformed evidence: {summary['malformed_evidence']} | Reused report paths: {summary['duplicate_report_paths']}")
+        print(f"  Missing staged files: {summary['missing_staged_files']} | Invalid staged hashes: {summary['invalid_staged_hashes']} | Staged hash mismatches: {summary['staged_hash_mismatches']} | Unreadable staged files: {summary['unreadable_staged_files']}")
+        print(f"  Missing OCR text paths: {summary['missing_ocr_text_paths']} | Invalid OCR paths: {summary['invalid_ocr_text_paths']} | Missing OCR text files: {summary['missing_ocr_text_files']} | Invalid OCR hashes: {summary['invalid_ocr_text_hashes']} | OCR hash mismatches: {summary['ocr_text_hash_mismatches']} | Unreadable OCR files: {summary['unreadable_ocr_text_files']} | Invalid OCR page ranges: {summary['invalid_ocr_page_ranges']}")
     print(f"Evidence graph: {graph['entity_count']} entities | {graph['relationship_count']} relationships | "
           f"{len(graph['duplicate_name_warnings'])} name conflicts | "
           f"{len(graph['archive_id_conflicts'])} archive-ID conflicts | "
@@ -16604,6 +16741,13 @@ def lore_intake_review_dashboard():
         print(f"\n[{row['status']}] {row['file']}")
         print(f"  Proposal: {row['kind']} '{row['name']}' — {row['world']} / {row['location']}")
         print(f"  Evidence: {row['evidence']} | Confidence: {row['confidence']}{flag_text}")
+        if row["staged_integrity"] != "NOT_CHECKED":
+            print(f"  Staged file integrity: {row['staged_integrity']}")
+        if row["ocr_integrity"] != "NOT_PRESENT":
+            page_label = f"pages {row['ocr_page_range']}" if row["ocr_page_range"] else "page range unavailable"
+            print(f"  OCR evidence integrity: {row['ocr_integrity']} | {page_label}")
+            if row["ocr_text_path"]:
+                print(f"  OCR text file: {row['ocr_text_path']}")
         if row["pdf_title"]:
             print(f"  PDF title: {row['pdf_title']}")
         for candidate in row["extracted_entity_candidates"][:8]:

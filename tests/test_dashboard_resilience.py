@@ -18,8 +18,8 @@ class DashboardResilienceTests(unittest.TestCase):
         cls.dashboard = ast.get_source_segment(cls.source, matches[0])
 
     def test_factory_version_is_consistent(self):
-        self.assertIn('FACTORY_VERSION = "42.0"', self.source)
-        self.assertIn("# Current version: 42.0.", self.source)
+        self.assertIn('FACTORY_VERSION = "43.0"', self.source)
+        self.assertIn("# Current version: 43.0.", self.source)
 
     def test_malformed_manifest_batches_are_reported_and_returned_safely(self):
         self.assertIn('manifest_batches_wrong_type', self.dashboard)
@@ -67,6 +67,15 @@ class DashboardResilienceTests(unittest.TestCase):
         self.assertIn('metadata["ocr_text_sha256"]', self.source)
         self.assertIn("lore_intake_write_text_atomic(text_path, batch_text)", self.source)
         self.assertIn("No intake record was changed.", self.source)
+
+    def test_dashboard_checks_staged_and_ocr_evidence_integrity(self):
+        for token in (
+            "missing_staged_files", "invalid_staged_hashes", "staged_hash_mismatches",
+            "missing_ocr_text_paths", "missing_ocr_text_files", "ocr_text_hash_mismatches",
+            "invalid_ocr_page_ranges", "lore_intake_verify_artifact",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.dashboard)
 
     def test_dashboard_remains_read_only(self):
         self.assertIn("READ ONLY", self.dashboard)

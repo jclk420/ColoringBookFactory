@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v43.0 — Staged Artifact and OCR Provenance Audit
+- Audits staged-file existence and SHA-256 against each intake record.
+- Verifies OCR text-file paths, persisted-text hashes, and page-range metadata.
+- Separates missing, malformed, unreadable, and mismatched artifact conditions.
+- Keeps all checks advisory and read-only, with regression coverage for helper behavior.
+
 ### v42.0 — Collision-Safe, Verified Intake Staging
 - Reserves a distinct intake batch folder when timestamps collide.
 - Uses collision-safe staged filenames and verifies copied bytes against the source SHA-256.
