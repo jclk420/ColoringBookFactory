@@ -105,7 +105,7 @@ class JsonStateResilienceTests(unittest.TestCase):
             original = '{"version":"old","items":[{"keep":true}]}'
             path.write_text(original, encoding="utf-8")
             helpers = load_state_helpers(projects, root / "worlds")
-            for invalid in (None, [], {"items": "bad"}, {"items": [None]}, {"items": [{"project": "Nightmare Cryptids"}]}, {"items": ["../outside"]}, {"items": [""]}):
+            for invalid in (None, [], {"items": "bad"}, {"items": [None]}, {"items": [{"project": "Nightmare Cryptids"}]}, {"items": ["../outside"]}, {"items": [""]}, {"items": [str(projects / "missing")]}):
                 with self.subTest(invalid=invalid):
                     with self.assertRaises(ValueError):
                         helpers["save_queue"](invalid)
@@ -132,6 +132,7 @@ class JsonStateResilienceTests(unittest.TestCase):
             helpers = load_state_helpers(projects, root / "worlds")
             project = projects / "Nightmare Cryptids"
             project.mkdir()
+            (project / "project.json").write_text("{}", encoding="utf-8")
             queue = {"items": [str(project)], "custom": True}
             helpers["save_queue"](queue)
             saved = json.loads((projects / "production_queue.json").read_text(encoding="utf-8"))
@@ -272,6 +273,7 @@ class JsonStateResilienceTests(unittest.TestCase):
             projects.mkdir()
             project = projects / "Nightmare Cryptids"
             project.mkdir()
+            (project / "project.json").write_text("{}", encoding="utf-8")
             path = projects / "production_queue.json"
             valid = {"version": "legacy", "items": [str(project)]}
             path.write_text(json.dumps(valid), encoding="utf-8")
