@@ -16335,7 +16335,8 @@ def lore_intake_review_dashboard():
         if not record_value:
             summary["missing_record_paths"] += 1
             continue
-        if not isinstance(record_value, (str, os.PathLike)):
+        if not isinstance(record_value, str):
+            # JSON manifests must store paths as strings; avoid requiring os in isolated test namespaces.
             summary["invalid_record_paths"] += 1
             continue
         try:
