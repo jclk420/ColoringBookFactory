@@ -1,5 +1,13 @@
 # Changelog
 
+## v39.0 — Intake Data Validation and Diagnostics
+
+- Rejects non-object intake manifests with a clear read-only diagnostic.
+- Counts missing or invalid report paths separately from unreadable reports.
+- Reports missing report files instead of treating them as generic read failures.
+- Counts malformed item entries and items with missing status fields.
+- Prints an actionable integrity warning summary without changing staged data or canon.
+
 ## v38.0 — Intake Dashboard Resilience
 
 - Validates the manifest batch collection and reports malformed batch entries instead of iterating invalid data.
