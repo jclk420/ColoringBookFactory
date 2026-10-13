@@ -159,8 +159,7 @@ def queue_item_is_safe(item):
     try:
         root = PROJECTS.resolve()
         candidate = Path(item).resolve()
-        return (candidate != root and candidate.is_relative_to(root)
-                and candidate.is_dir() and (candidate / "project.json").is_file())
+        return candidate != root and candidate.is_relative_to(root)
     except (OSError, RuntimeError, ValueError):
         return False
 

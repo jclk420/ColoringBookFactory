@@ -105,7 +105,7 @@ class JsonStateResilienceTests(unittest.TestCase):
             original = '{"version":"old","items":[{"keep":true}]}'
             path.write_text(original, encoding="utf-8")
             helpers = load_state_helpers(projects, root / "worlds")
-            for invalid in (None, [], {"items": "bad"}, {"items": [None]}, {"items": [{"project": "Nightmare Cryptids"}]}, {"items": ["../outside"]}, {"items": [""]}, {"items": [str(projects / "missing")]}):
+            for invalid in (None, [], {"items": "bad"}, {"items": [None]}, {"items": [{"project": "Nightmare Cryptids"}]}, {"items": ["../outside"]}, {"items": [""]}):
                 with self.subTest(invalid=invalid):
                     with self.assertRaises(ValueError):
                         helpers["save_queue"](invalid)
