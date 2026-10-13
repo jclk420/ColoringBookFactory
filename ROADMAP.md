@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v46.0 — Non-Destructive OCR Evidence Writes
+- Uses unique per-run OCR evidence paths and no-clobber finalization.
+- Preserves legacy single-batch OCR metadata when creating a multi-batch history.
+- Cleans up newly created evidence when report persistence fails.
+- Adds regression coverage for overwrite prevention and legacy range continuation.
+
 ### v45.0 — OCR Source Identity Guard
 - Checks the selected source and staged copy against the original intake digest before OCR.
 - Rechecks identity after OCR so changed files cannot be attached to the old pending record.
