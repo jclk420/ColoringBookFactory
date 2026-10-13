@@ -1,5 +1,13 @@
 # Changelog
 
+## v45.0 — OCR Source Identity Guard
+
+- Verifies the selected OCR file and its staged intake copy against the recorded source SHA-256 before OCR begins.
+- Rechecks both files after OCR and before saving any text or report changes, catching changes during processing.
+- Refuses attachment when either file is missing, unreadable, malformed, or hash-mismatched; it never silently re-intakes or repairs the file.
+- Adds runtime regression coverage for modified source and staged-copy rejection.
+- Keeps source artwork, review decisions, approved registry, Series Bible, and canon unchanged.
+
 ## v44.0 — Persistent OCR Batch History and Range Safety
 
 - Retains every OCR batch text path, page range, digest, confidence, method, warnings, and timestamp in the pending intake report.
