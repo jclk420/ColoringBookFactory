@@ -1308,7 +1308,7 @@ END FILE HSN-CR-011
         self.assertTrue(any(row["relation"] == "reported_habitat"
                             and row["object"] == "The flooded wetlands"
                             for row in result["relationships"]))
-        self.assertTrue(any(row["relation"] == "located_at"
+        self.assertTrue(any(row["relation"] == "found_at"
                             and row["object"] == "the old pumping station"
                             for row in result["relationships"]))
         summary = result["extraction_summary"]
@@ -1333,7 +1333,7 @@ Realm: Nightmare World
 Setting: Hollow Stitch Nursery
 Book: Nightmare Teddy Bears
 Series: Nightmare Series
-The Night Warden haunts in the east nursery wing
+Haunts in the east nursery wing
 """
         result = namespace["lore_intake_extract_text_entities"](sample)
         creature = next(row for row in result["entity_candidates"]
