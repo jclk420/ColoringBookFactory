@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 53.0.
+# Current version: 54.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "53.0"
+FACTORY_VERSION = "54.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -3288,7 +3288,7 @@ def build_book(project):
             save_json(project / "project.json", settings)
     except Exception as error:
         print(f"\nERROR: Could not load project configuration: {error}")
-        return
+        return {"status": "FAILED", "errors": [str(error)]}
     images = get_images(project)
     if str(settings.get("assembly_mode", "auto")).strip().lower() == "auto":
         if settings.get("number_of_images") != len(images):
@@ -3322,7 +3322,7 @@ def build_book(project):
         for error in validation_errors: print(f"ERROR: {error}")
         report = write_final_report(project, settings, [], project / "PDF" / "NOT_CREATED.pdf", project / "FINAL" / "NOT_CREATED.pdf", validation_errors, validation_warnings)
         print(f"\nFinal report: {report}")
-        return
+        return {"status": "NOT_READY", "errors": list(validation_errors), "warnings": list(validation_warnings)}
     current_inventory = source_inventory(images)
     state = load_build_state(project)
     current_fingerprint_payload = {
@@ -3361,7 +3361,7 @@ def build_book(project):
     ):
         print("\nNO CHANGES DETECTED - BUILD SKIPPED.")
         print("Cached build is already valid.")
-        return
+        return {"status": "SKIPPED", "project": str(project), "reason": "cached build is valid"}
 
     qc_warnings, qc_errors = quality_check(project, settings, images)
     contact_sheet = create_artwork_contact_sheet(project, settings, images)
@@ -3373,7 +3373,7 @@ def build_book(project):
             print(f"ERROR: {error}")
         report = write_final_report(project, settings, [], project / "PDF" / "NOT_CREATED.pdf", project / "FINAL" / "NOT_CREATED.pdf", qc_errors, qc_warnings)
         print(f"\nFinal report: {report}")
-        return
+        return {"status": "NOT_READY", "errors": list(qc_errors), "warnings": list(qc_warnings)}
     print("\nBUILDING PAGES...")
     try:
         built_pages = build_pages(project, settings, book, images)
@@ -3382,7 +3382,7 @@ def build_book(project):
         print(f"ERROR: {message}")
         report = write_final_report(project, settings, [], project / "PDF" / "NOT_CREATED.pdf", project / "FINAL" / "NOT_CREATED.pdf", [message], qc_warnings)
         print(f"\nFinal report: {report}")
-        return
+        return {"status": "FAILED", "errors": [message], "warnings": list(qc_warnings)}
     print(f"Pages built: {len(built_pages)}")
     print("\nPAGE PREFLIGHT")
     page_files, page_errors, page_warnings = page_preflight(project, settings)
@@ -3395,7 +3395,7 @@ def build_book(project):
             print(f"ERROR: {error}")
         report = write_final_report(project, settings, built_pages, project / "PDF" / "NOT_CREATED.pdf", project / "FINAL" / "NOT_CREATED.pdf", qc_errors + page_errors, qc_warnings + page_warnings)
         print(f"\nFinal report: {report}")
-        return
+        return {"status": "NOT_READY", "errors": list(qc_errors + page_errors), "warnings": list(qc_warnings + page_warnings)}
     print("\nCREATING PDF...")
     try:
         pdf_file, final_pdf, pdf_pages = create_pdf(project, settings)
@@ -3404,7 +3404,7 @@ def build_book(project):
         print(f"ERROR: {message}")
         report = write_final_report(project, settings, built_pages, project / "PDF" / "NOT_CREATED.pdf", project / "FINAL" / "NOT_CREATED.pdf", qc_errors + page_errors + [message], qc_warnings + page_warnings)
         print(f"\nFinal report: {report}")
-        return
+        return {"status": "FAILED", "errors": [message], "warnings": list(qc_warnings + page_warnings)}
     print(f"PDF created:\n{pdf_file}")
     print(f"Final copy:\n{final_pdf}")
     print("\nPDF PREFLIGHT")
@@ -3513,6 +3513,13 @@ def build_book(project):
         print("\nWARNINGS:")
         for warning in all_warnings:
             print(f"  [WARNING] {warning}")
+    return {
+        "status": "NOT_READY" if all_errors else "SUCCESS",
+        "project": str(project),
+        "errors": list(all_errors),
+        "warnings": list(all_warnings),
+        "final_pdf": str(final_pdf) if final_pdf.exists() else None,
+    }
 
 # ============================================================
 # BULK BUILD
@@ -3736,15 +3743,18 @@ def import_artwork_folder():
 
 def production_queue_menu():
     queue = load_queue()
+    queue.setdefault("items", [])
     print("\n" + "=" * 60)
     print("PRODUCTION QUEUE")
     print("=" * 60)
     projects = get_projects()
     if not projects:
-        print("No projects available.")
-        return
+        print("No projects available to add; existing queued items can still be reviewed or cleared.")
     for i, project in enumerate(projects, 1):
         print(f"{i}. {project.name}")
+    print(f"Currently queued: {len(queue['items'])}")
+    for raw in queue["items"]:
+        print(f"  - {Path(raw).name}")
     print("A. Add ALL projects")
     print("C. Clear queue")
     print("R. Run queue")
@@ -3755,9 +3765,11 @@ def production_queue_menu():
         print("Queue cleared.")
         return
     if choice == "a":
-        queue["items"] = [str(p) for p in projects]
+        existing = list(queue.get("items", []))
+        combined = list(dict.fromkeys(existing + [str(project) for project in projects]))
+        queue["items"] = combined
         save_queue(queue)
-        print(f"Added {len(projects)} project(s) to queue.")
+        print(f"Added {len(combined) - len(existing)} new project(s); {len(combined)} total queued.")
         return
     if choice == "r":
         items = list(queue.get("items", []))
@@ -3765,20 +3777,48 @@ def production_queue_menu():
             print("Queue is empty.")
             return
         print(f"Running {len(items)} queued project(s)...")
+        remaining = list(items)
         for raw in items:
+            if not queue_item_is_safe(raw):
+                print(f"RETAINED: Unsafe queue path needs manual review: {raw!r}")
+                continue
             project = Path(raw)
-            if project.exists():
-                build_book(project)
-        queue["items"] = []
+            if not project.is_dir() or not (project / "project.json").is_file():
+                print(f"RETAINED: Project folder or project.json is missing: {raw}")
+                continue
+            try:
+                result = build_book(project)
+            except Exception as error:
+                print(f"FAILED: {project.name}: {error}. Queue item retained.")
+                continue
+            status = result.get("status", "FAILED") if isinstance(result, dict) else "FAILED"
+            if status in {"SUCCESS", "SKIPPED"}:
+                try:
+                    remaining.remove(raw)
+                except ValueError:
+                    pass
+                queue["items"] = list(remaining)
+                save_queue(queue)
+                print(f"Completed: {project.name} ({status}); queue progress saved.")
+            else:
+                print(f"RETAINED: {project.name} returned {status}; fix the issue and rerun.")
+        queue["items"] = remaining
         save_queue(queue)
-        print("Production queue complete.")
+        if remaining:
+            print(f"Queue paused with {len(remaining)} item(s) retained for retry or review.")
+        else:
+            print("Production queue complete.")
         return
     try:
         idx = int(choice) - 1
         if 0 <= idx < len(projects):
-            queue.setdefault("items", []).append(str(projects[idx]))
-            save_queue(queue)
-            print(f"Added: {projects[idx].name}")
+            project_path = str(projects[idx])
+            if project_path in queue["items"]:
+                print(f"Already queued: {projects[idx].name}")
+            else:
+                queue["items"].append(project_path)
+                save_queue(queue)
+                print(f"Added: {projects[idx].name}")
     except ValueError:
         print("Invalid choice.")
 

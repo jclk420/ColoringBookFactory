@@ -1,5 +1,15 @@
 # Changelog
 
+## v54.0 — Resumable Production Queue and Explicit Build Results
+
+- Returns explicit SUCCESS, SKIPPED, NOT_READY, or FAILED results from the build pipeline.
+- Keeps failed, not-ready, unsafe, and missing queue entries for correction instead of silently clearing them.
+- Removes successful queue entries and saves progress after each completed build, so interrupted runs can resume.
+- Catches per-project exceptions and continues processing other queued projects.
+- Prevents duplicate manual queue additions, merges “Add All” without duplicating paths, and lets users clear/review stale queues even when no projects remain.
+- Adds runtime tests for resumability, duplicate prevention, stale queues, and build-result statuses.
+
+
 ## v53.0 — Restore Safe Production Queue Path Handling
 
 - Aligns queue records with the actual workflow: non-empty project path strings, not dictionaries.
