@@ -1,6 +1,6 @@
 # ColoringBookFactory
 
-**Current factory version: 31.0**
+**Current factory version: 32.0**
 
 ColoringBookFactory is a Windows-oriented Python application for producing coloring books, organizing world/series lore, preparing marketplace listing drafts, and checking production packages before release.
 
@@ -30,7 +30,7 @@ The main menu includes book creation/import, production, publishing, marketing, 
 4. Use the read-only dashboard to inspect candidates, duplicates, provenance, and unresolved relationships.
 5. Explicitly review and approve candidates before using the separate canon tools.
 
-Unknown or ambiguous matches must remain review items. OCR-derived text is evidence, not canon. Intake staging and diagnostic dashboards should not modify original source files or silently promote candidates into a Series Bible.
+Unknown or ambiguous matches must remain review items. OCR-derived text is evidence, not canon. The read-only quality audit also flags missing or invalid page provenance, aliases mapped to multiple entities, incomplete or self-referential relationships, and conflicting targets for the same subject/relation. Intake staging and diagnostic dashboards should not modify original source files or silently promote candidates into a Series Bible.
 
 ### 2. Prepare marketplace listings
 
