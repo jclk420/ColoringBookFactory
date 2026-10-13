@@ -16,7 +16,8 @@ def load_helper(name, namespace):
     if len(matches) != 1:
         raise AssertionError(f"Expected exactly one {name} helper")
     helper_names = {"lore_intake_resolve_recorded_path", "lore_intake_verify_artifact",
-                    "lore_intake_audit_ocr_history", "lore_intake_next_ocr_page_start"}
+                    "lore_intake_audit_ocr_history", "lore_intake_next_ocr_page_start",
+                    "lore_intake_validate_ocr_source"}
     helpers = [node for node in tree.body
                if isinstance(node, ast.FunctionDef) and node.name in helper_names]
     exec(compile(ast.Module(body=helpers, type_ignores=[]), str(FACTORY_PATH), "exec"), namespace)
@@ -39,6 +40,29 @@ class LoreArtifactIntegrityTests(unittest.TestCase):
             self.assertEqual(verify(artifact, "not-a-hash")["status"], "INVALID_HASH")
             self.assertEqual(verify(artifact, "0" * 64)["status"], "HASH_MISMATCH")
             self.assertEqual(verify(Path(temp) / "missing.txt", digest)["status"], "MISSING")
+
+    def test_ocr_source_guard_rejects_changed_selected_or_staged_files(self):
+        namespace = {
+            "Path": Path, "re": __import__("re"),
+            "lore_intake_sha256": lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+        }
+        validate = load_helper("lore_intake_validate_ocr_source", namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source.pdf"
+            staged = root / "staged.pdf"
+            report = root / "INTAKE_BATCH.json"
+            payload = b"original-intake-bytes"
+            source.write_bytes(payload)
+            staged.write_bytes(payload)
+            digest = hashlib.sha256(payload).hexdigest()
+            item = {"sha256": digest, "staged_path": str(staged)}
+            self.assertEqual(validate(source, item, report, (root,))["status"], "VERIFIED")
+            staged.write_bytes(b"changed-staged-copy")
+            self.assertEqual(validate(source, item, report, (root,))["status"], "STAGED_HASH_MISMATCH")
+            staged.write_bytes(payload)
+            source.write_bytes(b"changed-selected-source")
+            self.assertEqual(validate(source, item, report, (root,))["status"], "SELECTED_HASH_MISMATCH")
 
     def test_ocr_history_validates_each_batch_and_detects_overlapping_ranges(self):
         namespace = {

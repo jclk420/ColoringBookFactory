@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v45.0 — OCR Source Identity Guard
+- Checks the selected source and staged copy against the original intake digest before OCR.
+- Rechecks identity after OCR so changed files cannot be attached to the old pending record.
+- Refuses mismatched evidence without rewriting files or report metadata.
+- Adds regression tests for both selected-source and staged-copy tampering.
+
 ### v44.0 — Persistent OCR Batch History and Range Safety
 - Retains per-batch OCR evidence paths, page ranges, digests, warnings, and timestamps.
 - Suggests the next page range and explicitly guards against accidental overlap.

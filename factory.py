@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 44.0.
+# Current version: 45.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "44.0"
+FACTORY_VERSION = "45.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14841,6 +14841,27 @@ def lore_intake_verify_artifact(path, expected_sha256):
     return {"status": "VERIFIED", "actual_sha256": actual}
 
 
+def lore_intake_validate_ocr_source(source_path, item, report_path, base_dirs=()):
+    """Require the selected source and its staged copy to match the recorded intake digest."""
+    if not isinstance(item, dict):
+        return {"status": "INVALID_ITEM"}
+    expected = item.get("sha256")
+    selected = lore_intake_verify_artifact(source_path, expected)
+    if selected["status"] != "VERIFIED":
+        return {"status": "SELECTED_" + selected["status"], "selected": selected}
+    raw_staged_path = item.get("staged_path")
+    if not isinstance(raw_staged_path, str) or not raw_staged_path.strip():
+        return {"status": "STAGED_PATH_MISSING", "selected": selected}
+    staged_path = lore_intake_resolve_recorded_path(raw_staged_path, report_path, base_dirs)
+    if staged_path is None or not staged_path.is_file():
+        return {"status": "STAGED_MISSING", "selected": selected}
+    staged = lore_intake_verify_artifact(staged_path, expected)
+    if staged["status"] != "VERIFIED":
+        return {"status": "STAGED_" + staged["status"], "selected": selected, "staged": staged}
+    return {"status": "VERIFIED", "selected_sha256": selected["actual_sha256"],
+            "staged_path": str(staged_path)}
+
+
 def lore_intake_next_ocr_page_start(metadata):
     """Suggest the first page after the highest valid OCR batch range."""
     if not isinstance(metadata, dict):
@@ -15540,7 +15561,16 @@ def lore_intake_ocr_pending_file():
             print("More than one pending record matched. No record was changed.")
         return {"status": "REVIEW", "attached": False, "matches": len(matches)}
 
-    raw_existing_metadata = matches[0][2].get("metadata")
+    report_path, report, item = matches[0]
+    source_integrity = lore_intake_validate_ocr_source(
+        source, item, report_path, (INTAKE_DIR, FACTORY)
+    )
+    if source_integrity.get("status") != "VERIFIED":
+        print(f"Selected source or staged copy failed integrity verification: {source_integrity.get('status')}.")
+        print("No OCR text or intake metadata was changed. Re-intake changed files instead of attaching mismatched evidence.")
+        return {"status": "INTEGRITY_ERROR", "attached": False, "integrity": source_integrity}
+
+    raw_existing_metadata = item.get("metadata")
     if raw_existing_metadata is not None and not isinstance(raw_existing_metadata, dict):
         print("The pending record has malformed metadata. No OCR report changes were made.")
         return {"status": "ERROR", "attached": False}
@@ -15593,7 +15623,13 @@ def lore_intake_ocr_pending_file():
             print(f"  Warning: {warning}")
         return {"status": ocr.get("status", "ERROR"), "attached": False, "warnings": ocr.get("warnings", [])}
 
-    report_path, report, item = matches[0]
+    source_integrity = lore_intake_validate_ocr_source(
+        source, item, report_path, (INTAKE_DIR, FACTORY)
+    )
+    if source_integrity.get("status") != "VERIFIED":
+        print(f"Source integrity changed during OCR: {source_integrity.get('status')}.")
+        print("No OCR evidence or intake metadata was attached.")
+        return {"status": "INTEGRITY_ERROR", "attached": False, "integrity": source_integrity}
     batch_text = lore_ocr_select_page_range(
         ocr.get("text", ""), ocr_start_page, page_limit
     )
