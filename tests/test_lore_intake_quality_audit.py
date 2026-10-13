@@ -19,7 +19,7 @@ class LoreIntakeQualityAuditTests(unittest.TestCase):
         module = ast.Module(body=matches, type_ignores=[])
         cls.audit = {"re": re, "difflib": difflib}
         exec(compile(module, str(FACTORY_PATH), "exec"), cls.audit)
-        cls.audit = cls.audit["lore_intake_quality_audit"]
+        cls.audit = staticmethod(cls.audit["lore_intake_quality_audit"])
 
     def test_prioritizes_low_confidence_unresolved_records_without_mutating_input(self):
         records = [{
