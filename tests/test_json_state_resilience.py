@@ -12,7 +12,7 @@ FACTORY_PATH = ROOT / "factory.py"
 HELPER_NAMES = {
     "load_json", "save_json", "load_build_state", "load_build_history",
     "load_queue", "save_queue", "load_world_index", "save_build_state",
-    "save_world_index", "load_world",
+    "save_world_index", "load_world", "queue_item_is_safe",
 }
 
 
@@ -25,7 +25,7 @@ def load_state_helpers(projects, worlds):
         raise AssertionError("Expected each JSON state helper exactly once")
     namespace = {
         "Path": Path, "json": json, "os": os, "tempfile": tempfile,
-        "FACTORY_VERSION": "52.0",
+        "FACTORY_VERSION": "53.0",
         "BUILD_STATE_FILE": "build_state.json",
         "BUILD_HISTORY_FILENAME": "build_history.json",
         "PRODUCTION_QUEUE_FILENAME": "production_queue.json",
@@ -51,7 +51,7 @@ class JsonStateResilienceTests(unittest.TestCase):
             path.write_text(original, encoding="utf-8")
             helpers = load_state_helpers(root / "projects", root / "worlds")
             result = helpers["load_build_state"](project)
-            self.assertEqual(result, {"version": "52.0", "images": {}, "last_build": None})
+            self.assertEqual(result, {"version": "53.0", "images": {}, "last_build": None})
             self.assertEqual(path.read_text(encoding="utf-8"), original)
 
     def test_malformed_build_state_fields_fall_back_in_memory_only(self):
@@ -90,10 +90,10 @@ class JsonStateResilienceTests(unittest.TestCase):
             projects = root / "projects"
             projects.mkdir()
             path = projects / "production_queue.json"
-            for original in ({"items": "not-a-list"}, {"items": [{"project": "ok"}, None]}):
+            for original in ({"items": "not-a-list"}, {"items": ["../outside", None]}):
                 path.write_text(json.dumps(original), encoding="utf-8")
                 helpers = load_state_helpers(projects, root / "worlds")
-                self.assertEqual(helpers["load_queue"](), {"version": "52.0", "items": []})
+                self.assertEqual(helpers["load_queue"](), {"version": "53.0", "items": []})
                 self.assertEqual(json.loads(path.read_text(encoding="utf-8")), original)
 
     def test_save_queue_rejects_bad_shapes_before_touching_existing_file(self):
@@ -105,7 +105,7 @@ class JsonStateResilienceTests(unittest.TestCase):
             original = '{"version":"old","items":[{"keep":true}]}'
             path.write_text(original, encoding="utf-8")
             helpers = load_state_helpers(projects, root / "worlds")
-            for invalid in (None, [], {"items": "bad"}, {"items": [None]}):
+            for invalid in (None, [], {"items": "bad"}, {"items": [None]}, {"items": [{"project": "Nightmare Cryptids"}]}, {"items": ["../outside"]}, {"items": [""]}):
                 with self.subTest(invalid=invalid):
                     with self.assertRaises(ValueError):
                         helpers["save_queue"](invalid)
@@ -130,10 +130,12 @@ class JsonStateResilienceTests(unittest.TestCase):
             projects = root / "projects"
             projects.mkdir()
             helpers = load_state_helpers(projects, root / "worlds")
-            queue = {"items": [{"project": "Nightmare Cryptids"}], "custom": True}
+            project = projects / "Nightmare Cryptids"
+            project.mkdir()
+            queue = {"items": [str(project)], "custom": True}
             helpers["save_queue"](queue)
             saved = json.loads((projects / "production_queue.json").read_text(encoding="utf-8"))
-            self.assertEqual(saved["version"], "52.0")
+            self.assertEqual(saved["version"], "53.0")
             self.assertEqual(saved["items"], queue["items"])
             self.assertTrue(saved["custom"])
             self.assertNotIn("version", queue)
@@ -247,7 +249,7 @@ class JsonStateResilienceTests(unittest.TestCase):
         names = {"save_world", "load_world_index", "save_world_index", "world_path"}
         nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
         namespace = {"Path": Path, "WORLDS_DIR": Path("worlds"), "WORLD_INDEX_FILENAME": "world_index.json",
-                     "WORLD_SCHEMA_VERSION": 2, "WORLD_ENGINE_VERSION": "1.1", "FACTORY_VERSION": "52.0",
+                     "WORLD_SCHEMA_VERSION": 2, "WORLD_ENGINE_VERSION": "1.1", "FACTORY_VERSION": "53.0",
                      "datetime": __import__("datetime").datetime, "load_world_index": lambda: {"worlds": {}},
                      "save_json": lambda path, payload: Path(path).write_text(json.dumps(payload), encoding="utf-8")}
         exec(compile(ast.Module(body=nodes, type_ignores=[]), str(FACTORY_PATH), "exec"), namespace)
@@ -260,6 +262,25 @@ class JsonStateResilienceTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         namespace["save_world"](invalid)
             self.assertFalse((root / "worlds" / "world" / "world.json").exists())
+
+
+
+    def test_queue_accepts_project_paths_and_rejects_outside_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            projects = root / "projects"
+            projects.mkdir()
+            project = projects / "Nightmare Cryptids"
+            project.mkdir()
+            path = projects / "production_queue.json"
+            valid = {"version": "legacy", "items": [str(project)]}
+            path.write_text(json.dumps(valid), encoding="utf-8")
+            helpers = load_state_helpers(projects, root / "worlds")
+            self.assertEqual(helpers["load_queue"]()["items"], [str(project)])
+            invalid = {"version": "legacy", "items": [str(root / "outside")]}
+            path.write_text(json.dumps(invalid), encoding="utf-8")
+            self.assertEqual(helpers["load_queue"](), {"version": "53.0", "items": []})
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), invalid)
 
 
 if __name__ == "__main__":

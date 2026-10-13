@@ -1,5 +1,13 @@
 # Changelog
 
+## v53.0 — Restore Safe Production Queue Path Handling
+
+- Aligns queue records with the actual workflow: non-empty project path strings, not dictionaries.
+- Validates queue paths remain inside the configured Projects folder before load or save.
+- Rejects malformed, empty, and out-of-root queue entries without overwriting the stored queue.
+- Adds regression coverage for queue round-trips, unsafe paths, and the production menu’s string-path format.
+
+
 ## v52.0 — Deep Persisted-State and World-Path Integrity
 
 - Filters malformed build-history records and image-state entries in memory while preserving original JSON files.

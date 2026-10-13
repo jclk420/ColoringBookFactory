@@ -2,6 +2,13 @@
 
 ## Shipped
 
+### v53.0 — Restore Safe Production Queue Path Handling
+- Corrects the queue item schema to match production_queue_menu, which stores project paths as strings.
+- Validates each path stays inside the configured Projects folder before queue load/save.
+- Fails closed on malformed or out-of-root items without rewriting the queue file.
+- Adds regression tests for valid project paths and rejected unsafe entries.
+
+
 ### v52.0 — Deep Persisted-State and World-Path Integrity
 - Validates nested build-history and image-state records, with non-destructive in-memory filtering.
 - Rejects malformed build-state and world-index writes before the existing files can be overwritten.
