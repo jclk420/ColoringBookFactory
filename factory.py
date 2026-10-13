@@ -407,14 +407,31 @@ def load_world_index():
         data = dict(data)
         data.setdefault("version", WORLD_SCHEMA_VERSION)
         data.setdefault("engine_version", WORLD_ENGINE_VERSION)
-        if "worlds" not in data:
+        errors = list(data.get("_load_validation_errors", [])) if isinstance(data.get("_load_validation_errors"), list) else []
+        raw_worlds = data.get("worlds", {})
+        if not isinstance(raw_worlds, dict):
+            errors.append("worlds must be an object")
             data["worlds"] = {}
-        elif not isinstance(data.get("worlds"), dict):
-            print(f"WARNING: World index registry is malformed in {path}; using an empty in-memory registry.")
-            data["worlds"] = {}
+        else:
+            safe_worlds = {}
+            for world_id, record in raw_worlds.items():
+                try:
+                    safe_id = lore_safe_registry_id(world_id, "world ID")
+                except ValueError:
+                    errors.append(f"unsafe world ID: {world_id!r}")
+                    continue
+                if not isinstance(record, dict):
+                    errors.append(f"malformed world index entry: {safe_id}")
+                    continue
+                safe_worlds[safe_id] = record
+            data["worlds"] = safe_worlds
+        if errors:
+            data["_load_validation_errors"] = sorted(set(str(item) for item in errors))
+            print(f"WARNING: World index {path} has malformed registry data: {'; '.join(data['_load_validation_errors'])}. Saving is blocked until repaired.")
         return data
     except Exception as error:
-        print(f"WARNING: Could not read world index: {error}. Using in-memory defaults; the file was not modified.")
+        print(f"WARNING: Could not read world index {path}: {error}. The file was not modified.")
+        defaults["_load_validation_errors"] = [str(error)]
         return defaults
 
 def save_world_index(index):
