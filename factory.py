@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 41.0.
+# Current version: 42.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "41.0"
+FACTORY_VERSION = "42.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15126,11 +15126,24 @@ def lore_intake_run(files=None):
         return {"items": [], "rejected": rejected}
 
     records = lore_intake_collect_records()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp_base = datetime.now().strftime("%Y%m%d_%H%M%S")
     manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
     existing_hashes = lore_intake_existing_hashes(manifest_path)
     review_root = INTAKE_DIR / "Review"
-    batch_root = INTAKE_DIR / "Batches" / timestamp
+    batches_root = INTAKE_DIR / "Batches"
+    batches_root.mkdir(parents=True, exist_ok=True)
+    # Reserve a unique batch directory before processing so same-second runs
+    # can never overwrite a previous INTAKE_BATCH.json.
+    timestamp = timestamp_base
+    collision_index = 2
+    while True:
+        batch_root = batches_root / timestamp
+        try:
+            batch_root.mkdir(parents=True, exist_ok=False)
+            break
+        except FileExistsError:
+            timestamp = f"{timestamp_base}_{collision_index:02d}"
+            collision_index += 1
     items = []
     seen_hashes = {}
     for source in valid:
@@ -15153,8 +15166,37 @@ def lore_intake_run(files=None):
             destination = lore_intake_destination(review_root, source, classification)
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.exists():
-                destination = destination.with_name(f"{destination.stem}_{digest[:8]}{destination.suffix}")
-            shutil.copy2(source, destination)
+                base_destination = destination
+                destination = base_destination.with_name(
+                    f"{base_destination.stem}_{digest[:8]}{base_destination.suffix}"
+                )
+                collision_index = 2
+                while destination.exists():
+                    destination = base_destination.with_name(
+                        f"{base_destination.stem}_{digest[:8]}_{collision_index}{base_destination.suffix}"
+                    )
+                    collision_index += 1
+
+            # Stage to a same-directory temporary file, verify the bytes, then
+            # create the final name without clobbering any concurrent/existing file.
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    dir=str(destination.parent), prefix=f".{destination.name}.",
+                    suffix=".tmp", delete=False,
+                ) as temp_stream:
+                    temp_path = Path(temp_stream.name)
+                shutil.copy2(source, temp_path)
+                staged_digest = lore_intake_sha256(temp_path)
+                if staged_digest != digest:
+                    raise RuntimeError("Source content changed during staging; temporary copy was discarded.")
+                os.link(str(temp_path), str(destination))
+            finally:
+                if temp_path is not None:
+                    try:
+                        temp_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
             batch_record = {"source": str(source), "sha256": digest, "status": "STAGED_FOR_REVIEW",
                             "classification": classification, "metadata": metadata,
                             "staged_path": str(destination), "batch": timestamp}

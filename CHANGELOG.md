@@ -1,5 +1,14 @@
 # Changelog
 
+## v42.0 — Collision-Safe, Verified Intake Staging
+
+- Reserves unique batch directories even when intake runs occur in the same second.
+- Chooses a new staged filename when a destination already exists; existing staged files are never intentionally overwritten.
+- Copies through a same-directory temporary file, verifies its SHA-256 against the source digest, and publishes it with a no-clobber hard link.
+- Discards temporary copies when the source changes during staging or when the destination is claimed concurrently.
+- Adds regression coverage for same-name/different-content files, same-second batch collisions, source preservation, and corrupt-copy rejection.
+- Keeps source files and canon unchanged; all intake candidates remain review-only.
+
 ## v41.0 — OCR Evidence Provenance and Batch Safety
 
 - Saves OCR/native-text evidence to a separate page-range-specific text file beside the matching intake report.
