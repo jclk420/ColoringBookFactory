@@ -1,5 +1,14 @@
 # Changelog
 
+## v55.0 — Build Cache and Delivery Artifact Integrity
+
+- Replaces the minimal cache check with verification of the interior PDF, successful report, KDP manifest, checklist, readiness report, and configured optional artifacts.
+- Checks that packaged interior and build report match the authoritative outputs.
+- Validates SHA-256 manifests and all listed package files when checksum verification is enabled.
+- Commits the build fingerprint only after package, metadata, readiness, checksum, and snapshot generation finishes.
+- Adds runtime regression tests for incomplete packages and tampered checksums.
+
+
 ## v54.0 — Resumable Production Queue and Explicit Build Results
 
 - Returns explicit SUCCESS, SKIPPED, NOT_READY, or FAILED results from the build pipeline.
