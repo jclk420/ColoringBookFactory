@@ -1,5 +1,12 @@
 # Changelog
 
+## v32.0 — Lore Provenance and Relationship Integrity
+
+- Flags entities missing source-file, evidence, or page provenance and identifies invalid page numbers.
+- Detects aliases mapped to multiple candidate entities without merging or renaming them.
+- Reports incomplete/self-referential relationships and multiple targets for the same subject/relation.
+- Extends the read-only audit summary; no canon, artwork, or source files are changed.
+
 ## v31.0 — Lore Evidence Quality Audit
 
 - Adds a read-only quality score and prioritized review queue for staged lore candidates.
