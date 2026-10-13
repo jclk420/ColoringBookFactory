@@ -1,5 +1,13 @@
 # Changelog
 
+## v56.0 — Publishing Readiness and Audit Safety
+
+- Adds advisory listing content audits for malformed prices, duplicate keywords/tags, KDP keyword count/length review thresholds, long titles, and digital listings that may imply physical fulfillment.
+- Exports content-audit results and counts in platform listing drafts and the combined readiness report without rewriting listing text or inventing values.
+- Makes build snapshots collision-safe with exclusive creation and deterministic suffixes so same-second builds cannot overwrite prior audit records.
+- Adds regression tests for publishing warnings, invalid prices, and snapshot immutability.
+
+
 ## v55.0 — Build Cache and Delivery Artifact Integrity
 
 - Replaces the minimal cache check with verification of the interior PDF, successful report, KDP manifest, checklist, readiness report, and configured optional artifacts.
