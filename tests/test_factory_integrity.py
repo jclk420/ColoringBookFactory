@@ -1149,6 +1149,10 @@ END FILE HSN-CR-003
         self.assertEqual(creature["archive_fields"]["observed_weakness"], "Silence")
         self.assertTrue(any("Mismatched closing archive ID: HSN-CR-003" in warning
                             for warning in creature.get("archive_warnings", [])))
+        self.assertTrue(any(row.get("archive_id") == "HSN-CR-003" and
+                            row.get("source_role") == "closing_marker" and
+                            row.get("review_required") is True
+                            for row in creature.get("archive_id_candidates", [])))
         self.assertEqual(creature["confidence"], "LOW")
         self.assertIn("verify before approval", creature["note"])
 
