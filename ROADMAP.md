@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v48.0 — OCR Evidence Reference Integrity
+- Detects evidence files reused by multiple OCR batches.
+- Flags OCR paths outside the report folder and approved intake roots.
+- Displays new path-integrity counts in the read-only dashboard.
+- Adds regression tests and preserves source/canon immutability.
+
 ### v47.0 — Intake Audit Resilience and Data-Shape Diagnostics
 - Reports malformed top-level records and graph collections as actionable audit findings.
 - Handles malformed source-file list fields without crashing similarity analysis.
