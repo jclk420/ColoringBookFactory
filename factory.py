@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 52.0.
+# Current version: 53.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "52.0"
+FACTORY_VERSION = "53.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -152,6 +152,18 @@ def record_build_history(project, status, page_count=0, errors=None, warnings=No
     save_json(project / BUILD_HISTORY_FILENAME, history)
 
 
+def queue_item_is_safe(item):
+    """Accept only non-empty project paths that remain inside the configured Projects folder."""
+    if not isinstance(item, str) or not item.strip():
+        return False
+    try:
+        root = PROJECTS.resolve()
+        candidate = Path(item).resolve()
+        return candidate != root and candidate.is_relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
 def load_queue():
     """Load the production queue only when its persisted shape is safe to consume."""
     path = PROJECTS / PRODUCTION_QUEUE_FILENAME
@@ -165,8 +177,8 @@ def load_queue():
         items = data.get("items", [])
         if not isinstance(items, list):
             raise ValueError("production queue items must be a list")
-        if any(not isinstance(item, dict) for item in items):
-            raise ValueError("production queue contains a non-object item")
+        if any(not queue_item_is_safe(item) for item in items):
+            raise ValueError("production queue contains an invalid or unsafe project path")
         data = dict(data)
         data["items"] = items
         data.setdefault("version", FACTORY_VERSION)
@@ -182,8 +194,8 @@ def save_queue(queue):
     items = queue.get("items")
     if not isinstance(items, list):
         raise ValueError("production queue items must be a list")
-    if any(not isinstance(item, dict) for item in items):
-        raise ValueError("every production queue item must be a dictionary")
+    if any(not queue_item_is_safe(item) for item in items):
+        raise ValueError("every production queue item must be a safe project path string")
     payload = dict(queue)
     payload["version"] = FACTORY_VERSION
     save_json(PROJECTS / PRODUCTION_QUEUE_FILENAME, payload)
@@ -217,7 +229,10 @@ def load_build_state(project):
             if malformed_count:
                 print(f"WARNING: Build state contains {malformed_count} malformed image record(s) in {path}; invalid records were ignored in memory.")
                 data["images"] = valid_images
-        if data.get("last_build") is not None and not isinstance(data.get("last_build"), dict):
+        last_build = data.get("last_build")
+        if (last_build is not None
+                and not isinstance(last_build, dict)
+                and not (isinstance(last_build, str) and last_build.strip())):
             print(f"WARNING: Build state last_build field is malformed in {path}; using None in memory.")
             data["last_build"] = None
         data.setdefault("version", FACTORY_VERSION)
@@ -237,8 +252,10 @@ def save_build_state(project, state):
     if any(not isinstance(record, dict) for record in images.values()):
         raise ValueError("every build-state image record must be a dictionary")
     last_build = state.get("last_build")
-    if last_build is not None and not isinstance(last_build, dict):
-        raise ValueError("build state last_build must be a dictionary or None")
+    if (last_build is not None
+            and not isinstance(last_build, dict)
+            and not (isinstance(last_build, str) and last_build.strip())):
+        raise ValueError("build state last_build must be a non-empty timestamp string, dictionary, or None")
     save_json(project / BUILD_STATE_FILE, state)
 
 
