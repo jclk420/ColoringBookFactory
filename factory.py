@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 51.0.
+# Current version: 52.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "51.0"
+FACTORY_VERSION = "52.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -383,9 +383,16 @@ def world_slug(name):
     return value or "New World"
 
 
-def world_path(world_id):
-    return WORLDS_DIR / str(world_id)
+def lore_safe_registry_id(value, label="registry ID"):
+    """Reject path-like registry IDs so world/series operations stay inside their roots."""
+    text = str(value or "").strip()
+    if (not text or text in {".", ".."} or "/" in text or "\\" in text
+            or "\x00" in text or ":" in text or Path(text).name != text):
+        raise ValueError(f"{label} must be a single safe folder name")
+    return text
 
+def world_path(world_id):
+    return WORLDS_DIR / lore_safe_registry_id(world_id, "world ID")
 
 def load_world_index():
     WORLDS_DIR.mkdir(parents=True, exist_ok=True)
@@ -411,11 +418,33 @@ def load_world_index():
         return defaults
 
 def save_world_index(index):
+    """Validate world-index payload and existing file before persisting registry changes."""
+    if not isinstance(index, dict):
+        raise ValueError("World index must be a dictionary")
+    if index.get("_load_validation_errors"):
+        raise ValueError("World index has validation errors; repair the source JSON before saving")
+    worlds = index.get("worlds")
+    if not isinstance(worlds, dict):
+        raise ValueError("World index worlds field must be a dictionary")
+    for world_id, record in worlds.items():
+        lore_safe_registry_id(world_id, "world ID")
+        if not isinstance(record, dict):
+            raise ValueError(f"World index entry {world_id!r} must be a dictionary")
+    path = WORLDS_DIR / WORLD_INDEX_FILENAME
+    if path.exists():
+        try:
+            existing = load_json(path)
+        except Exception as error:
+            raise ValueError(f"Existing world index is unreadable; refusing to overwrite it: {error}") from error
+        if not isinstance(existing, dict) or not isinstance(existing.get("worlds", {}), dict):
+            raise ValueError("Existing world index is malformed; repair it before saving")
+        if any(not isinstance(record, dict) for record in existing.get("worlds", {}).values()):
+            raise ValueError("Existing world index contains malformed entries; repair it before saving")
     WORLDS_DIR.mkdir(parents=True, exist_ok=True)
-    index["version"] = WORLD_SCHEMA_VERSION
-    index["engine_version"] = WORLD_ENGINE_VERSION
-    save_json(WORLDS_DIR / WORLD_INDEX_FILENAME, index)
-
+    payload = dict(index)
+    payload["version"] = WORLD_SCHEMA_VERSION
+    payload["engine_version"] = WORLD_ENGINE_VERSION
+    save_json(path, payload)
 
 def load_world(world_id):
     path = world_path(world_id) / "world.json"
@@ -424,32 +453,61 @@ def load_world(world_id):
     try:
         data = load_json(path)
         if not isinstance(data, dict):
+            print(f"WARNING: World file {path} is not a JSON object; it was not modified.")
             return None
+        data = dict(data)
         data.setdefault("schema_version", WORLD_SCHEMA_VERSION)
-        data.setdefault("series", [])
-        data.setdefault("relationships", [])
-        data.setdefault("books", [])
+        errors = list(data.get("_load_validation_errors", [])) if isinstance(data.get("_load_validation_errors"), list) else []
+        for field in ("series", "relationships", "books"):
+            if field not in data:
+                data[field] = []
+            elif not isinstance(data.get(field), list):
+                errors.append(field)
+                data[field] = []
+        if errors:
+            data["_load_validation_errors"] = sorted(set(str(item) for item in errors))
+            print(f"WARNING: World file {path} has malformed collection fields: {', '.join(data['_load_validation_errors'])}. The in-memory view is guarded; saving is blocked until repaired.")
         return data
     except Exception as error:
-        print(f"WARNING: Could not load world {world_id}: {error}")
+        print(f"WARNING: Could not load world {world_id}: {error}. The file was not modified.")
         return None
 
-
 def save_world(world):
-    wid = str(world.get("world_id", "")).strip()
-    if not wid:
-        raise ValueError("World is missing world_id")
+    """Validate world data and existing registry files before any canon write."""
+    if not isinstance(world, dict):
+        raise ValueError("World data must be a dictionary")
+    if world.get("_load_validation_errors"):
+        raise ValueError("World data was loaded with validation errors; repair the source JSON before saving")
+    wid = lore_safe_registry_id(world.get("world_id", ""), "world ID")
+    for field in ("series", "relationships", "books"):
+        if field in world and not isinstance(world.get(field), list):
+            raise ValueError(f"World field {field} must be a list")
     folder = world_path(wid)
-    folder.mkdir(parents=True, exist_ok=True)
-    save_json(folder / "world.json", world)
+    path = folder / "world.json"
+    if path.exists():
+        try:
+            existing = load_json(path)
+        except Exception as error:
+            raise ValueError(f"Existing world file is unreadable; refusing to overwrite it: {error}") from error
+        if not isinstance(existing, dict):
+            raise ValueError("Existing world file is malformed; refusing to overwrite it")
+        bad_fields = [field for field in ("series", "relationships", "books")
+                      if field in existing and not isinstance(existing.get(field), list)]
+        if bad_fields:
+            raise ValueError(f"Existing world file has malformed fields {bad_fields}; repair it before saving")
     index = load_world_index()
-    index.setdefault("worlds", {})[wid] = {
+    if index.get("_load_validation_errors"):
+        raise ValueError("World index has validation errors; repair the index before saving any world")
+    if not isinstance(index.get("worlds"), dict):
+        raise ValueError("World index registry must be a dictionary")
+    index["worlds"][wid] = {
         "world_id": wid,
         "name": world.get("name", wid),
         "updated": world.get("updated"),
     }
+    folder.mkdir(parents=True, exist_ok=True)
+    save_json(path, world)
     save_world_index(index)
-
 
 def make_world_id(name):
     """Return a stable-ish filesystem-safe world id without collisions."""
@@ -9642,8 +9700,7 @@ def lore_safe_name(value):
 
 
 def series_path(series_id):
-    return SERIES_DIR / str(series_id)
-
+    return SERIES_DIR / lore_safe_registry_id(series_id, "series ID")
 
 def series_id_from_name(name):
     base = lore_safe_name(name)
@@ -9656,19 +9713,34 @@ def series_id_from_name(name):
 
 
 def save_series_bible(bible):
-    SERIES_DIR.mkdir(parents=True, exist_ok=True)
-    sid = str(bible.get("series_id", "")).strip()
-    if not sid:
-        raise ValueError("Series is missing series_id")
+    """Refuse unsafe or malformed Series Bible writes before creating directories."""
+    if not isinstance(bible, dict):
+        raise ValueError("Series Bible data must be a dictionary")
+    if bible.get("_load_validation_errors"):
+        raise ValueError("Series Bible was loaded with validation errors; repair the source JSON before saving")
+    sid = lore_safe_registry_id(bible.get("series_id", ""), "series ID")
+    if "books" in bible and not isinstance(bible.get("books"), list):
+        raise ValueError("Series Bible books field must be a list")
     folder = series_path(sid)
+    path = folder / SERIES_BIBLE_FILENAME
+    if path.exists():
+        try:
+            existing = load_json(path)
+        except Exception as error:
+            raise ValueError(f"Existing Series Bible is unreadable; refusing to overwrite it: {error}") from error
+        if not isinstance(existing, dict):
+            raise ValueError("Existing Series Bible is malformed; refusing to overwrite it")
+        if "books" in existing and not isinstance(existing.get("books"), list):
+            raise ValueError("Existing Series Bible has a malformed books field; repair it before saving")
+    SERIES_DIR.mkdir(parents=True, exist_ok=True)
     folder.mkdir(parents=True, exist_ok=True)
-    bible["engine_version"] = SERIES_ENGINE_VERSION
-    bible["factory_version"] = FACTORY_VERSION
-    bible["updated"] = datetime.now().isoformat(timespec="seconds")
-    save_json(folder / SERIES_BIBLE_FILENAME, bible)
-    lore_write_series_markdown(bible)
+    payload = dict(bible)
+    payload["engine_version"] = SERIES_ENGINE_VERSION
+    payload["factory_version"] = FACTORY_VERSION
+    payload["updated"] = datetime.now().isoformat(timespec="seconds")
+    save_json(path, payload)
+    lore_write_series_markdown(payload)
     return folder
-
 
 def load_series_bible(series_id):
     path = series_path(series_id) / SERIES_BIBLE_FILENAME
@@ -9676,11 +9748,21 @@ def load_series_bible(series_id):
         return None
     try:
         data = load_json(path)
-        return data if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            print(f"WARNING: Series Bible {path} is not a JSON object; it was not modified.")
+            return None
+        data = dict(data)
+        errors = list(data.get("_load_validation_errors", [])) if isinstance(data.get("_load_validation_errors"), list) else []
+        if "books" in data and not isinstance(data.get("books"), list):
+            errors.append("books")
+            data["books"] = []
+        if errors:
+            data["_load_validation_errors"] = sorted(set(str(item) for item in errors))
+            print(f"WARNING: Series Bible {path} has malformed fields: {', '.join(data['_load_validation_errors'])}. Saving is blocked until repaired.")
+        return data
     except Exception as error:
-        print(f"WARNING: Could not read series bible: {error}")
+        print(f"WARNING: Could not read Series Bible {path}: {error}. The file was not modified.")
         return None
-
 
 def list_series_bibles():
     SERIES_DIR.mkdir(parents=True, exist_ok=True)
