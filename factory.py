@@ -447,6 +447,8 @@ def save_world_index(index):
         lore_safe_registry_id(world_id, "world ID")
         if not isinstance(record, dict):
             raise ValueError(f"World index entry {world_id!r} must be a dictionary")
+        if record.get("world_id") and str(record.get("world_id")).strip() != str(world_id):
+            raise ValueError(f"World index entry {world_id!r} has a conflicting world_id")
     path = WORLDS_DIR / WORLD_INDEX_FILENAME
     if path.exists():
         try:
@@ -455,8 +457,15 @@ def save_world_index(index):
             raise ValueError(f"Existing world index is unreadable; refusing to overwrite it: {error}") from error
         if not isinstance(existing, dict) or not isinstance(existing.get("worlds", {}), dict):
             raise ValueError("Existing world index is malformed; repair it before saving")
-        if any(not isinstance(record, dict) for record in existing.get("worlds", {}).values()):
-            raise ValueError("Existing world index contains malformed entries; repair it before saving")
+        for existing_id, existing_record in existing.get("worlds", {}).items():
+            try:
+                lore_safe_registry_id(existing_id, "world ID")
+            except ValueError as error:
+                raise ValueError("Existing world index contains an unsafe ID; repair it before saving") from error
+            if not isinstance(existing_record, dict):
+                raise ValueError("Existing world index contains malformed entries; repair it before saving")
+            if existing_record.get("world_id") and str(existing_record.get("world_id")).strip() != str(existing_id):
+                raise ValueError("Existing world index contains a conflicting ID; repair it before saving")
     WORLDS_DIR.mkdir(parents=True, exist_ok=True)
     payload = dict(index)
     payload["version"] = WORLD_SCHEMA_VERSION
@@ -508,6 +517,9 @@ def save_world(world):
             raise ValueError(f"Existing world file is unreadable; refusing to overwrite it: {error}") from error
         if not isinstance(existing, dict):
             raise ValueError("Existing world file is malformed; refusing to overwrite it")
+        existing_id = str(existing.get("world_id", "")).strip()
+        if existing_id and existing_id != wid:
+            raise ValueError("Existing world ID does not match the destination; refusing to overwrite it")
         bad_fields = [field for field in ("series", "relationships", "books")
                       if field in existing and not isinstance(existing.get(field), list)]
         if bad_fields:
@@ -9747,6 +9759,9 @@ def save_series_bible(bible):
             raise ValueError(f"Existing Series Bible is unreadable; refusing to overwrite it: {error}") from error
         if not isinstance(existing, dict):
             raise ValueError("Existing Series Bible is malformed; refusing to overwrite it")
+        existing_id = str(existing.get("series_id", "")).strip()
+        if existing_id and existing_id != sid:
+            raise ValueError("Existing Series Bible ID does not match the destination; refusing to overwrite it")
         if "books" in existing and not isinstance(existing.get("books"), list):
             raise ValueError("Existing Series Bible has a malformed books field; repair it before saving")
     SERIES_DIR.mkdir(parents=True, exist_ok=True)
