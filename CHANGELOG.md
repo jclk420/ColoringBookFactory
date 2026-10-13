@@ -1,5 +1,12 @@
 # Changelog
 
+## v31.0 — Lore Evidence Quality Audit
+
+- Adds a read-only quality score and prioritized review queue for staged lore candidates.
+- Suggests near-duplicate names without merging them, reports conflicting name contexts/archive IDs, and flags invalid entity kinds and unresolved relationship endpoints.
+- Keeps all findings advisory; no source files, artwork, Series Bible, or canon records are changed.
+
+
 Release notes for the source-controlled ColoringBookFactory application. See `ROADMAP.md` for more implementation detail. These notes describe code capabilities; they do not certify any specific local book or marketplace package as released.
 
 ## v30.0 — Cross-Batch Lore Evidence Graph

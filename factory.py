@@ -9,6 +9,7 @@ import sys
 import subprocess
 import zipfile
 import re
+import difflib
 import os
 import tempfile
 from datetime import datetime
@@ -18,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 30.0.
+# Current version: 31.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -31,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "30.0"
+FACTORY_VERSION = "31.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15551,6 +15552,136 @@ def lore_intake_build_evidence_graph(records):
     }
 
 
+def lore_intake_quality_audit(records, graph):
+    """Score staged lore evidence and surface conflicts; never merges or writes canon."""
+    records = records if isinstance(records, list) else []
+    graph = graph if isinstance(graph, dict) else {}
+
+    def norm(value):
+        return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+    entities = graph.get("entities", []) if isinstance(graph.get("entities"), list) else []
+    relationships = graph.get("relationships", []) if isinstance(graph.get("relationships"), list) else []
+    allowed_kinds = {"creature", "monster", "cryptid", "entity", "character", "location",
+                     "world", "book", "series", "object", "faction", "lore", "unmatched", "ambiguous"}
+    entity_names = {norm(row.get("name")) for row in entities if isinstance(row, dict) and norm(row.get("name"))}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        for field in ("world", "location", "pdf_title"):
+            value = norm(record.get(field))
+            if value and not value.startswith("unassigned "):
+                entity_names.add(value)
+
+    invalid_types = []
+    for row in entities:
+        if not isinstance(row, dict):
+            continue
+        kind = str(row.get("kind") or "entity").casefold()
+        if kind not in allowed_kinds:
+            invalid_types.append({"kind": kind, "name": row.get("name", ""), "source_files": row.get("source_files", [])})
+
+    unresolved = []
+    for link in relationships:
+        if not isinstance(link, dict):
+            continue
+        subject, obj = norm(link.get("subject")), norm(link.get("object"))
+        missing = []
+        if subject and subject not in entity_names:
+            missing.append("subject")
+        if obj and obj not in entity_names:
+            missing.append("object")
+        if missing:
+            unresolved.append({"subject": link.get("subject", ""), "relation": link.get("relation", ""),
+                               "object": link.get("object", ""), "missing_endpoints": missing,
+                               "source_files": link.get("source_files", [])})
+
+    near_duplicates = []
+    for i, left in enumerate(entities):
+        if not isinstance(left, dict):
+            continue
+        left_name = norm(left.get("name"))
+        if len(left_name) < 5:
+            continue
+        for right in entities[i + 1:]:
+            if not isinstance(right, dict) or str(left.get("kind", "")).casefold() != str(right.get("kind", "")).casefold():
+                continue
+            right_name = norm(right.get("name"))
+            if len(right_name) < 5 or left_name == right_name:
+                continue
+            ratio = difflib.SequenceMatcher(None, left_name, right_name).ratio()
+            if ratio >= 0.88:
+                pair = sorted([str(left.get("name", "")), str(right.get("name", ""))], key=str.casefold)
+                near_duplicates.append({"names": pair, "kind": left.get("kind", "entity"),
+                                        "similarity": round(ratio, 3),
+                                        "source_files": sorted(set((left.get("source_files") or []) + (right.get("source_files") or [])))})
+    seen_pairs, unique_near_duplicates = set(), []
+    for row in near_duplicates:
+        key = (row["kind"], tuple(x.casefold() for x in row["names"]))
+        if key not in seen_pairs:
+            seen_pairs.add(key)
+            unique_near_duplicates.append(row)
+
+    contradictions = []
+    for warning in graph.get("duplicate_name_warnings", []) if isinstance(graph.get("duplicate_name_warnings"), list) else []:
+        contradictions.append({"type": "name_context_conflict", "detail": warning})
+    for conflict in graph.get("archive_id_conflicts", []) if isinstance(graph.get("archive_id_conflicts"), list) else []:
+        contradictions.append({"type": "archive_id_conflict", "detail": conflict})
+
+    queue = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        filename = str(record.get("file") or "(unknown source)")
+        flags, score = [], 100
+        confidence = str(record.get("confidence") or "LOW").upper()
+        if confidence == "LOW":
+            score -= 25
+            flags.append("low confidence")
+        elif confidence not in {"HIGH", "MEDIUM"}:
+            score -= 20
+            flags.append("unknown confidence")
+        if not str(record.get("evidence") or "").strip() or str(record.get("evidence") or "").strip().casefold() == "none":
+            score -= 15
+            flags.append("missing evidence")
+        if record.get("unresolved"):
+            score -= 25
+            flags.append("unresolved classification")
+        if record.get("duplicate"):
+            score -= 20
+            flags.append("duplicate check")
+        candidates = record.get("extracted_entity_candidates", [])
+        if isinstance(candidates, list):
+            for candidate in candidates:
+                if isinstance(candidate, dict):
+                    if not str(candidate.get("name") or "").strip():
+                        score -= 10
+                        flags.append("unnamed candidate")
+                    if not candidate.get("source_pages"):
+                        score -= 5
+                        flags.append("candidate lacks page provenance")
+        score = max(0, min(100, score))
+        queue.append({"file": filename, "score": score,
+                      "priority": "HIGH" if score < 60 or record.get("duplicate") else "REVIEW",
+                      "flags": list(dict.fromkeys(flags)), "kind": record.get("kind", "unmatched"),
+                      "name": record.get("name", "(unresolved)")})
+    queue.sort(key=lambda row: (row["score"], row["file"].casefold()))
+    return {
+        "schema_version": 1, "review_only": True, "canon_written": False,
+        "record_count": len(records), "quality_queue": queue,
+        "near_duplicate_suggestions": unique_near_duplicates,
+        "contradictions": contradictions, "invalid_entity_types": invalid_types,
+        "unresolved_relationships": unresolved,
+        "summary": {
+            "high_priority_count": sum(1 for row in queue if row["priority"] == "HIGH"),
+            "near_duplicate_count": len(unique_near_duplicates),
+            "contradiction_count": len(contradictions),
+            "invalid_entity_type_count": len(invalid_types),
+            "unresolved_relationship_count": len(unresolved),
+        },
+    }
+
+
 def lore_intake_review_dashboard():
     """Read-only summary of staged intake records; never changes manifests or canon."""
     manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
@@ -15612,6 +15743,18 @@ def lore_intake_review_dashboard():
                 summary["unresolved"] += 1
     summary["evidence_graph"] = lore_intake_build_evidence_graph(summary["records"])
     graph = summary["evidence_graph"]
+    quality_audit = globals().get("lore_intake_quality_audit")
+    if callable(quality_audit):
+        summary["quality_audit"] = quality_audit(summary["records"], graph)
+    else:
+        # Keep the dashboard usable in isolated diagnostic/test namespaces.
+        summary["quality_audit"] = {
+            "summary": {"high_priority_count": 0, "near_duplicate_count": 0,
+                        "contradiction_count": 0, "invalid_entity_type_count": 0,
+                        "unresolved_relationship_count": 0},
+            "quality_queue": [], "near_duplicate_suggestions": [], "invalid_entity_types": [],
+        }
+    quality = summary["quality_audit"]
     print("\n" + "=" * 100)
     print("LORE INTAKE REVIEW DASHBOARD — READ ONLY")
     print("=" * 100)
@@ -15622,6 +15765,24 @@ def lore_intake_review_dashboard():
           f"{len(graph['duplicate_name_warnings'])} name conflicts | "
           f"{len(graph['archive_id_conflicts'])} archive-ID conflicts | "
           f"{len(graph['unresolved_relationships'])} unresolved links")
+    print(f"Quality audit: {quality['summary']['high_priority_count']} high-priority items | "
+          f"{quality['summary']['near_duplicate_count']} near-duplicate suggestions | "
+          f"{quality['summary']['contradiction_count']} conflicts | "
+          f"{quality['summary']['invalid_entity_type_count']} invalid entity types | "
+          f"{quality['summary']['unresolved_relationship_count']} unresolved links")
+    if quality["quality_queue"]:
+        print("\nPRIORITY REVIEW QUEUE — advisory scores; no automatic merges")
+        for item in quality["quality_queue"][:10]:
+            details = ", ".join(item["flags"]) if item["flags"] else "no obvious quality flags"
+            print(f"  [{item['priority']} | {item['score']}/100] {item['file']} — {item['kind']} '{item['name']}' ({details})")
+    if quality["near_duplicate_suggestions"]:
+        print("\nPOSSIBLE DUPLICATES — verify before merging")
+        for item in quality["near_duplicate_suggestions"][:10]:
+            print(f"  {item['kind']}: '{item['names'][0]}' ~ '{item['names'][1]}' ({item['similarity']:.0%})")
+    if quality["invalid_entity_types"]:
+        print("\nINVALID ENTITY TYPES — review extraction/classification")
+        for item in quality["invalid_entity_types"][:10]:
+            print(f"  {item['kind']}: '{item['name']}'")
     if not summary["records"]:
         print("No readable intake items found.")
     for row in summary["records"]:
