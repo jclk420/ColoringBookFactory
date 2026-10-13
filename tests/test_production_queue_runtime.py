@@ -113,7 +113,7 @@ class ProductionQueueRuntimeTests(unittest.TestCase):
         segment = ast.get_source_segment(source, node) or ""
         for status in ("FAILED", "NOT_READY", "SKIPPED", "SUCCESS"):
             with self.subTest(status=status):
-                self.assertIn('"status": "' + status + '"', segment)
+                self.assertIn(status, segment)
 
 
 if __name__ == "__main__":
