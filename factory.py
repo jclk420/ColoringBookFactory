@@ -14590,6 +14590,10 @@ def lore_intake_extract_text_entities(text):
         "archive_warning_count": sum(len(row.get("archive_warnings", [])) for row in result["entity_candidates"]),
         "low_confidence_count": sum(1 for row in result["entity_candidates"] + result["relationships"]
                                     if str(row.get("confidence", "LOW")).upper() == "LOW"),
+        "entity_kind_counts": {kind: sum(1 for row in result["entity_candidates"] if row.get("kind") == kind)
+                               for kind in sorted({str(row.get("kind", "unknown")) for row in result["entity_candidates"]})},
+        "relationship_type_counts": {relation: sum(1 for row in result["relationships"] if row.get("relation") == relation)
+                                     for relation in sorted({str(row.get("relation", "unknown")) for row in result["relationships"]})},
     }
     return result
 
