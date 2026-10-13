@@ -1,5 +1,14 @@
 # Changelog
 
+## v35.0 — Lore Audit Actionability and Structural Integrity
+
+- Detects malformed entity, relationship, and intake-record shapes without stopping the audit.
+- Flags blank entity names, duplicate canonical entities, repeated/blank list entries, and aliases that collide with another entity's canonical name.
+- Checks relationship field types and unsupported relationship confidence labels.
+- Flags missing source filenames, malformed page/candidate lists, and placeholder evidence.
+- Adds a prioritized, plain-language action list and summary counts to help users decide what to review next.
+- Preserves all source records; no auto-merge, canon writes, artwork edits, or source-file changes.
+
 ## v33.0 — Lore Consistency Guards
 
 - Flags one source file attributed to multiple distinct lore entities for review.

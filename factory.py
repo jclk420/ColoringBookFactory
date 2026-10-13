@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "34.0"
+FACTORY_VERSION = "35.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15888,6 +15888,131 @@ def lore_intake_quality_audit(records, graph):
                                         for file in (link.get("source_files") if isinstance(link.get("source_files"), list) else [])})
             })
 
+    # v35 review usability and structural integrity checks. These are advisory only.
+    entity_structure_findings = []
+    canonical_index = {}
+    for row_index, row in enumerate(entities):
+        if not isinstance(row, dict):
+            entity_structure_findings.append({"type": "entity_not_object", "index": row_index,
+                                              "actual_type": type(row).__name__})
+            continue
+        name = str(row.get("name") or "").strip()
+        kind = str(row.get("kind") or "entity").strip().casefold() or "entity"
+        name_key = norm(name)
+        if not name_key:
+            entity_structure_findings.append({"type": "missing_entity_name", "index": row_index,
+                                              "kind": kind, "source_files": row.get("source_files", [])})
+        else:
+            canonical_index.setdefault((kind, name_key), []).append(row)
+        for field in ("aliases", "source_files", "evidence", "source_pages"):
+            value = row.get(field)
+            if value is not None and not isinstance(value, list):
+                entity_structure_findings.append({"type": "entity_field_wrong_type", "name": name,
+                                                  "field": field, "actual_type": type(value).__name__})
+        for field in ("aliases", "source_files", "evidence"):
+            values = row.get(field)
+            if isinstance(values, list):
+                blank_count = sum(1 for value in values if not str(value or "").strip())
+                if blank_count:
+                    entity_structure_findings.append({"type": "blank_list_entry", "name": name,
+                                                      "field": field, "count": blank_count})
+                normalized = [norm(value) if field == "aliases" else str(value or "").strip().replace("/", "\\\\").casefold()
+                              for value in values if str(value or "").strip()]
+                duplicates = sorted({value for value in normalized if normalized.count(value) > 1})
+                if duplicates:
+                    entity_structure_findings.append({"type": "duplicate_list_entries", "name": name,
+                                                      "field": field, "values": duplicates})
+    for (kind, name_key), rows in canonical_index.items():
+        if len(rows) > 1:
+            entity_structure_findings.append({"type": "duplicate_canonical_entity", "kind": kind,
+                                              "normalized_name": name_key, "count": len(rows),
+                                              "names": [str(row.get("name") or "") for row in rows]})
+    canonical_names = {}
+    for row in entities:
+        if isinstance(row, dict) and norm(row.get("name")):
+            canonical_names.setdefault(norm(row.get("name")), []).append(str(row.get("name") or "").strip())
+    alias_name_collisions = []
+    for row in entities:
+        if not isinstance(row, dict):
+            continue
+        canonical = str(row.get("name") or "").strip()
+        aliases = row.get("aliases")
+        if not isinstance(aliases, list):
+            continue
+        for alias in aliases:
+            alias_key = norm(alias)
+            other_names = sorted(set(canonical_names.get(alias_key, [])), key=str.casefold) if alias_key else []
+            if other_names and alias_key != norm(canonical):
+                alias_name_collisions.append({"type": "alias_matches_canonical_name", "name": canonical,
+                                              "alias": str(alias or ""), "other_entity_names": other_names})
+    entity_structure_findings.extend(alias_name_collisions)
+
+    relationship_structure_findings = []
+    for row_index, link in enumerate(relationships):
+        if not isinstance(link, dict):
+            relationship_structure_findings.append({"type": "relationship_not_object", "index": row_index,
+                                                    "actual_type": type(link).__name__})
+            continue
+        subject = str(link.get("subject") or "").strip()
+        relation = str(link.get("relation") or "").strip()
+        obj = str(link.get("object") or "").strip()
+        for field in ("source_files", "evidence", "source_pages"):
+            value = link.get(field)
+            if value is not None and not isinstance(value, list):
+                relationship_structure_findings.append({"type": "relationship_field_wrong_type",
+                                                        "subject": subject, "relation": relation,
+                                                        "object": obj, "field": field,
+                                                        "actual_type": type(value).__name__})
+            elif isinstance(value, list):
+                blanks = sum(1 for item in value if not str(item or "").strip())
+                if blanks:
+                    relationship_structure_findings.append({"type": "blank_relationship_list_entry",
+                                                            "subject": subject, "relation": relation,
+                                                            "object": obj, "field": field, "count": blanks})
+        confidence = str(link.get("confidence") or "").strip().upper()
+        if confidence and confidence not in {"HIGH", "MEDIUM", "LOW"}:
+            relationship_structure_findings.append({"type": "unknown_relationship_confidence",
+                                                    "subject": subject, "relation": relation,
+                                                    "object": obj, "value": confidence})
+
+    record_structure_findings = []
+    for row_index, record in enumerate(records):
+        if not isinstance(record, dict):
+            record_structure_findings.append({"type": "record_not_object", "index": row_index,
+                                              "actual_type": type(record).__name__})
+            continue
+        filename = str(record.get("file") or "").strip()
+        if not filename:
+            record_structure_findings.append({"type": "missing_source_filename", "index": row_index})
+        for field in ("source_pages", "extracted_entity_candidates"):
+            value = record.get(field)
+            if value is not None and not isinstance(value, list):
+                record_structure_findings.append({"type": "record_field_wrong_type", "file": filename or "(unknown source)",
+                                                  "field": field, "actual_type": type(value).__name__})
+        evidence_text = str(record.get("evidence") or "").strip()
+        if evidence_text.casefold() in {"none", "unknown", "n/a", "null", "tbd", "not available"}:
+            record_structure_findings.append({"type": "placeholder_evidence", "file": filename or "(unknown source)",
+                                              "value": evidence_text})
+
+    # Plain-language actions keep the dashboard useful without changing source data.
+    actionable_review = []
+    action_specs = [
+        ("entity_structure_findings", entity_structure_findings, "Check entity names, list fields, aliases, and possible duplicate entries."),
+        ("relationship_structure_findings", relationship_structure_findings, "Correct relationship fields and verify source evidence before approval."),
+        ("record_structure_findings", record_structure_findings, "Check the source filename, candidate/page lists, and replace placeholder evidence."),
+        ("provenance_findings", provenance_findings, "Attach the original source file, evidence text, and valid page numbers."),
+        ("alias_conflicts", alias_conflicts, "Review each alias mapping; keep distinct entities separate unless evidence confirms they are the same."),
+        ("unresolved_relationships", unresolved, "Resolve the missing subject/object names or leave the relationship explicitly unassigned."),
+        ("duplicate_relationship_findings", duplicate_relationship_findings, "Compare the cited sources and decide whether these are repeated evidence or distinct claims."),
+        ("confidence_findings", confidence_findings, "Use HIGH, MEDIUM, or LOW and keep confidence aligned with evidence."),
+    ]
+    for finding_key, findings, next_step in action_specs:
+        if findings:
+            actionable_review.append({"finding_group": finding_key, "count": len(findings),
+                                      "priority": "HIGH" if finding_key in {"record_structure_findings", "provenance_findings", "alias_conflicts", "unresolved_relationships"} else "REVIEW",
+                                      "next_step": next_step})
+    actionable_review.sort(key=lambda item: (0 if item["priority"] == "HIGH" else 1, -item["count"], item["finding_group"]))
+
     contradictions = []
     for warning in graph.get("duplicate_name_warnings", []) if isinstance(graph.get("duplicate_name_warnings"), list) else []:
         contradictions.append({"type": "name_context_conflict", "detail": warning})
@@ -15950,6 +16075,10 @@ def lore_intake_quality_audit(records, graph):
         "duplicate_alias_findings": duplicate_alias_findings,
         "relationship_provenance_findings": relationship_provenance_findings,
         "duplicate_relationship_findings": duplicate_relationship_findings,
+        "entity_structure_findings": entity_structure_findings,
+        "relationship_structure_findings": relationship_structure_findings,
+        "record_structure_findings": record_structure_findings,
+        "actionable_review": actionable_review,
         "summary": {
             "high_priority_count": sum(1 for row in queue if row["priority"] == "HIGH"),
             "near_duplicate_count": len(unique_near_duplicates),
@@ -15968,6 +16097,10 @@ def lore_intake_quality_audit(records, graph):
             "duplicate_alias_finding_count": len(duplicate_alias_findings),
             "relationship_provenance_finding_count": len(relationship_provenance_findings),
             "duplicate_relationship_finding_count": len(duplicate_relationship_findings),
+            "entity_structure_finding_count": len(entity_structure_findings),
+            "relationship_structure_finding_count": len(relationship_structure_findings),
+            "record_structure_finding_count": len(record_structure_findings),
+            "actionable_review_count": len(actionable_review),
         },
     }
 

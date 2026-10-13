@@ -47,6 +47,45 @@ class LoreReviewHardeningTests(unittest.TestCase):
         finding = result["relationship_provenance_findings"][0]
         self.assertEqual(set(finding["missing"]), {"source file", "evidence", "source page"})
 
+    def test_duplicate_canonical_entities_and_alias_name_collisions_are_flagged(self):
+        graph = {"entities": [
+            {"name": "Ash Maw", "kind": "creature", "aliases": ["Bog Thing"]},
+            {"name": "ash-maw", "kind": "creature"},
+            {"name": "Bog Thing", "kind": "creature"}], "relationships": []}
+        result = self.audit([], graph)
+        kinds = {row["type"] for row in result["entity_structure_findings"]}
+        self.assertIn("duplicate_canonical_entity", kinds)
+        self.assertIn("alias_matches_canonical_name", kinds)
+        self.assertFalse(result["canon_written"])
+
+    def test_malformed_entity_relationship_and_record_shapes_are_reported(self):
+        result = self.audit(
+            [None, {"source_pages": "page 2", "extracted_entity_candidates": "Ghoul", "evidence": "TBD"}],
+            {"entities": [None, {"name": " ", "aliases": "one", "source_files": ["", "a.pdf", "A.PDF"]}],
+             "relationships": [False, {"subject": "A", "relation": "haunts", "object": "B",
+                                       "source_pages": "3", "confidence": "ABSOLUTE"}]})
+        entity_types = {row["type"] for row in result["entity_structure_findings"]}
+        relationship_types = {row["type"] for row in result["relationship_structure_findings"]}
+        record_types = {row["type"] for row in result["record_structure_findings"]}
+        self.assertIn("entity_not_object", entity_types)
+        self.assertIn("missing_entity_name", entity_types)
+        self.assertIn("entity_field_wrong_type", entity_types)
+        self.assertIn("duplicate_list_entries", entity_types)
+        self.assertIn("relationship_not_object", relationship_types)
+        self.assertIn("relationship_field_wrong_type", relationship_types)
+        self.assertIn("unknown_relationship_confidence", relationship_types)
+        self.assertIn("record_not_object", record_types)
+        self.assertIn("record_field_wrong_type", record_types)
+        self.assertIn("placeholder_evidence", record_types)
+
+    def test_actionable_review_gives_plain_language_next_steps(self):
+        result = self.audit([{"file": "", "confidence": "HIGH", "evidence": "unknown"}],
+                            {"entities": [], "relationships": []})
+        self.assertTrue(result["actionable_review"])
+        self.assertTrue(all(item.get("next_step") for item in result["actionable_review"]))
+        self.assertEqual(result["summary"]["actionable_review_count"], len(result["actionable_review"]))
+        self.assertFalse(result["canon_written"])
+
     def test_duplicate_relationships_are_flagged_but_not_removed(self):
         links = [
             {"subject": "Ash Maw", "relation": "guards", "object": "Gate", "source_files": ["a.pdf"]},
