@@ -1,5 +1,13 @@
 # Coloring Book Factory — Upgrade Roadmap
 
+## Shipped
+
+### v36.0 — Evidence Traceability and Ambiguity Review
+- Cross-kind name and relationship endpoint ambiguity warnings.
+- Duplicate source-path normalization checks and candidate evidence/page/source traceability findings.
+- Audit-wide review summary totals; all checks remain advisory and do not write canon.
+
+
 This roadmap separates shipped work from future candidates. Planned items are not implemented until their code, tests, and release notes are committed.
 
 ## Implemented on the current upgrade branch

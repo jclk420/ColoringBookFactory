@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "35.0"
+FACTORY_VERSION = "36.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15994,6 +15994,134 @@ def lore_intake_quality_audit(records, graph):
             record_structure_findings.append({"type": "placeholder_evidence", "file": filename or "(unknown source)",
                                               "value": evidence_text})
 
+    # v36: cross-kind identity ambiguity, source path hygiene, and evidence traceability.
+    entity_kind_name_collisions = []
+    names_by_normalized = {}
+    for row in entities:
+        if not isinstance(row, dict):
+            continue
+        name_key = norm(row.get("name"))
+        if name_key:
+            names_by_normalized.setdefault(name_key, []).append({
+                "name": str(row.get("name") or "").strip(),
+                "kind": str(row.get("kind") or "entity").strip().casefold(),
+                "source_files": row.get("source_files", []) if isinstance(row.get("source_files"), list) else []
+            })
+    for name_key, matches in sorted(names_by_normalized.items()):
+        kinds = sorted({item["kind"] for item in matches})
+        if len(kinds) > 1:
+            entity_kind_name_collisions.append({
+                "type": "same_normalized_name_across_kinds", "normalized_name": name_key,
+                "kinds": kinds, "matches": matches
+            })
+
+    ambiguous_relationship_endpoints = []
+    for link in relationships:
+        if not isinstance(link, dict):
+            continue
+        for endpoint_field in ("subject", "object"):
+            endpoint = str(link.get(endpoint_field) or "").strip()
+            endpoint_key = norm(endpoint)
+            matches = names_by_normalized.get(endpoint_key, []) if endpoint_key else []
+            identities = {(item["kind"], norm(item["name"])) for item in matches}
+            if len(identities) > 1:
+                ambiguous_relationship_endpoints.append({
+                    "type": "ambiguous_relationship_endpoint", "endpoint_field": endpoint_field,
+                    "endpoint": endpoint, "subject": str(link.get("subject") or ""),
+                    "relation": str(link.get("relation") or ""), "object": str(link.get("object") or ""),
+                    "matches": matches,
+                    "source_files": link.get("source_files", []) if isinstance(link.get("source_files"), list) else []
+                })
+
+    source_path_findings = []
+    for row_type, rows in (("entity", entities), ("relationship", relationships), ("record", records)):
+        for row_index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                continue
+            files_value = row.get("source_files")
+            if row_type == "record" and not isinstance(files_value, list):
+                one_file = str(row.get("file") or "").strip()
+                files_value = [one_file] if one_file else files_value
+            if files_value is None:
+                continue
+            if not isinstance(files_value, list):
+                source_path_findings.append({"type": "source_files_wrong_type", "record_type": row_type,
+                                             "index": row_index, "actual_type": type(files_value).__name__})
+                continue
+            normalized_paths = []
+            for file_value in files_value:
+                raw_path = str(file_value or "").strip()
+                if not raw_path:
+                    continue
+                normalized_path = re.sub(r"[\\/]+", r"\\", raw_path).casefold()
+                normalized_paths.append((normalized_path, raw_path))
+            grouped_paths = {}
+            for normalized_path, raw_path in normalized_paths:
+                grouped_paths.setdefault(normalized_path, []).append(raw_path)
+            for normalized_path, variants in sorted(grouped_paths.items()):
+                if len(variants) > 1:
+                    source_path_findings.append({
+                        "type": "duplicate_source_path_reference", "record_type": row_type,
+                        "name": str(row.get("name") or row.get("subject") or row.get("file") or ""),
+                        "normalized_source_path": normalized_path, "variants": variants
+                    })
+            for file_value in files_value:
+                if file_value is not None and not isinstance(file_value, (str, int, float)):
+                    source_path_findings.append({
+                        "type": "source_path_wrong_value_type", "record_type": row_type,
+                        "name": str(row.get("name") or row.get("subject") or row.get("file") or ""),
+                        "actual_type": type(file_value).__name__
+                    })
+
+    candidate_traceability_findings = []
+    evidence_quality_findings = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        filename = str(record.get("file") or "(unknown source)")
+        candidates = record.get("extracted_entity_candidates", [])
+        if not isinstance(candidates, list):
+            continue
+        for candidate_index, candidate in enumerate(candidates):
+            if not isinstance(candidate, dict):
+                continue
+            candidate_name = str(candidate.get("name") or "").strip()
+            missing = []
+            if not candidate_name:
+                missing.append("candidate name")
+            if not (str(candidate.get("evidence") or "").strip() or
+                    (isinstance(candidate.get("evidence_lines"), list) and
+                     any(str(line or "").strip() for line in candidate.get("evidence_lines", [])))):
+                missing.append("evidence")
+            candidate_pages = candidate.get("source_pages")
+            if not (isinstance(candidate_pages, list) and candidate_pages):
+                missing.append("source page")
+            candidate_files = candidate.get("source_files")
+            if not (isinstance(candidate_files, list) and any(str(item or "").strip() for item in candidate_files)):
+                missing.append("source file")
+            if missing:
+                candidate_traceability_findings.append({
+                    "type": "candidate_missing_traceability", "file": filename,
+                    "candidate_index": candidate_index, "name": candidate_name or "(unnamed candidate)",
+                    "missing": missing
+                })
+            candidate_confidence = str(candidate.get("confidence") or "").strip().upper()
+            candidate_evidence = str(candidate.get("evidence") or "").strip().casefold()
+            if candidate_confidence == "HIGH" and (
+                not candidate_evidence or candidate_evidence in {"none", "unknown", "n/a", "null", "tbd", "not available"}
+            ) and not (isinstance(candidate.get("evidence_lines"), list) and
+                       any(str(line or "").strip() for line in candidate.get("evidence_lines", []))):
+                evidence_quality_findings.append({
+                    "type": "high_confidence_candidate_without_evidence", "file": filename,
+                    "candidate_index": candidate_index, "name": candidate_name or "(unnamed candidate)"
+                })
+        for field in ("evidence", "evidence_lines"):
+            value = record.get(field)
+            if isinstance(value, str) and value.strip().casefold() in {"none", "unknown", "n/a", "null", "tbd", "not available"}:
+                evidence_quality_findings.append({
+                    "type": "placeholder_record_evidence", "file": filename, "field": field, "value": value.strip()
+                })
+
     # Plain-language actions keep the dashboard useful without changing source data.
     actionable_review = []
     action_specs = [
@@ -16005,6 +16133,11 @@ def lore_intake_quality_audit(records, graph):
         ("unresolved_relationships", unresolved, "Resolve the missing subject/object names or leave the relationship explicitly unassigned."),
         ("duplicate_relationship_findings", duplicate_relationship_findings, "Compare the cited sources and decide whether these are repeated evidence or distinct claims."),
         ("confidence_findings", confidence_findings, "Use HIGH, MEDIUM, or LOW and keep confidence aligned with evidence."),
+        ("entity_kind_name_collisions", entity_kind_name_collisions, "Confirm whether same-named entries are distinct entity types; do not merge based on names alone."),
+        ("ambiguous_relationship_endpoints", ambiguous_relationship_endpoints, "Choose the intended entity for each relationship endpoint using source evidence."),
+        ("source_path_findings", source_path_findings, "Standardize source paths and remove duplicate references only after checking the original records."),
+        ("candidate_traceability_findings", candidate_traceability_findings, "Attach the candidate name, original source file, exact evidence, and valid page number before approval."),
+        ("evidence_quality_findings", evidence_quality_findings, "Replace placeholder evidence and lower confidence when the source does not support the claim."),
     ]
     for finding_key, findings, next_step in action_specs:
         if findings:
@@ -16079,6 +16212,17 @@ def lore_intake_quality_audit(records, graph):
         "relationship_structure_findings": relationship_structure_findings,
         "record_structure_findings": record_structure_findings,
         "actionable_review": actionable_review,
+        "entity_kind_name_collisions": entity_kind_name_collisions,
+        "ambiguous_relationship_endpoints": ambiguous_relationship_endpoints,
+        "source_path_findings": source_path_findings,
+        "candidate_traceability_findings": candidate_traceability_findings,
+        "evidence_quality_findings": evidence_quality_findings,
+        "review_summary": {
+            "total_findings": sum(len(items) for items in (entity_structure_findings, relationship_structure_findings, record_structure_findings, provenance_findings, alias_conflicts, unresolved, duplicate_relationship_findings, confidence_findings, entity_kind_name_collisions, ambiguous_relationship_endpoints, source_path_findings, candidate_traceability_findings, evidence_quality_findings)),
+            "high_priority_groups": sum(1 for item in actionable_review if item["priority"] == "HIGH"),
+            "review_groups": sum(1 for item in actionable_review if item["priority"] == "REVIEW"),
+            "canon_written": False,
+        },
         "summary": {
             "high_priority_count": sum(1 for row in queue if row["priority"] == "HIGH"),
             "near_duplicate_count": len(unique_near_duplicates),
@@ -16101,6 +16245,11 @@ def lore_intake_quality_audit(records, graph):
             "relationship_structure_finding_count": len(relationship_structure_findings),
             "record_structure_finding_count": len(record_structure_findings),
             "actionable_review_count": len(actionable_review),
+            "entity_kind_name_collision_count": len(entity_kind_name_collisions),
+            "ambiguous_relationship_endpoint_count": len(ambiguous_relationship_endpoints),
+            "source_path_finding_count": len(source_path_findings),
+            "candidate_traceability_finding_count": len(candidate_traceability_findings),
+            "evidence_quality_finding_count": len(evidence_quality_findings),
         },
     }
 

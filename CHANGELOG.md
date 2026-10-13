@@ -1,5 +1,14 @@
 # Changelog
 
+## v36.0 — Evidence Traceability and Ambiguity Review
+
+- Flags identical normalized names used across different entity kinds and ambiguous relationship endpoints.
+- Detects duplicate source-path references after case and slash normalization without changing the original paths.
+- Checks extracted candidates for source-file, evidence, and page traceability.
+- Flags placeholder evidence paired with high-confidence candidates or intake evidence.
+- Adds audit-wide review summary totals and group counts while preserving review-only behavior.
+- Adds regression coverage for ambiguous identities, traceability gaps, malformed top-level collections, and no-mutation guarantees.
+
 ## v35.0 — Lore Audit Actionability and Structural Integrity
 
 - Detects malformed entity, relationship, and intake-record shapes without stopping the audit.

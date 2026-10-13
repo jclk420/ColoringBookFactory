@@ -86,6 +86,37 @@ class LoreReviewHardeningTests(unittest.TestCase):
         self.assertEqual(result["summary"]["actionable_review_count"], len(result["actionable_review"]))
         self.assertFalse(result["canon_written"])
 
+    def test_cross_kind_name_collisions_and_ambiguous_endpoints_are_flagged(self):
+        graph = {"entities": [
+            {"name": "Hollow Gate", "kind": "location", "source_files": ["lore.pdf"]},
+            {"name": "Hollow Gate", "kind": "creature", "source_files": ["cryptids.pdf"]}],
+            "relationships": [{"subject": "Hollow Gate", "relation": "guards", "object": "Hollow Gate"}]}
+        result = self.audit([], graph)
+        self.assertTrue(result["entity_kind_name_collisions"])
+        self.assertEqual(len(result["ambiguous_relationship_endpoints"]), 2)
+        self.assertFalse(result["canon_written"])
+
+    def test_source_paths_and_candidate_traceability_are_flagged(self):
+        records = [{"file": "Scan.PDF", "source_files": ["A/Scan.pdf", "a\\scan.PDF"],
+                    "extracted_entity_candidates": [
+                        {"name": "Ghoul", "confidence": "HIGH", "evidence": "unknown"},
+                        {"name": "", "source_pages": [], "source_files": []}]}]
+        result = self.audit(records, {"entities": [], "relationships": []})
+        self.assertTrue(result["source_path_findings"])
+        self.assertTrue(result["candidate_traceability_findings"])
+        self.assertTrue(result["evidence_quality_findings"])
+        self.assertEqual(result["review_summary"]["canon_written"], False)
+        self.assertEqual(result["summary"]["candidate_traceability_finding_count"],
+                         len(result["candidate_traceability_findings"]))
+
+    def test_audit_handles_non_list_graph_collections_without_mutation(self):
+        graph = {"entities": "bad", "relationships": {"subject": "A"}}
+        records = {"file": "not-a-list"}
+        result = self.audit(records, graph)
+        self.assertEqual(result["record_count"], 0)
+        self.assertEqual(result["unresolved_relationships"], [])
+        self.assertFalse(result["canon_written"])
+
     def test_duplicate_relationships_are_flagged_but_not_removed(self):
         links = [
             {"subject": "Ash Maw", "relation": "guards", "object": "Gate", "source_files": ["a.pdf"]},
