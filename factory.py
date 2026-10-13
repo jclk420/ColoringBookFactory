@@ -15373,6 +15373,11 @@ def lore_intake_ocr_pending_file():
     batch_text = lore_ocr_select_page_range(
         ocr.get("text", ""), ocr_start_page, page_limit
     )
+    if not batch_text.strip():
+        print(f"No readable text was found in the selected page range {ocr_start_page}-{ocr_start_page + page_limit - 1}.")
+        print("The intake report was not changed; try another page range or inspect scan quality.")
+        return {"status": "REVIEW", "attached": False, "pages_processed": 0,
+                "page_start": ocr_start_page, "page_limit": page_limit, "text_saved": False}
     # Keep each OCR batch's extracted text beside its report, with the page range
     # and source digest in the filename so later batches cannot overwrite it.
     source_digest = str(item.get("sha256") or lore_intake_sha256(source))[:8]

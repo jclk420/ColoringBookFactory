@@ -175,6 +175,10 @@ class LoreOCRTests(unittest.TestCase):
             "[OCR PAGE 2]\nsecond page\n\n[PDF TEXT PAGE 3]\nthird page",
         )
 
+    def test_page_range_returns_empty_when_range_has_no_blocks(self):
+        text = "[PDF TEXT PAGE 1]\nfirst page\n\n[PDF TEXT PAGE 2]\nsecond page"
+        self.assertEqual(lore_ocr.lore_ocr_select_page_range(text, 3, 2), "")
+
     def test_page_range_rejects_invalid_limits(self):
         with self.assertRaises(ValueError):
             lore_ocr.lore_ocr_select_page_range("[OCR PAGE 1]\ntext", 0, 10)
