@@ -264,6 +264,18 @@ class ListingQualityGateTests(unittest.TestCase):
 
 
 
+    def test_publishing_menu_exposes_listing_audit_and_does_not_claim_auto_upload(self):
+        source = FACTORY_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(FACTORY_PATH))
+        menus = [node for node in tree.body
+                 if isinstance(node, ast.FunctionDef) and node.name == "publishing_menu"]
+        self.assertEqual(len(menus), 1)
+        menu_source = ast.get_source_segment(source, menus[0]) or ""
+        self.assertIn("Build & prepare current book (no auto-upload)", menu_source)
+        self.assertIn("Build listing drafts + readiness audit", menu_source)
+        self.assertIn('c=="6": v22_build_all_platform_listings()', menu_source)
+        self.assertIn('c=="8": return', menu_source)
+
 class PublishingContentAuditTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
