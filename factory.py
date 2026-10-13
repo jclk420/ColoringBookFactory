@@ -16535,6 +16535,7 @@ def lore_intake_quality_audit(records, graph):
     # Group counts are finding instances, so one issue may be represented in multiple groups.
     actionable_review = []
     action_specs = [
+        ("input_shape_findings", input_shape_findings, "Restore the expected list/object structure before retrying the read-only audit.", "HIGH"),
         ("invalid_entity_types", invalid_types, "Confirm the entity kind and correct unsupported labels.", "HIGH"),
         ("near_duplicate_suggestions", unique_near_duplicates, "Compare names and source evidence; do not merge based on similarity alone.", "REVIEW"),
         ("entity_structure_findings", entity_structure_findings, "Check entity names, list fields, aliases, and possible duplicate entries.", "HIGH"),
@@ -16654,6 +16655,7 @@ def lore_intake_quality_audit(records, graph):
                 evidence_quality_findings
             )),
             "finding_group_counts": {key: len(items) for key, items in (
+                ("input_shape_findings", input_shape_findings),
                 ("invalid_entity_types", invalid_types), ("unresolved_relationships", unresolved),
                 ("near_duplicate_suggestions", unique_near_duplicates), ("provenance_findings", provenance_findings),
                 ("alias_conflicts", alias_conflicts), ("relationship_quality_findings", relationship_quality_findings),
