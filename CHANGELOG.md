@@ -1,5 +1,15 @@
 # Changelog
 
+## v52.0 — Canon Registry Write Guards
+
+- Rejects path-like world and series IDs before registry path access.
+- Validates world, Series Bible, and world-index payload shapes before writing.
+- Refuses to overwrite existing registry files with malformed data or conflicting IDs.
+- Marks malformed world collections and Series Bible books as in-memory validation errors; save operations are blocked until the source JSON is repaired.
+- Prevents a damaged world index from allowing a partial world save.
+- Adds regression tests for traversal rejection, malformed canon data, non-mutation, and valid writes.
+- Keeps all repairs explicit; no automatic canon correction or rewrite is introduced.
+
 ## v51.0 — JSON State and Production Queue Resilience
 
 - Validates build-state root objects and key field types before callers consume them.
