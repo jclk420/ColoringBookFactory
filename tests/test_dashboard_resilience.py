@@ -97,5 +97,13 @@ class DashboardResilienceTests(unittest.TestCase):
         self.assertIn("no source or canon data was changed", self.dashboard)
 
 
+    def test_dashboard_warning_gate_includes_new_ocr_path_findings(self):
+        start = self.dashboard.index("if any(summary[key] for key in")
+        end = self.dashboard.index("):", start)
+        warning_gate = self.dashboard[start:end]
+        self.assertIn('"duplicate_ocr_text_paths"', warning_gate)
+        self.assertIn('"ocr_text_paths_outside_roots"', warning_gate)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
