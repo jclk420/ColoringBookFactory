@@ -1,5 +1,14 @@
 # Changelog
 
+## v40.0 — Comprehensive Intake Integrity Diagnostics
+
+- Adds separate warnings for malformed classification and metadata fields.
+- Counts malformed entity and relationship candidate entries instead of silently filtering them.
+- Flags unknown status values, missing source paths, and malformed evidence collections.
+- Detects when multiple manifest entries reuse the same report path.
+- Prints expanded read-only diagnostics; does not auto-repair, approve items, modify source artwork, or write canon.
+
+
 ## v39.0 — Intake Data Validation and Diagnostics
 
 - Rejects non-object intake manifests with a clear read-only diagnostic.
