@@ -13509,7 +13509,7 @@ def v57_publishing_readiness_bundle(project=None):
         checklist["report_path"] = str(target)
     except Exception as error:
         checklist["report_write_error"] = f"{type(error).__name__}: {error}"
-    print("\\nPUBLISHING READINESS CHECKLIST")
+    print("\nPUBLISHING READINESS CHECKLIST")
     print(f"Project: {project.name} | Status: {status} | Ready for manual upload: {'YES' if not blockers else 'NO'}")
     for name, row in platform_rows.items():
         print(f"{name:<18} {row['status']:<7} files={row['package_file_count']} errors={len(row['errors'])} warnings={len(row['warnings'])}")
