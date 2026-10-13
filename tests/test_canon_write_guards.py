@@ -142,5 +142,29 @@ class CanonWriteGuardTests(unittest.TestCase):
             self.assertTrue((root / "Series" / "nightmare-series" / "SERIES_BIBLE.json").exists())
 
 
+    def test_existing_registry_id_conflicts_are_never_overwritten(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            helpers = load_registry_helpers(root)
+            world_folder = root / "Worlds" / "nightmare-world"
+            world_folder.mkdir(parents=True)
+            world_path = world_folder / "world.json"
+            original_world = {"world_id": "different-world", "series": [], "relationships": [], "books": []}
+            world_path.write_text(json.dumps(original_world), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                helpers["save_world"]({"world_id": "nightmare-world", "name": "Nightmare World",
+                                       "series": [], "relationships": [], "books": []})
+            self.assertEqual(json.loads(world_path.read_text(encoding="utf-8")), original_world)
+
+            series_folder = root / "Series" / "nightmare-series"
+            series_folder.mkdir(parents=True)
+            bible_path = series_folder / "SERIES_BIBLE.json"
+            original_bible = {"series_id": "different-series", "books": []}
+            bible_path.write_text(json.dumps(original_bible), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                helpers["save_series_bible"]({"series_id": "nightmare-series", "books": []})
+            self.assertEqual(json.loads(bible_path.read_text(encoding="utf-8")), original_bible)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
