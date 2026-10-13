@@ -963,10 +963,14 @@ class FactoryIntegrityTests(unittest.TestCase):
         module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
         namespace = {"re": re}
         exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
-        self.assertEqual(namespace["lore_intake_extract_text_entities"](""), {
-            "entity_candidates": [], "relationships": []})
-        self.assertEqual(namespace["lore_intake_extract_text_entities"](None), {
-            "entity_candidates": [], "relationships": []})
+        empty_result = namespace["lore_intake_extract_text_entities"]("")
+        self.assertEqual(empty_result["entity_candidates"], [])
+        self.assertEqual(empty_result["relationships"], [])
+        self.assertEqual(empty_result["extraction_summary"]["entity_count"], 0)
+        none_result = namespace["lore_intake_extract_text_entities"](None)
+        self.assertEqual(none_result["entity_candidates"], [])
+        self.assertEqual(none_result["relationships"], [])
+        self.assertEqual(none_result["extraction_summary"]["entity_count"], 0)
         node = self.functions["lore_intake_extract_text_entities"][0]
         segment = ast.get_source_segment(self.source, node) or ""
         self.assertNotIn("save_json(", segment)
@@ -1271,6 +1275,50 @@ END FILE HSN-CR-008
                             for row in graph["archive_id_conflicts"]))
         self.assertFalse(graph["canon_written"])
         self.assertEqual(next(row for row in graph["entities"] if row["name"] == "AHOOL")["source_pages"], [8])
+
+
+    def test_v30_next_bundle_merges_repeated_candidates_and_reports_quality_counts(self):
+        node = self.functions["lore_intake_extract_text_entities"][0]
+        module = ast.Module(body=[node], type_ignores=[])
+        namespace = {"re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        sample = """[OCR PAGE 2]
+Creature: Willow Stalker
+Habitat: The flooded wetlands
+Found near: the old pumping station
+WILLOW STALKER
+The Marsh Walker
+H.S.N. FILE HSN-CR-011
+END FILE HSN-CR-011
+[OCR PAGE 5]
+WILLOW STALKER
+The Fen Hunter
+H.S.N. FILE HSN-CR-011
+END FILE HSN-CR-011
+"""
+        result = namespace["lore_intake_extract_text_entities"](sample)
+        candidates = [row for row in result["entity_candidates"]
+                      if row["kind"] == "creature" and row["name"].casefold() == "willow stalker"]
+        self.assertEqual(len(candidates), 1)
+        creature = candidates[0]
+        self.assertEqual(creature["source_pages"], [2, 5])
+        self.assertIn("The Marsh Walker", creature.get("aliases", []))
+        self.assertIn("The Fen Hunter", creature.get("aliases", []))
+        self.assertGreaterEqual(len(creature.get("evidence_lines", [])), 2)
+        self.assertTrue(any(row["relation"] == "reported_habitat"
+                            and row["object"] == "The flooded wetlands"
+                            for row in result["relationships"]))
+        self.assertTrue(any(row["relation"] == "located_at"
+                            and row["object"] == "the old pumping station"
+                            for row in result["relationships"]))
+        summary = result["extraction_summary"]
+        self.assertEqual(summary["entity_count"], len(result["entity_candidates"]))
+        self.assertEqual(summary["relationship_count"], len(result["relationships"]))
+        self.assertEqual(summary["source_page_count"], 2)
+        self.assertGreaterEqual(summary["low_confidence_count"], summary["entity_count"])
+        empty = namespace["lore_intake_extract_text_entities"]("")
+        self.assertEqual(empty["extraction_summary"]["entity_count"], 0)
+
 
 
 if __name__ == "__main__":
