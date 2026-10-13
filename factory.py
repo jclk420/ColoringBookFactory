@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "56.0"
+FACTORY_VERSION = "57.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -13398,6 +13398,128 @@ def v56_publishing_release_audit(project=None):
         print(f"  REVIEW [{item['platform']}] {item['detail']}")
     print("This audit does not upload or publish anything.")
     return report
+
+
+def v57_publishing_readiness_bundle(project=None):
+    """Create a platform-by-platform upload checklist; only diagnostic reports are written."""
+    if project is None:
+        project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected. No readiness checklist was generated.")
+        return {"status": "CANCELLED", "project": None, "read_only": True}
+    project = Path(project)
+    settings = load_project_settings_safe(project)
+    master = find_master_pdf(project)
+    master_hash = file_hash(master) if master and master.is_file() else None
+    preflight = v20_release_preflight(project)
+    manifest_report = v23_package_manifest_verify(project)
+    platform_rows = {}
+    blockers, warnings = [], []
+    profiles = load_platform_profiles()
+    for name, profile in profiles.items():
+        if not profile.get("enabled", False):
+            continue
+        rules = profile.get("rules", {}) if isinstance(profile.get("rules", {}), dict) else {}
+        root = project / PLATFORM_DIRNAME / profile.get("output_dir", name.upper())
+        package = manifest_report.get("platforms", {}).get(name, {})
+        row_errors = []
+        row_warnings = []
+        row_errors.extend(platform_required_metadata(settings, profile))
+        if not master or not master.is_file():
+            row_errors.append("Authoritative MASTER PDF is missing.")
+        if not str(settings.get("description", settings.get("long_description", settings.get("cover_blurb", ""))) or "").strip():
+            row_warnings.append("Product description is empty; complete the listing before upload.")
+        if name == "KDP":
+            if not settings.get("keywords"):
+                row_warnings.append("KDP keywords are missing from project metadata.")
+            if not settings.get("categories"):
+                row_warnings.append("KDP categories are missing from project metadata.")
+        if not root.is_dir():
+            row_errors.append("Platform package directory is missing.")
+        if package.get("errors"):
+            row_errors.extend(str(item) for item in package["errors"])
+        if package.get("warnings"):
+            row_warnings.extend(str(item) for item in package["warnings"])
+        manifest_path = root / "PACKAGE_MANIFEST.json"
+        manifest = {}
+        if manifest_path.is_file():
+            try:
+                loaded = load_json(manifest_path)
+                manifest = loaded if isinstance(loaded, dict) else {}
+            except Exception as error:
+                row_errors.append("Package manifest cannot be read: " + str(error))
+        if master_hash and manifest:
+            recorded_master = manifest.get("master_sha256")
+            if not recorded_master:
+                row_warnings.append("Package manifest has no source MASTER fingerprint; freshness cannot be confirmed.")
+            elif recorded_master != master_hash:
+                row_errors.append("STALE_PACKAGE: package was built from a different MASTER PDF hash.")
+        elif manifest_path.is_file() and not manifest:
+            row_errors.append("Package manifest is invalid; freshness cannot be checked.")
+        package_files = [p for p in root.rglob("*") if p.is_file() and p.name != "PACKAGE_MANIFEST.json"] if root.is_dir() else []
+        max_files = rules.get("max_files")
+        if isinstance(max_files, int) and len(package_files) > max_files:
+            row_errors.append(f"Platform file-count limit exceeded: {len(package_files)} files; profile limit is {max_files}.")
+        max_mb = rules.get("max_file_mb")
+        if isinstance(max_mb, (int, float)) and max_mb > 0:
+            too_large = [p.name for p in package_files if p.stat().st_size > max_mb * 1024 * 1024]
+            for filename in too_large:
+                row_errors.append(f"Platform file-size limit exceeded ({max_mb} MB profile limit): {filename}")
+        page_count = pdf_page_count(master) if master and master.is_file() else None
+        if page_count is None:
+            row_warnings.append("MASTER PDF page count could not be verified.")
+        else:
+            minimum, maximum = rules.get("min_pages"), rules.get("max_pages")
+            if isinstance(minimum, int) and page_count < minimum:
+                row_errors.append(f"MASTER has {page_count} pages; platform minimum is {minimum}.")
+            if isinstance(maximum, int) and page_count > maximum:
+                row_errors.append(f"MASTER has {page_count} pages; platform maximum is {maximum}.")
+        status = "BLOCKED" if row_errors else ("REVIEW" if row_warnings else "READY")
+        platform_rows[name] = {
+            "status": status, "package_path": str(root), "package_file_count": len(package_files),
+            "master_sha256": master_hash, "manifest_master_sha256": manifest.get("master_sha256"),
+            "master_page_count": page_count, "errors": row_errors, "warnings": row_warnings,
+            "manual_steps_required": True,
+        }
+        blockers.extend({"platform": name, "detail": item} for item in row_errors)
+        warnings.extend({"platform": name, "detail": item} for item in row_warnings)
+    if not platform_rows:
+        blockers.append({"platform": None, "detail": "No publishing platforms are enabled."})
+    status = "BLOCKED" if blockers else ("REVIEW" if warnings else "READY")
+    checklist = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated": datetime.now().isoformat(timespec="seconds"), "project": project.name,
+        "status": status, "ready_to_upload": not blockers, "master": {
+            "path": str(master) if master else None, "sha256": master_hash,
+            "page_count": pdf_page_count(master) if master and master.is_file() else None},
+        "platforms": platform_rows, "blockers": blockers, "warnings": warnings,
+        "checklist": [
+            {"step": "Resolve all BLOCKED platform checks", "required": True, "complete": not blockers},
+            {"step": "Review all metadata and package warnings", "required": True, "complete": not warnings},
+            {"step": "Open each platform package and confirm the intended files", "required": True, "complete": False},
+            {"step": "Complete platform previewer / product-page checks", "required": True, "complete": False},
+            {"step": "Manually upload and publish on the platform; verify the live product", "required": True, "complete": False},
+        ],
+        "read_only": True,
+        "note": "Diagnostic report only. No package, MASTER, artwork, listing metadata, or upload state is changed. READY means local checks passed, not that a platform accepted or published the product.",
+    }
+    target = project / "REPORTS" / "PUBLISHING_READINESS_CHECKLIST.json"
+    try:
+        save_json(target, checklist)
+        checklist["report_path"] = str(target)
+    except Exception as error:
+        checklist["report_write_error"] = f"{type(error).__name__}: {error}"
+    print("\\nPUBLISHING READINESS CHECKLIST")
+    print(f"Project: {project.name} | Status: {status} | Ready for manual upload: {'YES' if not blockers else 'NO'}")
+    for name, row in platform_rows.items():
+        print(f"{name:<18} {row['status']:<7} files={row['package_file_count']} errors={len(row['errors'])} warnings={len(row['warnings'])}")
+        for item in row["errors"]:
+            print("  BLOCKER: " + item)
+        for item in row["warnings"]:
+            print("  REVIEW: " + item)
+    print(f"Report: {target}")
+    print("No upload or publication was performed.")
+    return checklist
 
 
 def publishing_menu():
