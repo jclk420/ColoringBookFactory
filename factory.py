@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 50.0.
+# Current version: 51.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "50.0"
+FACTORY_VERSION = "51.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -110,18 +110,26 @@ def load_optional_book_config(source_folder):
 
 
 def load_build_history(project):
+    """Load build history while keeping malformed persisted data untouched."""
     path = project / BUILD_HISTORY_FILENAME
+    defaults = {"version": FACTORY_VERSION, "builds": []}
     if not path.exists():
-        return {"version": FACTORY_VERSION, "builds": []}
+        return defaults
     try:
         data = load_json(path)
         if not isinstance(data, dict):
             raise ValueError("history must be an object")
-        data.setdefault("builds", [])
+        data = dict(data)
+        if "builds" not in data:
+            data["builds"] = []
+        elif not isinstance(data.get("builds"), list):
+            print(f"WARNING: Build history list is malformed in {path}; using an empty in-memory history.")
+            data["builds"] = []
+        data.setdefault("version", FACTORY_VERSION)
         return data
-    except Exception:
-        return {"version": FACTORY_VERSION, "builds": []}
-
+    except Exception as error:
+        print(f"WARNING: Could not read build history {path}: {error}. Using in-memory defaults; the file was not modified.")
+        return defaults
 
 def record_build_history(project, status, page_count=0, errors=None, warnings=None, fingerprint=None):
     history = load_build_history(project)
@@ -139,24 +147,40 @@ def record_build_history(project, status, page_count=0, errors=None, warnings=No
 
 
 def load_queue():
+    """Load the production queue only when its persisted shape is safe to consume."""
     path = PROJECTS / PRODUCTION_QUEUE_FILENAME
+    defaults = {"version": FACTORY_VERSION, "items": []}
     if not path.exists():
-        return {"version": FACTORY_VERSION, "items": []}
+        return defaults
     try:
         data = load_json(path)
-        return data if isinstance(data, dict) else {"version": FACTORY_VERSION, "items": []}
-    except Exception:
-        return {"version": FACTORY_VERSION, "items": []}
-
+        if not isinstance(data, dict):
+            raise ValueError("production queue must be a JSON object")
+        items = data.get("items", [])
+        if not isinstance(items, list):
+            raise ValueError("production queue items must be a list")
+        if any(not isinstance(item, dict) for item in items):
+            raise ValueError("production queue contains a non-object item")
+        data = dict(data)
+        data["items"] = items
+        data.setdefault("version", FACTORY_VERSION)
+        return data
+    except Exception as error:
+        print(f"WARNING: Could not safely load production queue {path}: {error}. The persisted queue was not modified.")
+        return defaults
 
 def save_queue(queue):
-    queue["version"] = FACTORY_VERSION
-    save_json(PROJECTS / PRODUCTION_QUEUE_FILENAME, queue)
-
-
-# ============================================================
-# BUILD STATE / HASHING
-# ============================================================
+    """Reject malformed queue data before writing the production queue file."""
+    if not isinstance(queue, dict):
+        raise ValueError("production queue must be a dictionary")
+    items = queue.get("items")
+    if not isinstance(items, list):
+        raise ValueError("production queue items must be a list")
+    if any(not isinstance(item, dict) for item in items):
+        raise ValueError("every production queue item must be a dictionary")
+    payload = dict(queue)
+    payload["version"] = FACTORY_VERSION
+    save_json(PROJECTS / PRODUCTION_QUEUE_FILENAME, payload)
 
 def file_hash(path):
     h = sha256()
@@ -167,14 +191,28 @@ def file_hash(path):
 
 
 def load_build_state(project):
+    """Load build state defensively; report malformed data without rewriting the file."""
     path = project / BUILD_STATE_FILE
+    defaults = {"version": FACTORY_VERSION, "images": {}, "last_build": None}
     if not path.exists():
-        return {"version": FACTORY_VERSION, "images": {}, "last_build": None}
+        return defaults
     try:
-        return load_json(path)
-    except Exception:
-        return {"version": FACTORY_VERSION, "images": {}, "last_build": None}
-
+        data = load_json(path)
+        if not isinstance(data, dict):
+            raise ValueError("build state must be a JSON object")
+        data = dict(data)
+        if not isinstance(data.get("images", {}), dict):
+            print(f"WARNING: Build state images field is malformed in {path}; using an empty in-memory image map.")
+            data["images"] = {}
+        if data.get("last_build") is not None and not isinstance(data.get("last_build"), dict):
+            print(f"WARNING: Build state last_build field is malformed in {path}; using None in memory.")
+            data["last_build"] = None
+        data.setdefault("version", FACTORY_VERSION)
+        data.setdefault("last_build", None)
+        return data
+    except Exception as error:
+        print(f"WARNING: Could not read build state {path}: {error}. Using in-memory defaults; the file was not modified.")
+        return defaults
 
 def save_build_state(project, state):
     save_json(project / BUILD_STATE_FILE, state)
@@ -352,20 +390,25 @@ def world_path(world_id):
 def load_world_index():
     WORLDS_DIR.mkdir(parents=True, exist_ok=True)
     path = WORLDS_DIR / WORLD_INDEX_FILENAME
+    defaults = {"version": WORLD_SCHEMA_VERSION, "engine_version": WORLD_ENGINE_VERSION, "worlds": {}}
     if not path.exists():
-        return {"version": WORLD_SCHEMA_VERSION, "engine_version": WORLD_ENGINE_VERSION, "worlds": {}}
+        return defaults
     try:
         data = load_json(path)
         if not isinstance(data, dict):
             raise ValueError("world index must be an object")
+        data = dict(data)
         data.setdefault("version", WORLD_SCHEMA_VERSION)
         data.setdefault("engine_version", WORLD_ENGINE_VERSION)
-        data.setdefault("worlds", {})
+        if "worlds" not in data:
+            data["worlds"] = {}
+        elif not isinstance(data.get("worlds"), dict):
+            print(f"WARNING: World index registry is malformed in {path}; using an empty in-memory registry.")
+            data["worlds"] = {}
         return data
     except Exception as error:
-        print(f"WARNING: Could not read world index: {error}")
-        return {"version": WORLD_SCHEMA_VERSION, "engine_version": WORLD_ENGINE_VERSION, "worlds": {}}
-
+        print(f"WARNING: Could not read world index: {error}. Using in-memory defaults; the file was not modified.")
+        return defaults
 
 def save_world_index(index):
     WORLDS_DIR.mkdir(parents=True, exist_ok=True)
