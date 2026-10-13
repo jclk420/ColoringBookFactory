@@ -165,5 +165,35 @@ class LoreArtifactIntegrityTests(unittest.TestCase):
             self.assertEqual(outside.read_text(encoding="utf-8"), "external evidence\\n")
 
 
+    def test_ocr_batch_source_hash_is_checked_against_original_intake_hash(self):
+        namespace = {
+            "Path": Path, "re": __import__("re"),
+            "lore_intake_sha256": lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+        }
+        audit = load_helper("lore_intake_audit_ocr_history", namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            report = root / "INTAKE_BATCH.json"
+            evidence = root / "OCR_TEXT_P1.txt"
+            evidence.write_text("batch evidence\n", encoding="utf-8")
+            text_digest = hashlib.sha256(evidence.read_bytes()).hexdigest()
+            source_digest = "a" * 64
+            batch = {
+                "text_path": str(evidence), "text_sha256": text_digest,
+                "source_sha256": source_digest, "page_start": 1,
+                "page_limit": 10, "page_end_requested": 10,
+            }
+            result = audit({"ocr_batches": [batch]}, report, (), source_digest)
+            self.assertEqual(result["integrity"], "VERIFIED")
+            self.assertEqual(result["counts"]["ocr_source_hash_mismatches"], 0)
+            batch["source_sha256"] = "b" * 64
+            mismatch = audit({"ocr_batches": [batch]}, report, (), source_digest)
+            self.assertEqual(mismatch["integrity"], "SOURCE_HASH_MISMATCH")
+            self.assertEqual(mismatch["counts"]["ocr_source_hash_mismatches"], 1)
+            batch["source_sha256"] = "invalid"
+            malformed = audit({"ocr_batches": [batch]}, report, (), source_digest)
+            self.assertEqual(malformed["counts"]["invalid_ocr_source_hashes"], 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
