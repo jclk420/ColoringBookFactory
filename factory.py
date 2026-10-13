@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 33.0.
+# Current version: 34.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "33.0"
+FACTORY_VERSION = "34.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15790,6 +15790,104 @@ def lore_intake_quality_audit(records, graph):
                                            "file": str(record.get("file") or ""), "kind": kind_key,
                                            "normalized_name": name_key, "count": len(duplicates)})
 
+    # v34 advisory checks: confidence vocabulary, page references, aliases, and relationship provenance.
+    confidence_findings = []
+    allowed_confidence = {"HIGH", "MEDIUM", "LOW"}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        confidence = str(record.get("confidence") or "").strip().upper()
+        if confidence and confidence not in allowed_confidence:
+            confidence_findings.append({"type": "unknown_confidence_label",
+                                        "file": str(record.get("file") or "(unknown source)"),
+                                        "value": confidence})
+
+    repeated_page_findings = []
+    for source_label, rows in [("entity", entities), ("relationship", relationships), ("record", records)]:
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            pages = row.get("source_pages")
+            if not isinstance(pages, list):
+                continue
+            valid_pages = []
+            for page in pages:
+                try:
+                    if isinstance(page, bool) or int(page) < 1 or str(int(page)) != str(page).strip():
+                        continue
+                    valid_pages.append(int(page))
+                except (TypeError, ValueError):
+                    continue
+            duplicates = sorted({page for page in valid_pages if valid_pages.count(page) > 1})
+            if duplicates:
+                repeated_page_findings.append({
+                    "type": "repeated_source_page_reference", "record_type": source_label,
+                    "name": str(row.get("name") or row.get("subject") or row.get("file") or ""),
+                    "source_pages": duplicates, "source_files": row.get("source_files", [])
+                })
+
+    duplicate_alias_findings = []
+    for row in entities:
+        if not isinstance(row, dict):
+            continue
+        aliases = row.get("aliases")
+        if not isinstance(aliases, list):
+            if aliases not in (None, ""):
+                duplicate_alias_findings.append({"type": "aliases_wrong_type",
+                                                 "name": str(row.get("name") or ""),
+                                                 "actual_type": type(aliases).__name__})
+            continue
+        alias_groups = {}
+        for alias in aliases:
+            alias_key = norm(alias)
+            if alias_key:
+                alias_groups.setdefault(alias_key, []).append(str(alias).strip())
+        for alias_key, values in sorted(alias_groups.items()):
+            if len(values) > 1:
+                duplicate_alias_findings.append({"type": "duplicate_alias_within_entity",
+                                                 "name": str(row.get("name") or ""),
+                                                 "normalized_alias": alias_key, "values": values})
+
+    relationship_provenance_findings = []
+    exact_relationship_index = {}
+    for link in relationships:
+        if not isinstance(link, dict):
+            continue
+        subject = norm(link.get("subject"))
+        relation = norm(link.get("relation"))
+        obj = norm(link.get("object"))
+        if not (subject and relation and obj):
+            continue
+        source_files = link.get("source_files") if isinstance(link.get("source_files"), list) else []
+        evidence = link.get("evidence")
+        evidence_lines = link.get("evidence_lines")
+        pages = link.get("source_pages")
+        missing = []
+        if not source_files:
+            missing.append("source file")
+        if not (str(evidence or "").strip() or (isinstance(evidence_lines, list) and any(str(x).strip() for x in evidence_lines))):
+            missing.append("evidence")
+        if not (isinstance(pages, list) and pages):
+            missing.append("source page")
+        if missing:
+            relationship_provenance_findings.append({
+                "type": "relationship_missing_provenance", "subject": link.get("subject", ""),
+                "relation": link.get("relation", ""), "object": link.get("object", ""),
+                "missing": missing, "source_files": source_files
+            })
+        key = (str(link.get("subject_kind") or "entity").casefold(), subject, relation, obj)
+        exact_relationship_index.setdefault(key, []).append(link)
+    duplicate_relationship_findings = []
+    for key, links in exact_relationship_index.items():
+        if len(links) > 1:
+            duplicate_relationship_findings.append({
+                "type": "duplicate_relationship_candidate", "subject": links[0].get("subject", ""),
+                "relation": links[0].get("relation", ""), "object": links[0].get("object", ""),
+                "count": len(links),
+                "source_files": sorted({str(file) for link in links
+                                        for file in (link.get("source_files") if isinstance(link.get("source_files"), list) else [])})
+            })
+
     contradictions = []
     for warning in graph.get("duplicate_name_warnings", []) if isinstance(graph.get("duplicate_name_warnings"), list) else []:
         contradictions.append({"type": "name_context_conflict", "detail": warning})
@@ -15847,6 +15945,11 @@ def lore_intake_quality_audit(records, graph):
         "evidence_findings": evidence_findings,
         "context_findings": context_findings,
         "candidate_findings": candidate_findings,
+        "confidence_findings": confidence_findings,
+        "repeated_page_findings": repeated_page_findings,
+        "duplicate_alias_findings": duplicate_alias_findings,
+        "relationship_provenance_findings": relationship_provenance_findings,
+        "duplicate_relationship_findings": duplicate_relationship_findings,
         "summary": {
             "high_priority_count": sum(1 for row in queue if row["priority"] == "HIGH"),
             "near_duplicate_count": len(unique_near_duplicates),
@@ -15860,6 +15963,11 @@ def lore_intake_quality_audit(records, graph):
             "evidence_finding_count": len(evidence_findings),
             "context_finding_count": len(context_findings),
             "candidate_finding_count": len(candidate_findings),
+            "confidence_finding_count": len(confidence_findings),
+            "repeated_page_finding_count": len(repeated_page_findings),
+            "duplicate_alias_finding_count": len(duplicate_alias_findings),
+            "relationship_provenance_finding_count": len(relationship_provenance_findings),
+            "duplicate_relationship_finding_count": len(duplicate_relationship_findings),
         },
     }
 
