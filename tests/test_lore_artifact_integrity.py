@@ -128,5 +128,39 @@ class LoreArtifactIntegrityTests(unittest.TestCase):
             self.assertEqual(resolved, artifact.resolve())
 
 
+    def test_ocr_history_flags_reused_and_out_of_root_evidence_paths(self):
+        namespace = {
+            "Path": Path, "re": __import__("re"),
+            "lore_intake_sha256": lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+        }
+        audit = load_helper("lore_intake_audit_ocr_history", namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            report_dir = root / "batch"
+            report_dir.mkdir()
+            report = report_dir / "INTAKE_BATCH.json"
+            evidence = report_dir / "OCR_TEXT_P1.txt"
+            evidence.write_text("verified evidence\\n", encoding="utf-8")
+            digest = hashlib.sha256(evidence.read_bytes()).hexdigest()
+            outside_dir = root / "external"
+            outside_dir.mkdir()
+            outside = outside_dir / "OCR_TEXT_EXTERNAL.txt"
+            outside.write_text("external evidence\\n", encoding="utf-8")
+            outside_digest = hashlib.sha256(outside.read_bytes()).hexdigest()
+            result = audit({"ocr_batches": [
+                {"text_path": str(evidence), "text_sha256": digest,
+                 "page_start": 1, "page_limit": 10, "page_end_requested": 10},
+                {"text_path": str(evidence), "text_sha256": digest,
+                 "page_start": 11, "page_limit": 10, "page_end_requested": 20},
+                {"text_path": str(outside), "text_sha256": outside_digest,
+                 "page_start": 21, "page_limit": 10, "page_end_requested": 30},
+            ]}, report)
+            self.assertEqual(result["counts"]["duplicate_ocr_text_paths"], 1)
+            self.assertEqual(result["counts"]["ocr_text_paths_outside_roots"], 1)
+            self.assertEqual(result["integrity"], "DUPLICATE_PATH")
+            self.assertEqual(evidence.read_text(encoding="utf-8"), "verified evidence\\n")
+            self.assertEqual(outside.read_text(encoding="utf-8"), "external evidence\\n")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
