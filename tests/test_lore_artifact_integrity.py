@@ -195,5 +195,68 @@ class LoreArtifactIntegrityTests(unittest.TestCase):
             self.assertEqual(malformed["counts"]["invalid_ocr_source_hashes"], 1)
 
 
+    def test_ocr_history_detects_batch_count_and_latest_metadata_mismatches(self):
+        namespace = {
+            "Path": Path, "re": __import__("re"),
+            "lore_intake_sha256": lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+        }
+        audit = load_helper("lore_intake_audit_ocr_history", namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            first = root / "first.txt"
+            second = root / "second.txt"
+            first.write_text("first batch\n", encoding="utf-8")
+            second.write_text("second batch\n", encoding="utf-8")
+            first_hash = hashlib.sha256(first.read_bytes()).hexdigest()
+            second_hash = hashlib.sha256(second.read_bytes()).hexdigest()
+            metadata = {
+                "ocr_batches": [
+                    {"text_path": str(first), "text_sha256": first_hash, "source_sha256": "a" * 64,
+                     "page_start": 1, "page_limit": 10, "page_end_requested": 10,
+                     "confidence": "LOW", "method": "test", "warnings": []},
+                    {"text_path": str(second), "text_sha256": second_hash, "source_sha256": "a" * 64,
+                     "page_start": 11, "page_limit": 10, "page_end_requested": 20,
+                     "confidence": "LOW", "method": "test", "warnings": []},
+                ],
+                "ocr_batch_count": 2, "ocr_text_path": str(second), "ocr_text_sha256": second_hash,
+                "ocr_page_start": 11, "ocr_page_limit": 10, "ocr_page_end_requested": 20,
+            }
+            verified = audit(metadata, root / "INTAKE_BATCH.json", (), "a" * 64)
+            self.assertEqual(verified["integrity"], "VERIFIED")
+            self.assertEqual(verified["counts"]["ocr_batch_count_mismatches"], 0)
+            self.assertEqual(verified["counts"]["ocr_latest_metadata_mismatches"], 0)
+            metadata["ocr_batch_count"] = 99
+            metadata["ocr_page_start"] = 12
+            mismatch = audit(metadata, root / "INTAKE_BATCH.json", (), "a" * 64)
+            self.assertEqual(mismatch["counts"]["ocr_batch_count_mismatches"], 1)
+            self.assertGreaterEqual(mismatch["counts"]["ocr_latest_metadata_mismatches"], 1)
+
+    def test_ocr_history_distinguishes_duplicate_page_ranges_and_malformed_batch_fields(self):
+        namespace = {
+            "Path": Path, "re": __import__("re"),
+            "lore_intake_sha256": lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+        }
+        audit = load_helper("lore_intake_audit_ocr_history", namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            paths = [root / "one.txt", root / "two.txt"]
+            for path in paths:
+                path.write_text("batch evidence\n", encoding="utf-8")
+            hashes = [hashlib.sha256(path.read_bytes()).hexdigest() for path in paths]
+            metadata = {"ocr_batches": [
+                {"text_path": str(paths[0]), "text_sha256": hashes[0],
+                 "page_start": 1, "page_limit": 10, "page_end_requested": 10},
+                {"text_path": str(paths[1]), "text_sha256": hashes[1],
+                 "page_start": 1, "page_limit": 10, "page_end_requested": 10,
+                 "confidence": "CERTAIN", "method": 123, "warnings": "not-a-list"},
+            ]}
+            result = audit(metadata, root / "INTAKE_BATCH.json")
+            self.assertEqual(result["counts"]["duplicate_ocr_page_ranges"], 1)
+            self.assertEqual(result["counts"]["overlapping_ocr_page_ranges"], 1)
+            self.assertEqual(result["counts"]["invalid_ocr_confidence_labels"], 1)
+            self.assertEqual(result["counts"]["invalid_ocr_methods"], 1)
+            self.assertEqual(result["counts"]["malformed_ocr_warning_lists"], 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

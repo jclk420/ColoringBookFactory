@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 49.0.
+# Current version: 50.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "49.0"
+FACTORY_VERSION = "50.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14897,7 +14897,10 @@ def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=(), expected_
             "missing_ocr_text_files", "invalid_ocr_text_hashes", "ocr_text_hash_mismatches",
             "unreadable_ocr_text_files", "invalid_ocr_page_ranges", "overlapping_ocr_page_ranges",
             "duplicate_ocr_text_paths", "ocr_text_paths_outside_roots",
-            "invalid_ocr_source_hashes", "ocr_source_hash_mismatches")
+            "invalid_ocr_source_hashes", "ocr_source_hash_mismatches",
+            "duplicate_ocr_page_ranges", "ocr_batch_count_mismatches",
+            "ocr_latest_metadata_mismatches", "invalid_ocr_confidence_labels",
+            "malformed_ocr_warning_lists", "invalid_ocr_methods")
     counts = {key: 0 for key in keys}
     if not isinstance(metadata, dict):
         return {"integrity": "NOT_PRESENT", "page_ranges": "", "latest_text_path": "", "counts": counts}
@@ -14912,6 +14915,11 @@ def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=(), expected_
             "page_start": metadata.get("ocr_page_start"), "page_limit": metadata.get("ocr_page_limit"),
             "page_end_requested": metadata.get("ocr_page_end_requested"),
         }]
+    if "ocr_batch_count" in metadata:
+        recorded_batch_count = metadata.get("ocr_batch_count")
+        if (isinstance(recorded_batch_count, bool) or not isinstance(recorded_batch_count, int)
+                or recorded_batch_count != len(batches)):
+            counts["ocr_batch_count_mismatches"] += 1
 
     allowed_roots = []
     if report_path is not None:
@@ -14941,6 +14949,7 @@ def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=(), expected_
     statuses, ranges, valid_ranges = [], [], []
     latest_text_path = ""
     seen_text_paths = set()
+    seen_ranges = set()
     for batch in batches:
         if not isinstance(batch, dict):
             counts["malformed_ocr_batches"] += 1
@@ -15001,6 +15010,18 @@ def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=(), expected_
                 counts["ocr_source_hash_mismatches"] += 1
                 if artifact_status in {"VERIFIED", "DUPLICATE_PATH"}:
                     artifact_status = "SOURCE_HASH_MISMATCH"
+        if "confidence" in batch and str(batch.get("confidence") or "").strip().upper() not in {"HIGH", "MEDIUM", "LOW"}:
+            counts["invalid_ocr_confidence_labels"] += 1
+            if artifact_status in {"VERIFIED", "DUPLICATE_PATH"}:
+                artifact_status = "INVALID_CONFIDENCE"
+        if "warnings" in batch and not isinstance(batch.get("warnings"), list):
+            counts["malformed_ocr_warning_lists"] += 1
+            if artifact_status in {"VERIFIED", "DUPLICATE_PATH"}:
+                artifact_status = "MALFORMED_WARNINGS"
+        if "method" in batch and (not isinstance(batch.get("method"), str) or not batch.get("method").strip()):
+            counts["invalid_ocr_methods"] += 1
+            if artifact_status in {"VERIFIED", "DUPLICATE_PATH"}:
+                artifact_status = "INVALID_METHOD"
         start, limit, end = batch.get("page_start"), batch.get("page_limit"), batch.get("page_end_requested")
         valid = (isinstance(start, int) and not isinstance(start, bool) and start >= 1
                  and isinstance(limit, int) and not isinstance(limit, bool) and 1 <= limit <= 25
@@ -15009,6 +15030,10 @@ def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=(), expected_
         if valid:
             actual_end = start + limit - 1
             ranges.append(f"{start}-{actual_end}")
+            range_key = (start, actual_end)
+            if range_key in seen_ranges:
+                counts["duplicate_ocr_page_ranges"] += 1
+            seen_ranges.add(range_key)
             for previous_start, previous_end in valid_ranges:
                 if start <= previous_end and previous_start <= actual_end:
                     counts["overlapping_ocr_page_ranges"] += 1
@@ -15017,6 +15042,30 @@ def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=(), expected_
         else:
             counts["invalid_ocr_page_ranges"] += 1
         statuses.append(artifact_status if valid else "INVALID_PAGE_RANGE")
+    if isinstance(raw_batches, list) and raw_batches and isinstance(batches[-1], dict):
+        latest_batch = batches[-1]
+        comparisons = (
+            ("ocr_text_path", "text_path", True),
+            ("ocr_text_sha256", "text_sha256", False),
+            ("ocr_page_start", "page_start", False),
+            ("ocr_page_limit", "page_limit", False),
+            ("ocr_page_end_requested", "page_end_requested", False),
+        )
+        for top_key, batch_key, is_path in comparisons:
+            if top_key not in metadata:
+                continue
+            top_value, batch_value = metadata.get(top_key), latest_batch.get(batch_key)
+            if is_path and isinstance(top_value, str) and isinstance(batch_value, str):
+                top_path = lore_intake_resolve_recorded_path(top_value, report_path, base_dirs)
+                batch_path = lore_intake_resolve_recorded_path(batch_value, report_path, base_dirs)
+                same = (str(top_path).casefold() == str(batch_path).casefold()
+                        if top_path is not None and batch_path is not None
+                        else top_value.strip().casefold() == batch_value.strip().casefold())
+            else:
+                same = top_value == batch_value
+            if not same:
+                counts["ocr_latest_metadata_mismatches"] += 1
+
     if not batches and not any(counts.values()):
         integrity = "NOT_PRESENT"
     elif not statuses:
@@ -16791,7 +16840,10 @@ def lore_intake_review_dashboard():
                "ocr_text_hash_mismatches": 0, "unreadable_ocr_text_files": 0,
                "invalid_ocr_page_ranges": 0, "malformed_ocr_batches": 0, "overlapping_ocr_page_ranges": 0,
                "duplicate_ocr_text_paths": 0, "ocr_text_paths_outside_roots": 0,
-               "invalid_ocr_source_hashes": 0, "ocr_source_hash_mismatches": 0}
+               "invalid_ocr_source_hashes": 0, "ocr_source_hash_mismatches": 0,
+               "duplicate_ocr_page_ranges": 0, "ocr_batch_count_mismatches": 0,
+               "ocr_latest_metadata_mismatches": 0, "invalid_ocr_confidence_labels": 0,
+               "malformed_ocr_warning_lists": 0, "invalid_ocr_methods": 0}
     if not manifest_path.exists():
         print("No intake manifest exists yet. Run Lore Intake first.")
         return summary
@@ -16966,14 +17018,17 @@ def lore_intake_review_dashboard():
                       "invalid_ocr_text_hashes", "ocr_text_hash_mismatches", "unreadable_ocr_text_files",
                       "invalid_ocr_page_ranges", "malformed_ocr_batches", "overlapping_ocr_page_ranges",
                       "duplicate_ocr_text_paths", "ocr_text_paths_outside_roots",
-                      "invalid_ocr_source_hashes", "ocr_source_hash_mismatches")):
+                      "invalid_ocr_source_hashes", "ocr_source_hash_mismatches",
+            "duplicate_ocr_page_ranges", "ocr_batch_count_mismatches",
+            "ocr_latest_metadata_mismatches", "invalid_ocr_confidence_labels",
+            "malformed_ocr_warning_lists", "invalid_ocr_methods")):
         print("INTAKE DATA WARNINGS — read-only; no source or canon data was changed")
         print(f"  Malformed manifests: {summary['malformed_manifests']} | Malformed batch entries: {summary['malformed_batches']} | Missing record paths: {summary['missing_record_paths']} | Invalid record paths: {summary['invalid_record_paths']}")
         print(f"  Missing reports: {summary['missing_reports']} | Unreadable reports: {summary['unreadable_reports']} | Malformed reports: {summary['malformed_reports']} | Malformed items: {summary['malformed_items']} | Missing statuses: {summary['missing_statuses']} | Unknown statuses: {summary['unknown_statuses']}")
         print(f"  Malformed classifications: {summary['malformed_classifications']} | Malformed metadata: {summary['malformed_metadata']} | Bad entity candidates: {summary['malformed_candidates']} | Bad relationship candidates: {summary['malformed_relationship_candidates']}")
         print(f"  Missing source paths: {summary['missing_sources']} | Malformed evidence: {summary['malformed_evidence']} | Reused report paths: {summary['duplicate_report_paths']}")
         print(f"  Missing staged files: {summary['missing_staged_files']} | Invalid staged hashes: {summary['invalid_staged_hashes']} | Staged hash mismatches: {summary['staged_hash_mismatches']} | Unreadable staged files: {summary['unreadable_staged_files']}")
-        print(f"  Missing OCR text paths: {summary['missing_ocr_text_paths']} | Invalid OCR paths: {summary['invalid_ocr_text_paths']} | Missing OCR text files: {summary['missing_ocr_text_files']} | Invalid OCR hashes: {summary['invalid_ocr_text_hashes']} | OCR hash mismatches: {summary['ocr_text_hash_mismatches']} | Unreadable OCR files: {summary['unreadable_ocr_text_files']} | Invalid OCR page ranges: {summary['invalid_ocr_page_ranges']} | Malformed OCR batches: {summary['malformed_ocr_batches']} | Duplicate OCR paths: {summary.get('duplicate_ocr_text_paths', 0)} | OCR paths outside allowed roots: {summary.get('ocr_text_paths_outside_roots', 0)} | Invalid OCR source hashes: {summary.get('invalid_ocr_source_hashes', 0)} | OCR source hash mismatches: {summary.get('ocr_source_hash_mismatches', 0)} | Overlapping OCR ranges: {summary['overlapping_ocr_page_ranges']}")
+        print(f"  Missing OCR text paths: {summary['missing_ocr_text_paths']} | Invalid OCR paths: {summary['invalid_ocr_text_paths']} | Missing OCR text files: {summary['missing_ocr_text_files']} | Invalid OCR hashes: {summary['invalid_ocr_text_hashes']} | OCR hash mismatches: {summary['ocr_text_hash_mismatches']} | Unreadable OCR files: {summary['unreadable_ocr_text_files']} | Invalid OCR page ranges: {summary['invalid_ocr_page_ranges']} | Malformed OCR batches: {summary['malformed_ocr_batches']} | Duplicate OCR paths: {summary.get('duplicate_ocr_text_paths', 0)} | OCR paths outside allowed roots: {summary.get('ocr_text_paths_outside_roots', 0)} | Invalid OCR source hashes: {summary.get('invalid_ocr_source_hashes', 0)} | OCR source hash mismatches: {summary.get('ocr_source_hash_mismatches', 0)} | Duplicate OCR ranges: {summary.get('duplicate_ocr_page_ranges', 0)} | Batch-count mismatches: {summary.get('ocr_batch_count_mismatches', 0)} | Latest metadata mismatches: {summary.get('ocr_latest_metadata_mismatches', 0)} | Invalid confidence labels: {summary.get('invalid_ocr_confidence_labels', 0)} | Malformed warning lists: {summary.get('malformed_ocr_warning_lists', 0)} | Invalid OCR methods: {summary.get('invalid_ocr_methods', 0)} | Overlapping OCR ranges: {summary['overlapping_ocr_page_ranges']}")
     print(f"Evidence graph: {graph['entity_count']} entities | {graph['relationship_count']} relationships | "
           f"{len(graph['duplicate_name_warnings'])} name conflicts | "
           f"{len(graph['archive_id_conflicts'])} archive-ID conflicts | "
