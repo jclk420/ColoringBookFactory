@@ -1,5 +1,13 @@
 # Changelog
 
+## v56.0 — Unified Publishing Release Audit
+
+- Adds one publishing-menu action that runs the existing read-only release preflight and package-manifest verification together.
+- Combines missing release prerequisites, package integrity errors, and non-blocking warnings into a single status and saved diagnostic report.
+- Distinguishes READY, REVIEW, and BLOCKED; readiness never claims that a product was uploaded or published.
+- Keeps MASTER PDFs, artwork, package contents, listing metadata, and upload records unchanged.
+- Adds isolated runtime tests for clean packages, checksum errors, warnings, and missing-master blockers.
+
 ## v55.0 — Build Cache and Delivery Artifact Integrity
 
 - Replaces the minimal cache check with verification of the interior PDF, successful report, KDP manifest, checklist, readiness report, and configured optional artifacts.
