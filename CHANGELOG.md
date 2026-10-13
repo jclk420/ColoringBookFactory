@@ -1,5 +1,15 @@
 # Changelog
 
+## v44.0 — Persistent OCR Batch History and Range Safety
+
+- Retains every OCR batch text path, page range, digest, confidence, method, warnings, and timestamp in the pending intake report.
+- Adds a content-digest suffix to evidence filenames so changed OCR results cannot overwrite prior evidence.
+- Suggests the next page after the highest saved range and requires explicit confirmation before repeating overlapping PDF pages.
+- Refuses to proceed when existing OCR metadata or batch history is malformed rather than silently replacing it.
+- Extends the read-only dashboard to verify every retained OCR batch and report overlapping ranges.
+- Adds regression tests for batch-history hash verification, overlap detection, and next-page suggestions.
+- Keeps OCR low-confidence and review-only; no canon write or automatic approval is added.
+
 ## v43.0 — Staged Artifact and OCR Provenance Audit
 
 - Verifies staged review files still exist and match the intake record SHA-256 without modifying them.

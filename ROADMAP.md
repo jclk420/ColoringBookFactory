@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v44.0 — Persistent OCR Batch History and Range Safety
+- Retains per-batch OCR evidence paths, page ranges, digests, warnings, and timestamps.
+- Suggests the next page range and explicitly guards against accidental overlap.
+- Audits all retained OCR batches and flags overlapping ranges without modifying records.
+- Refuses malformed OCR history and preserves review-only/no-canon-write behavior.
+
 ### v43.0 — Staged Artifact and OCR Provenance Audit
 - Audits staged-file existence and SHA-256 against each intake record.
 - Verifies OCR text-file paths, persisted-text hashes, and page-range metadata.
