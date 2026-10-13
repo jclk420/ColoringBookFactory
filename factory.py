@@ -14283,6 +14283,7 @@ def lore_intake_extract_text_entities(text):
     """Extract conservative, low-confidence lore candidates from labeled text and HSN archive files."""
     result = {"entity_candidates": [], "relationships": []}
     if not isinstance(text, str) or not text.strip():
+        result["extraction_summary"] = {"entity_count": 0, "relationship_count": 0, "source_page_count": 0, "archive_warning_count": 0, "low_confidence_count": 0}
         return result
 
     lines = [re.sub(r"\s+", " ", raw).strip(" \t-•") for raw in text.splitlines()]
@@ -14305,12 +14306,25 @@ def lore_intake_extract_text_entities(text):
             return None
         key = (kind.casefold(), name.casefold())
         if key in seen_entities:
-            return next((row for row in result["entity_candidates"]
-                         if (str(row.get("kind", "")).casefold(),
-                             str(row.get("name", "")).casefold()) == key), None)
+            existing = next((row for row in result["entity_candidates"]
+                             if (str(row.get("kind", "")).casefold(), str(row.get("name", "")).casefold()) == key), None)
+            if existing is not None:
+                if evidence and evidence not in existing.get("evidence_lines", []):
+                    existing.setdefault("evidence_lines", []).append(evidence)
+                for page_number in current_source_pages:
+                    if page_number not in existing.setdefault("source_pages", []):
+                        existing["source_pages"].append(page_number)
+                existing["source_pages"].sort()
+                aliases_list = existing.setdefault("aliases", [])
+                for alias_value in aliases or []:
+                    alias_value = str(alias_value).strip()
+                    if alias_value and alias_value.casefold() != str(existing.get("name", "")).casefold() and not any(str(old).casefold() == alias_value.casefold() for old in aliases_list):
+                        aliases_list.append(alias_value)
+                return existing
+            return None
         row = {
             "kind": kind, "name": name, "source": "pdf_text",
-            "evidence": evidence, "confidence": "LOW",
+            "evidence": evidence, "evidence_lines": [evidence] if evidence else [], "confidence": "LOW",
             "note": "Text-derived candidate; verify before approval",
             "source_pages": list(current_source_pages),
         }
@@ -14326,12 +14340,21 @@ def lore_intake_extract_text_entities(text):
             return
         key = (subject.casefold(), relation.casefold(), object_name.casefold())
         if key in seen_relationships:
+            existing = next((row for row in result["relationships"]
+                             if (str(row.get("subject", "")).casefold(), str(row.get("relation", "")).casefold(), str(row.get("object", "")).casefold()) == key), None)
+            if existing is not None:
+                if evidence and evidence not in existing.setdefault("evidence_lines", []):
+                    existing["evidence_lines"].append(evidence)
+                for page_number in current_source_pages:
+                    if page_number not in existing.setdefault("source_pages", []):
+                        existing["source_pages"].append(page_number)
+                existing["source_pages"].sort()
             return
         result["relationships"].append({
             "subject_kind": "creature", "subject": subject,
             "relation": relation, "object_kind": object_kind,
             "object": object_name, "source": "pdf_text", "evidence": evidence,
-            "confidence": "LOW",
+            "evidence_lines": [evidence] if evidence else [], "confidence": "LOW",
             "note": "Textual relationship candidate; verify before approval",
             "source_pages": list(current_source_pages),
         })
@@ -14362,18 +14385,19 @@ def lore_intake_extract_text_entities(text):
             add_entity("creature", current_creature, line)
             continue
         labeled_match = re.match(
-            r"^(location|world|book|series)(?:\s+name)?\s*[:\-]\s*(.{3,100})$",
+            r"^(location|habitat|site|world|book|series)(?:\s+name)?\s*[:\-]\s*(.{3,100})$",
             line, re.IGNORECASE)
         if labeled_match:
             kind = labeled_match.group(1).casefold()
             name = labeled_match.group(2).strip(" \t:;,.|")
             add_entity(kind, name, line)
-            if current_creature and kind == "location":
-                add_relationship(current_creature, "located_at", "location", name, line)
+            if current_creature and kind in {"location", "habitat", "site"}:
+                relation = "reported_habitat" if kind == "habitat" else "located_at"
+                add_relationship(current_creature, relation, "location", name, line)
             continue
         relation_match = re.match(
             r"^(?:found|located|contained|discovered|originates)\s+"
-            r"(?:in|at|within|from)\s*[:\-]?\s*(.{3,100})$",
+            r"(?:in|at|within|from|near|beneath|under|outside)\s*[:\-]?\s*(.{3,100})$",
             line, re.IGNORECASE)
         if current_creature and relation_match:
             add_relationship(current_creature, "located_at", "location",
@@ -14527,6 +14551,16 @@ def lore_intake_extract_text_entities(text):
                 existing_pages.append(page_number)
         existing_pages.sort()
 
+    all_pages = {page for row in result["entity_candidates"] + result["relationships"]
+                 for page in row.get("source_pages", []) if isinstance(page, int)}
+    result["extraction_summary"] = {
+        "entity_count": len(result["entity_candidates"]),
+        "relationship_count": len(result["relationships"]),
+        "source_page_count": len(all_pages),
+        "archive_warning_count": sum(len(row.get("archive_warnings", [])) for row in result["entity_candidates"]),
+        "low_confidence_count": sum(1 for row in result["entity_candidates"] + result["relationships"]
+                                    if str(row.get("confidence", "LOW")).upper() == "LOW"),
+    }
     return result
 
 def lore_intake_review_evidence(path, records, metadata=None):
