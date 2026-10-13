@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v51.0 — JSON State and Production Queue Resilience
+- Validates persisted build state, build history, production queue, and world-index shapes.
+- Fails closed on malformed queue records and rejects invalid saves.
+- Uses safe in-memory fallbacks without rewriting damaged JSON files.
+- Adds runtime regression tests for malformed and valid state data.
+
 ### v50.0 — OCR Batch Metadata Consistency
 - Checks batch-count and latest-batch summary consistency.
 - Distinguishes exact duplicate page ranges from overlaps.

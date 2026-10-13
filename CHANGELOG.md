@@ -1,5 +1,15 @@
 # Changelog
 
+## v51.0 — JSON State and Production Queue Resilience
+
+- Validates build-state root objects and key field types before callers consume them.
+- Validates build-history lists and falls back in memory when persisted structure is malformed.
+- Fails closed on malformed production queue roots, item collections, or item records.
+- Rejects invalid queue saves before touching the existing queue file.
+- Validates the world-index registry object while preserving unknown metadata fields.
+- Adds runtime tests proving malformed files remain unchanged and valid queue saves remain versioned.
+- Keeps fallback behavior explicit and avoids silent file repair or data deletion.
+
 ## v50.0 — OCR Batch Metadata Consistency
 
 - Checks recorded OCR batch counts against the retained batch history.
