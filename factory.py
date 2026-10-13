@@ -16948,7 +16948,8 @@ def lore_intake_review_dashboard():
                       "invalid_staged_hashes", "staged_hash_mismatches", "unreadable_staged_files",
                       "missing_ocr_text_paths", "invalid_ocr_text_paths", "missing_ocr_text_files",
                       "invalid_ocr_text_hashes", "ocr_text_hash_mismatches", "unreadable_ocr_text_files",
-                      "invalid_ocr_page_ranges", "malformed_ocr_batches", "overlapping_ocr_page_ranges")):
+                      "invalid_ocr_page_ranges", "malformed_ocr_batches", "overlapping_ocr_page_ranges",
+                      "duplicate_ocr_text_paths", "ocr_text_paths_outside_roots")):
         print("INTAKE DATA WARNINGS — read-only; no source or canon data was changed")
         print(f"  Malformed manifests: {summary['malformed_manifests']} | Malformed batch entries: {summary['malformed_batches']} | Missing record paths: {summary['missing_record_paths']} | Invalid record paths: {summary['invalid_record_paths']}")
         print(f"  Missing reports: {summary['missing_reports']} | Unreadable reports: {summary['unreadable_reports']} | Malformed reports: {summary['malformed_reports']} | Malformed items: {summary['malformed_items']} | Missing statuses: {summary['missing_statuses']} | Unknown statuses: {summary['unknown_statuses']}")
