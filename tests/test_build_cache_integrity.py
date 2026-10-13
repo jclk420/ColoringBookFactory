@@ -92,5 +92,18 @@ class BuildCacheIntegrityTests(unittest.TestCase):
             self.assertFalse(helpers["cached_build_is_complete"](project, settings, final_pdf, report))
 
 
+
+    def test_cache_requires_cover_artifact_in_package_when_enabled(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project, package, final_pdf, report, settings = self.make_fixture(Path(temp))
+            settings["kdp_generate_cover"] = True
+            (package / "Cover.pdf").write_bytes(b"cover pdf")
+            (package / "kdp_manifest.json").write_text(json.dumps({"interior_pdf": "Interior.pdf", "cover_pdf": "Cover.pdf"}), encoding="utf-8")
+            helpers = load_cache_helpers()
+            self.assertTrue(helpers["cached_build_is_complete"](project, settings, final_pdf, report))
+            (package / "Cover.pdf").unlink()
+            self.assertFalse(helpers["cached_build_is_complete"](project, settings, final_pdf, report))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

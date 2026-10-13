@@ -3340,7 +3340,7 @@ def cached_build_is_complete(project, settings, final_pdf, report_file):
             cover_name = manifest.get("cover_pdf")
             if not isinstance(cover_name, str) or not cover_name or Path(cover_name).name != cover_name:
                 return False
-            cover = project / "COVER" / cover_name
+            cover = package / cover_name
             if not cover.is_file() or cover.stat().st_size <= 0:
                 return False
         if settings.get("metadata_export_enabled", True):
