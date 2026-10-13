@@ -1,5 +1,15 @@
 # Changelog
 
+## v49.0 — OCR Source Provenance and Warning Visibility
+
+- Records the original intake SHA-256 on every newly attached OCR batch.
+- Audits each retained batch's source digest against the pending intake record when available.
+- Distinguishes malformed source digests from valid-but-mismatched source digests.
+- Ensures duplicate-path, out-of-root, and source-hash findings trigger the dashboard warning summary.
+- Keeps optional diagnostic counters backward-compatible with isolated dashboard/test contexts.
+- Adds regression coverage for source-hash verification and warning activation.
+- Preserves legacy batches, existing OCR evidence, and read-only/no-canon-write behavior.
+
 ## v48.0 — OCR Evidence Reference Integrity
 
 - Detects when multiple OCR batches point to the same evidence file.

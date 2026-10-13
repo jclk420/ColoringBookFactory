@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 48.0.
+# Current version: 49.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "48.0"
+FACTORY_VERSION = "49.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14891,12 +14891,13 @@ def lore_intake_next_ocr_page_start(metadata):
     return max(ends) + 1 if ends else 1
 
 
-def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=()):
+def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=(), expected_source_sha256=None):
     """Verify retained OCR files, references, and ranges without modifying any artifact."""
     keys = ("malformed_ocr_batches", "missing_ocr_text_paths", "invalid_ocr_text_paths",
             "missing_ocr_text_files", "invalid_ocr_text_hashes", "ocr_text_hash_mismatches",
             "unreadable_ocr_text_files", "invalid_ocr_page_ranges", "overlapping_ocr_page_ranges",
-            "duplicate_ocr_text_paths", "ocr_text_paths_outside_roots")
+            "duplicate_ocr_text_paths", "ocr_text_paths_outside_roots",
+            "invalid_ocr_source_hashes", "ocr_source_hash_mismatches")
     counts = {key: 0 for key in keys}
     if not isinstance(metadata, dict):
         return {"integrity": "NOT_PRESENT", "page_ranges": "", "latest_text_path": "", "counts": counts}
@@ -14988,6 +14989,18 @@ def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=()):
             else:
                 counts["missing_ocr_text_files"] += 1
                 artifact_status = "MISSING_FILE"
+        if "source_sha256" in batch:
+            recorded_source_hash = batch.get("source_sha256")
+            if not isinstance(recorded_source_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", recorded_source_hash):
+                counts["invalid_ocr_source_hashes"] += 1
+                if artifact_status in {"VERIFIED", "DUPLICATE_PATH"}:
+                    artifact_status = "INVALID_SOURCE_HASH"
+            elif (isinstance(expected_source_sha256, str)
+                  and re.fullmatch(r"[0-9a-fA-F]{64}", expected_source_sha256)
+                  and recorded_source_hash.casefold() != expected_source_sha256.casefold()):
+                counts["ocr_source_hash_mismatches"] += 1
+                if artifact_status in {"VERIFIED", "DUPLICATE_PATH"}:
+                    artifact_status = "SOURCE_HASH_MISMATCH"
         start, limit, end = batch.get("page_start"), batch.get("page_limit"), batch.get("page_end_requested")
         valid = (isinstance(start, int) and not isinstance(start, bool) and start >= 1
                  and isinstance(limit, int) and not isinstance(limit, bool) and 1 <= limit <= 25
@@ -15778,6 +15791,7 @@ def lore_intake_ocr_pending_file():
     batch_record = {
         "page_start": ocr_start_page, "page_limit": page_limit, "page_end_requested": page_end,
         "text_path": str(text_path), "text_characters": len(batch_text), "text_sha256": text_digest,
+        "source_sha256": source_digest,
         "pages_processed": ocr.get("batch_pages_processed", 0), "method": ocr.get("method", "unknown"),
         "warnings": list(ocr.get("warnings", [])), "confidence": "LOW", "status": "REVIEW",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -16775,7 +16789,9 @@ def lore_intake_review_dashboard():
                "missing_ocr_text_paths": 0, "invalid_ocr_text_paths": 0,
                "missing_ocr_text_files": 0, "invalid_ocr_text_hashes": 0,
                "ocr_text_hash_mismatches": 0, "unreadable_ocr_text_files": 0,
-               "invalid_ocr_page_ranges": 0, "malformed_ocr_batches": 0, "overlapping_ocr_page_ranges": 0}
+               "invalid_ocr_page_ranges": 0, "malformed_ocr_batches": 0, "overlapping_ocr_page_ranges": 0,
+               "duplicate_ocr_text_paths": 0, "ocr_text_paths_outside_roots": 0,
+               "invalid_ocr_source_hashes": 0, "ocr_source_hash_mismatches": 0}
     if not manifest_path.exists():
         print("No intake manifest exists yet. Run Lore Intake first.")
         return summary
@@ -16876,7 +16892,7 @@ def lore_intake_review_dashboard():
                             summary["unreadable_staged_files"] += 1
 
             ocr_audit = lore_intake_audit_ocr_history(
-                metadata, report_path, (INTAKE_DIR, FACTORY)
+                metadata, report_path, (INTAKE_DIR, FACTORY), item.get("sha256")
             )
             for counter, count in ocr_audit["counts"].items():
                 summary[counter] = summary.get(counter, 0) + count
@@ -16948,14 +16964,16 @@ def lore_intake_review_dashboard():
                       "invalid_staged_hashes", "staged_hash_mismatches", "unreadable_staged_files",
                       "missing_ocr_text_paths", "invalid_ocr_text_paths", "missing_ocr_text_files",
                       "invalid_ocr_text_hashes", "ocr_text_hash_mismatches", "unreadable_ocr_text_files",
-                      "invalid_ocr_page_ranges", "malformed_ocr_batches", "overlapping_ocr_page_ranges")):
+                      "invalid_ocr_page_ranges", "malformed_ocr_batches", "overlapping_ocr_page_ranges",
+                      "duplicate_ocr_text_paths", "ocr_text_paths_outside_roots",
+                      "invalid_ocr_source_hashes", "ocr_source_hash_mismatches")):
         print("INTAKE DATA WARNINGS — read-only; no source or canon data was changed")
         print(f"  Malformed manifests: {summary['malformed_manifests']} | Malformed batch entries: {summary['malformed_batches']} | Missing record paths: {summary['missing_record_paths']} | Invalid record paths: {summary['invalid_record_paths']}")
         print(f"  Missing reports: {summary['missing_reports']} | Unreadable reports: {summary['unreadable_reports']} | Malformed reports: {summary['malformed_reports']} | Malformed items: {summary['malformed_items']} | Missing statuses: {summary['missing_statuses']} | Unknown statuses: {summary['unknown_statuses']}")
         print(f"  Malformed classifications: {summary['malformed_classifications']} | Malformed metadata: {summary['malformed_metadata']} | Bad entity candidates: {summary['malformed_candidates']} | Bad relationship candidates: {summary['malformed_relationship_candidates']}")
         print(f"  Missing source paths: {summary['missing_sources']} | Malformed evidence: {summary['malformed_evidence']} | Reused report paths: {summary['duplicate_report_paths']}")
         print(f"  Missing staged files: {summary['missing_staged_files']} | Invalid staged hashes: {summary['invalid_staged_hashes']} | Staged hash mismatches: {summary['staged_hash_mismatches']} | Unreadable staged files: {summary['unreadable_staged_files']}")
-        print(f"  Missing OCR text paths: {summary['missing_ocr_text_paths']} | Invalid OCR paths: {summary['invalid_ocr_text_paths']} | Missing OCR text files: {summary['missing_ocr_text_files']} | Invalid OCR hashes: {summary['invalid_ocr_text_hashes']} | OCR hash mismatches: {summary['ocr_text_hash_mismatches']} | Unreadable OCR files: {summary['unreadable_ocr_text_files']} | Invalid OCR page ranges: {summary['invalid_ocr_page_ranges']} | Malformed OCR batches: {summary['malformed_ocr_batches']} | Duplicate OCR paths: {summary.get('duplicate_ocr_text_paths', 0)} | OCR paths outside allowed roots: {summary.get('ocr_text_paths_outside_roots', 0)} | Overlapping OCR ranges: {summary['overlapping_ocr_page_ranges']}")
+        print(f"  Missing OCR text paths: {summary['missing_ocr_text_paths']} | Invalid OCR paths: {summary['invalid_ocr_text_paths']} | Missing OCR text files: {summary['missing_ocr_text_files']} | Invalid OCR hashes: {summary['invalid_ocr_text_hashes']} | OCR hash mismatches: {summary['ocr_text_hash_mismatches']} | Unreadable OCR files: {summary['unreadable_ocr_text_files']} | Invalid OCR page ranges: {summary['invalid_ocr_page_ranges']} | Malformed OCR batches: {summary['malformed_ocr_batches']} | Duplicate OCR paths: {summary.get('duplicate_ocr_text_paths', 0)} | OCR paths outside allowed roots: {summary.get('ocr_text_paths_outside_roots', 0)} | Invalid OCR source hashes: {summary.get('invalid_ocr_source_hashes', 0)} | OCR source hash mismatches: {summary.get('ocr_source_hash_mismatches', 0)} | Overlapping OCR ranges: {summary['overlapping_ocr_page_ranges']}")
     print(f"Evidence graph: {graph['entity_count']} entities | {graph['relationship_count']} relationships | "
           f"{len(graph['duplicate_name_warnings'])} name conflicts | "
           f"{len(graph['archive_id_conflicts'])} archive-ID conflicts | "

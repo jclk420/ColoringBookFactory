@@ -18,8 +18,8 @@ class DashboardResilienceTests(unittest.TestCase):
         cls.dashboard = ast.get_source_segment(cls.source, matches[0])
 
     def test_factory_version_is_consistent(self):
-        self.assertIn('FACTORY_VERSION = "48.0"', self.source)
-        self.assertIn("# Current version: 48.0.", self.source)
+        self.assertIn('FACTORY_VERSION = "49.0"', self.source)
+        self.assertIn("# Current version: 49.0.", self.source)
 
     def test_malformed_manifest_batches_are_reported_and_returned_safely(self):
         self.assertIn('manifest_batches_wrong_type', self.dashboard)
@@ -72,7 +72,7 @@ class DashboardResilienceTests(unittest.TestCase):
         for token in (
             "missing_staged_files", "invalid_staged_hashes", "staged_hash_mismatches",
             "missing_ocr_text_paths", "missing_ocr_text_files", "ocr_text_hash_mismatches",
-            "invalid_ocr_page_ranges", "malformed_ocr_batches", "overlapping_ocr_page_ranges", "duplicate_ocr_text_paths", "ocr_text_paths_outside_roots",
+            "invalid_ocr_page_ranges", "malformed_ocr_batches", "overlapping_ocr_page_ranges", "duplicate_ocr_text_paths", "ocr_text_paths_outside_roots", "invalid_ocr_source_hashes", "ocr_source_hash_mismatches",
             "lore_intake_audit_ocr_history",
         ):
             with self.subTest(token=token):
@@ -95,6 +95,11 @@ class DashboardResilienceTests(unittest.TestCase):
     def test_dashboard_remains_read_only(self):
         self.assertIn("READ ONLY", self.dashboard)
         self.assertIn("no source or canon data was changed", self.dashboard)
+
+
+    def test_ocr_batch_writer_records_original_source_hash(self):
+        self.assertIn('"source_sha256": source_digest', self.source)
+        self.assertIn('item.get("sha256")', self.source)
 
 
 if __name__ == "__main__":

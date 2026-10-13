@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v49.0 — OCR Source Provenance and Warning Visibility
+- Stores original source SHA-256 with each new OCR evidence batch.
+- Audits retained batch hashes against the intake record.
+- Makes duplicate/out-of-root path findings and source-hash errors activate dashboard warnings.
+- Adds regression coverage while preserving legacy and read-only behavior.
+
 ### v48.0 — OCR Evidence Reference Integrity
 - Detects evidence files reused by multiple OCR batches.
 - Flags OCR paths outside the report folder and approved intake roots.
