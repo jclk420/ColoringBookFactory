@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v42.0 — Collision-Safe, Verified Intake Staging
+- Reserves a distinct intake batch folder when timestamps collide.
+- Uses collision-safe staged filenames and verifies copied bytes against the source SHA-256.
+- Uses a no-clobber finalization step so pre-existing staged files cannot be silently replaced.
+- Includes regression tests for duplicate names, same-second runs, and copy-integrity failures.
+
 ### v41.0 — OCR Evidence Provenance and Batch Safety
 - Persists extracted text separately with a source digest and explicit page-range filename.
 - Records page-range, text-path, character-count, and digest provenance in the pending report.
