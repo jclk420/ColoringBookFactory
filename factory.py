@@ -14286,6 +14286,15 @@ def lore_intake_extract_text_entities(text):
         return result
 
     lines = [re.sub(r"\s+", " ", raw).strip(" \t-•") for raw in text.splitlines()]
+    # Keep page markers as provenance instead of treating them as candidate names.
+    line_pages = []
+    active_page = None
+    for raw_line in lines:
+        page_match = re.search(r"\[(?:OCR|PDF TEXT) PAGE\s+(\d+)\]", raw_line, re.IGNORECASE)
+        if page_match:
+            active_page = int(page_match.group(1))
+        line_pages.append(active_page)
+    current_source_pages = []
     seen_entities = set()
     seen_relationships = set()
     current_creature = ""
@@ -14303,6 +14312,7 @@ def lore_intake_extract_text_entities(text):
             "kind": kind, "name": name, "source": "pdf_text",
             "evidence": evidence, "confidence": "LOW",
             "note": "Text-derived candidate; verify before approval",
+            "source_pages": list(current_source_pages),
         }
         if aliases:
             row["aliases"] = [str(alias).strip() for alias in aliases if str(alias).strip()]
@@ -14323,6 +14333,7 @@ def lore_intake_extract_text_entities(text):
             "object": object_name, "source": "pdf_text", "evidence": evidence,
             "confidence": "LOW",
             "note": "Textual relationship candidate; verify before approval",
+            "source_pages": list(current_source_pages),
         })
         seen_relationships.add(key)
 
@@ -14338,6 +14349,7 @@ def lore_intake_extract_text_entities(text):
     # Preserve the original explicit-label parser for documents that use labels such
     # as "Creature: ..." or "Location: ...".
     for index, line in enumerate(lines):
+        current_source_pages = [line_pages[index]] if line_pages[index] is not None else []
         if not line or len(line) > 180:
             continue
         creature_match = re.match(
@@ -14369,6 +14381,7 @@ def lore_intake_extract_text_entities(text):
     # followed by a record ID and labeled metadata. OCR often confuses O with 0.
     archive_id_pattern = re.compile(r"HSN[- ]?CR[- ]?([0-9O]{3})", re.IGNORECASE)
     for index, line in enumerate(lines):
+        current_source_pages = [line_pages[index]] if line_pages[index] is not None else []
         # OCR may put the ID on an "HSN. FILE ..." line; ignore closing markers.
         if re.match(r"^END\s+FILE\b", line, re.IGNORECASE):
             continue
@@ -14491,7 +14504,18 @@ def lore_intake_extract_text_entities(text):
         if archive_fields:
             creature_row["archive_fields"] = archive_fields
         if archive_warnings:
-            creature_row["archive_warnings"] = archive_warnings
+            existing_warnings = creature_row.setdefault("archive_warnings", [])
+            for warning in archive_warnings:
+                if warning not in existing_warnings:
+                    existing_warnings.append(warning)
+        # Capture page numbers for all metadata evidence lines, not only the ID line.
+        archive_pages = sorted({line_pages[pos] for pos in range(index, min(field_index + 1, len(lines)))
+                                if line_pages[pos] is not None})
+        existing_pages = creature_row.setdefault("source_pages", [])
+        for page_number in archive_pages:
+            if page_number not in existing_pages:
+                existing_pages.append(page_number)
+        existing_pages.sort()
 
     return result
 
@@ -15530,6 +15554,14 @@ def lore_intake_review_dashboard():
             print(f"  Text candidate (LOW confidence): {candidate.get('kind', 'entity')} '{candidate.get('name', '')}' — verify manually")
         for relationship in row["extracted_relationships"][:8]:
             print(f"  Relationship candidate (LOW confidence): {relationship.get('subject', '')} — {relationship.get('relation', '')} — {relationship.get('object', '')}")
+    if graph["archive_id_conflicts"]:
+        print("\nARCHIVE-ID CONFLICT DETAILS — REVIEW REQUIRED")
+        for conflict in graph["archive_id_conflicts"]:
+            print(f"  {conflict['archive_id']}: " + ", ".join(conflict["candidate_names"]))
+    if graph["unresolved_relationships"]:
+        print("\nUNRESOLVED RELATIONSHIP DETAILS — REVIEW REQUIRED")
+        for link in graph["unresolved_relationships"][:12]:
+            print(f"  {link['subject']} — {link['relation']} — {link['object']}")
     print("\nRead-only dashboard: no manifest, source file, registry, or canon was changed.")
     return summary
 
