@@ -1,5 +1,13 @@
 # Changelog
 
+## v38.0 — Intake Dashboard Resilience
+
+- Validates the manifest batch collection and reports malformed batch entries instead of iterating invalid data.
+- Counts unreadable reports and malformed report structures so skipped data is visible to the user.
+- Skips malformed report payloads safely without changing source files, staged records, approvals, or canon.
+- Sanitizes extracted entity and relationship candidate collections before display, preventing malformed list fields or non-object entries from crashing the dashboard.
+- Prints a concise warning summary while preserving the dashboard's normal review workflow.
+
 ## v37.0 — Intake Review Decisions and Complete Finding Summaries
 
 - Extends plain-language review actions to all major finding groups, including context, evidence, relationship quality, repeated pages, and duplicate aliases.
