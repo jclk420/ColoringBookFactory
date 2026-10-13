@@ -13377,17 +13377,18 @@ def production_menu():
 def publishing_menu():
     while True:
         print("\n" + "=" * 78); print(f"PUBLISH / EXPORT — v{FACTORY_VERSION}"); print("=" * 78)
-        print("1. Publish Current Book\n2. Platform & Publishing Center\n3. Rebuild One Platform\n4. Production Release Center\n5. Marketing Center\n6. Open Delivery Folder\n7. Back")
+        print("1. Build & prepare current book (no auto-upload)\n2. Platform & Publishing Center\n3. Rebuild One Platform\n4. Production Release Center\n5. Marketing Center\n6. Build listing drafts + readiness audit\n7. Open Delivery Folder\n8. Back")
         c=input("Choose: ").strip()
         if c=="1": cb13_build_and_publish_project()
         elif c=="2": platform_center()
         elif c=="3": v12_rebuild_one_platform()
         elif c=="4": production_release_center()
         elif c=="5": marketing_center()
-        elif c=="6":
+        elif c=="6": v22_build_all_platform_listings()
+        elif c=="7":
             project=v12_active_project() or choose_project()
             if project: v12_open_folder(project / "DELIVERY")
-        elif c=="7": return
+        elif c=="8": return
         else: print("Invalid choice.")
         input("\nPress Enter to continue...")
 
@@ -18501,7 +18502,7 @@ def v22_build_all_platform_listings(project=None):
         "ready_for_review": sum(1 for row in results if row["status"] == "READY_FOR_REVIEW"),
         "review": sum(1 for row in results if row["status"] == "REVIEW"),
         "blocked": sum(1 for row in results if row["status"] == "BLOCKED_MISSING_MASTER"),
-        "content_audit_errors": sum(1 for row in results if row.get("content_audit_errors", 0)),
+        "content_audit_errors": sum(row.get("content_audit_errors", 0) for row in results),
         "content_audit_warnings": sum(row.get("content_audit_warnings", 0) for row in results),
         "platforms": results,
         "note": "Listing drafts only. Nothing was uploaded or published; prices, categories, and final claims require user review."
