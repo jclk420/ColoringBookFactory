@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 43.0.
+# Current version: 44.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "43.0"
+FACTORY_VERSION = "44.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14841,6 +14841,106 @@ def lore_intake_verify_artifact(path, expected_sha256):
     return {"status": "VERIFIED", "actual_sha256": actual}
 
 
+def lore_intake_next_ocr_page_start(metadata):
+    """Suggest the first page after the highest valid OCR batch range."""
+    if not isinstance(metadata, dict):
+        return 1
+    ends = []
+    batches = metadata.get("ocr_batches", [])
+    if isinstance(batches, list):
+        for batch in batches:
+            if not isinstance(batch, dict):
+                continue
+            start = batch.get("page_start")
+            limit = batch.get("page_limit")
+            end = batch.get("page_end_requested")
+            if (isinstance(start, int) and not isinstance(start, bool) and start >= 1
+                    and isinstance(limit, int) and not isinstance(limit, bool) and 1 <= limit <= 25):
+                expected_end = start + limit - 1
+                if end is None or (isinstance(end, int) and not isinstance(end, bool) and end == expected_end):
+                    ends.append(expected_end)
+    top_end = metadata.get("ocr_page_end_requested")
+    if isinstance(top_end, int) and not isinstance(top_end, bool) and top_end >= 1:
+        ends.append(top_end)
+    return max(ends) + 1 if ends else 1
+
+
+def lore_intake_audit_ocr_history(metadata, report_path, base_dirs=()):
+    """Verify all retained OCR batch files and ranges without modifying any artifact."""
+    keys = ("malformed_ocr_batches", "missing_ocr_text_paths", "invalid_ocr_text_paths",
+            "missing_ocr_text_files", "invalid_ocr_text_hashes", "ocr_text_hash_mismatches",
+            "unreadable_ocr_text_files", "invalid_ocr_page_ranges", "overlapping_ocr_page_ranges")
+    counts = {key: 0 for key in keys}
+    if not isinstance(metadata, dict):
+        return {"integrity": "NOT_PRESENT", "page_ranges": "", "latest_text_path": "", "counts": counts}
+    raw_batches = metadata.get("ocr_batches")
+    if "ocr_batches" in metadata and not isinstance(raw_batches, list):
+        counts["malformed_ocr_batches"] += 1
+        raw_batches = []
+    batches = list(raw_batches or [])
+    if not batches and ("ocr_status" in metadata or "ocr_text_path" in metadata):
+        batches = [{
+            "text_path": metadata.get("ocr_text_path"), "text_sha256": metadata.get("ocr_text_sha256"),
+            "page_start": metadata.get("ocr_page_start"), "page_limit": metadata.get("ocr_page_limit"),
+            "page_end_requested": metadata.get("ocr_page_end_requested"),
+        }]
+    statuses, ranges, valid_ranges = [], [], []
+    latest_text_path = ""
+    for batch in batches:
+        if not isinstance(batch, dict):
+            counts["malformed_ocr_batches"] += 1
+            statuses.append("MALFORMED_BATCH")
+            continue
+        raw_path = batch.get("text_path")
+        if not raw_path:
+            counts["missing_ocr_text_paths"] += 1
+            artifact_status = "MISSING_PATH"
+        elif not isinstance(raw_path, str):
+            counts["invalid_ocr_text_paths"] += 1
+            artifact_status = "INVALID_PATH"
+        else:
+            latest_text_path = raw_path
+            artifact_path = lore_intake_resolve_recorded_path(raw_path, report_path, base_dirs)
+            if artifact_path is None or not artifact_path.is_file():
+                counts["missing_ocr_text_files"] += 1
+                artifact_status = "MISSING_FILE"
+            else:
+                verification = lore_intake_verify_artifact(artifact_path, batch.get("text_sha256"))
+                artifact_status = verification["status"]
+                if artifact_status == "INVALID_HASH":
+                    counts["invalid_ocr_text_hashes"] += 1
+                elif artifact_status == "HASH_MISMATCH":
+                    counts["ocr_text_hash_mismatches"] += 1
+                elif artifact_status == "UNREADABLE":
+                    counts["unreadable_ocr_text_files"] += 1
+        start, limit, end = batch.get("page_start"), batch.get("page_limit"), batch.get("page_end_requested")
+        valid = (isinstance(start, int) and not isinstance(start, bool) and start >= 1
+                 and isinstance(limit, int) and not isinstance(limit, bool) and 1 <= limit <= 25
+                 and (end is None or (isinstance(end, int) and not isinstance(end, bool)
+                                      and end == start + limit - 1)))
+        if valid:
+            actual_end = start + limit - 1
+            ranges.append(f"{start}-{actual_end}")
+            for previous_start, previous_end in valid_ranges:
+                if start <= previous_end and previous_start <= actual_end:
+                    counts["overlapping_ocr_page_ranges"] += 1
+                    break
+            valid_ranges.append((start, actual_end))
+        else:
+            counts["invalid_ocr_page_ranges"] += 1
+        statuses.append(artifact_status if valid else "INVALID_PAGE_RANGE")
+    if not batches and not any(counts.values()):
+        integrity = "NOT_PRESENT"
+    elif not statuses:
+        integrity = "MALFORMED_BATCHES"
+    elif all(status == "VERIFIED" for status in statuses) and not any(counts.values()):
+        integrity = "VERIFIED"
+    else:
+        integrity = next((status for status in statuses if status != "VERIFIED"), "REVIEW_REQUIRED")
+    return {"integrity": integrity, "page_ranges": ", ".join(ranges),
+            "latest_text_path": latest_text_path, "counts": counts, "batch_count": len(batches)}
+
+
 def lore_intake_write_text_atomic(path, text):
     """Atomically persist OCR evidence text without touching the source or canon."""
     path = Path(path)
@@ -15394,22 +15494,6 @@ def lore_intake_ocr_pending_file():
         print(f"File not found: {source}")
         return {"status": "ERROR", "attached": False}
 
-    # PDF OCR can be split into repeatable, non-overlapping page ranges.
-    page_limit = 1 if source.suffix.casefold() != ".pdf" else 10
-    ocr_start_page = 1
-    if source.suffix.casefold() == ".pdf":
-        raw_limit = input("PDF OCR page limit (1-25) [10]: ").strip()
-        raw_start = input("First PDF page for this batch [1]: ").strip()
-        try:
-            page_limit = int(raw_limit) if raw_limit else 10
-            ocr_start_page = int(raw_start) if raw_start else 1
-        except ValueError:
-            print("Page limit and start page must be whole numbers. No intake record was changed.")
-            return {"status": "ERROR", "attached": False}
-        if not 1 <= page_limit <= 25 or ocr_start_page < 1:
-            print("Page limit must be 1-25 and the first page must be 1 or greater. No intake record was changed.")
-            return {"status": "ERROR", "attached": False}
-
     manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
     if not manifest_path.exists():
         print("No intake manifest exists yet. Run Lore Intake first.")
@@ -15451,6 +15535,47 @@ def lore_intake_ocr_pending_file():
             print("More than one pending record matched. No record was changed.")
         return {"status": "REVIEW", "attached": False, "matches": len(matches)}
 
+    raw_existing_metadata = matches[0][2].get("metadata")
+    if raw_existing_metadata is not None and not isinstance(raw_existing_metadata, dict):
+        print("The pending record has malformed metadata. No OCR report changes were made.")
+        return {"status": "ERROR", "attached": False}
+    existing_metadata = raw_existing_metadata if isinstance(raw_existing_metadata, dict) else {}
+    if "ocr_batches" in existing_metadata and not isinstance(existing_metadata.get("ocr_batches"), list):
+        print("The existing OCR batch history is malformed. No OCR report changes were made.")
+        return {"status": "ERROR", "attached": False}
+    previous_batches = existing_metadata.get("ocr_batches", [])
+    default_start_page = lore_intake_next_ocr_page_start(existing_metadata)
+    page_limit = 1 if source.suffix.casefold() != ".pdf" else 10
+    ocr_start_page = 1
+    if source.suffix.casefold() == ".pdf":
+        raw_limit = input("PDF OCR page limit (1-25) [10]: ").strip()
+        raw_start = input(f"First PDF page for this batch [{default_start_page}]: ").strip()
+        try:
+            page_limit = int(raw_limit) if raw_limit else 10
+            ocr_start_page = int(raw_start) if raw_start else default_start_page
+        except ValueError:
+            print("Page limit and start page must be whole numbers. No intake record was changed.")
+            return {"status": "ERROR", "attached": False}
+        if not 1 <= page_limit <= 25 or ocr_start_page < 1:
+            print("Page limit must be 1-25 and the first page must be 1 or greater. No intake record was changed.")
+            return {"status": "ERROR", "attached": False}
+        page_end_preview = ocr_start_page + page_limit - 1
+        overlaps = []
+        for previous in previous_batches:
+            if not isinstance(previous, dict):
+                continue
+            old_start, old_limit = previous.get("page_start"), previous.get("page_limit")
+            if (isinstance(old_start, int) and not isinstance(old_start, bool) and old_start >= 1
+                    and isinstance(old_limit, int) and not isinstance(old_limit, bool) and 1 <= old_limit <= 25):
+                old_end = old_start + old_limit - 1
+                if ocr_start_page <= old_end and old_start <= page_end_preview:
+                    overlaps.append(f"{old_start}-{old_end}")
+        if overlaps:
+            print("Warning: requested pages overlap previously saved OCR batches: " + ", ".join(overlaps))
+            if input("Type OVERLAP to deliberately repeat these pages; anything else cancels: ").strip() != "OVERLAP":
+                print("Cancelled; no OCR text or intake metadata was changed.")
+                return {"status": "CANCELLED", "attached": False, "overlaps": overlaps}
+
     try:
         from lore_ocr import lore_ocr_extract_text, lore_ocr_select_page_range
     except Exception as error:
@@ -15477,10 +15602,11 @@ def lore_intake_ocr_pending_file():
     source_digest = str(item.get("sha256") or lore_intake_sha256(source))[:8]
     safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", source.stem).strip("._-")[:60] or "source"
     page_end = ocr_start_page + page_limit - 1
-    text_path = report_path.parent / (
-        f"OCR_TEXT_{safe_stem}_{source_digest}_P{ocr_start_page}-{page_end}.txt"
-    )
     persisted_text = batch_text if batch_text.endswith("\n") else batch_text + "\n"
+    text_digest = sha256(persisted_text.encode("utf-8")).hexdigest()
+    text_path = report_path.parent / (
+        f"OCR_TEXT_{safe_stem}_{source_digest}_P{ocr_start_page}-{page_end}_D{text_digest[:8]}.txt"
+    )
     try:
         lore_intake_write_text_atomic(text_path, batch_text)
     except OSError as error:
@@ -15531,7 +15657,16 @@ def lore_intake_ocr_pending_file():
     classification["extracted_relationships"] = merge_candidates(
         old_relationships, incoming_relationships, ("subject", "relation", "object"))
     item["classification"] = classification
-    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    metadata = dict(existing_metadata)
+    batch_record = {
+        "page_start": ocr_start_page, "page_limit": page_limit, "page_end_requested": page_end,
+        "text_path": str(text_path), "text_characters": len(batch_text), "text_sha256": text_digest,
+        "pages_processed": ocr.get("batch_pages_processed", 0), "method": ocr.get("method", "unknown"),
+        "warnings": list(ocr.get("warnings", [])), "confidence": "LOW", "status": "REVIEW",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    metadata["ocr_batches"] = list(previous_batches) + [batch_record]
+    metadata["ocr_batch_count"] = len(metadata["ocr_batches"])
     metadata["ocr_status"] = "REVIEW"
     metadata["ocr_pages_processed"] = ocr.get("batch_pages_processed", 0)
     metadata["ocr_pages_total_detected"] = ocr.get("pages_processed", 0)
@@ -15540,7 +15675,7 @@ def lore_intake_ocr_pending_file():
     metadata["ocr_page_end_requested"] = page_end
     metadata["ocr_text_path"] = str(text_path)
     metadata["ocr_text_characters"] = len(batch_text)
-    metadata["ocr_text_sha256"] = sha256(persisted_text.encode("utf-8")).hexdigest()
+    metadata["ocr_text_sha256"] = text_digest
     metadata["ocr_warnings"] = ocr.get("warnings", [])
     metadata["ocr_confidence"] = "LOW"
     metadata["ocr_candidate_summary"] = {
@@ -15560,6 +15695,7 @@ def lore_intake_ocr_pending_file():
     print(f"Pages in this OCR batch: {ocr.get('batch_pages_processed', 0)}")
     print(f"Requested page range: {ocr_start_page}-{page_end}")
     print(f"Extracted text saved: {text_path}")
+    print(f"OCR batches retained in report: {len(metadata['ocr_batches'])}")
     print(f"New entity candidates added: {len(added_entities)}")
     print(f"New relationship candidates added: {len(added_relationships)}")
     print(f"Duplicate entity candidates skipped: {len(incoming_entities) - len(added_entities)}")
@@ -15575,7 +15711,7 @@ def lore_intake_ocr_pending_file():
             "pages_processed": ocr.get("batch_pages_processed", 0),
             "page_start": ocr_start_page, "page_limit": page_limit,
             "text_path": str(text_path), "text_characters": len(batch_text),
-            "text_sha256": sha256(batch_text.encode("utf-8")).hexdigest()}
+            "text_sha256": text_digest, "ocr_batch_count": len(metadata["ocr_batches"])}
 
 
 def lore_intake_build_evidence_graph(records):
@@ -16489,7 +16625,7 @@ def lore_intake_review_dashboard():
                "missing_ocr_text_paths": 0, "invalid_ocr_text_paths": 0,
                "missing_ocr_text_files": 0, "invalid_ocr_text_hashes": 0,
                "ocr_text_hash_mismatches": 0, "unreadable_ocr_text_files": 0,
-               "invalid_ocr_page_ranges": 0}
+               "invalid_ocr_page_ranges": 0, "malformed_ocr_batches": 0, "overlapping_ocr_page_ranges": 0}
     if not manifest_path.exists():
         print("No intake manifest exists yet. Run Lore Intake first.")
         return summary
@@ -16589,51 +16725,14 @@ def lore_intake_review_dashboard():
                         elif staged_integrity == "UNREADABLE":
                             summary["unreadable_staged_files"] += 1
 
-            ocr_integrity = "NOT_PRESENT"
-            ocr_page_range = ""
-            has_ocr_metadata = "ocr_status" in metadata or "ocr_text_path" in metadata
-            if has_ocr_metadata:
-                raw_ocr_path = metadata.get("ocr_text_path")
-                if not raw_ocr_path:
-                    summary["missing_ocr_text_paths"] += 1
-                    ocr_integrity = "MISSING_PATH"
-                elif not isinstance(raw_ocr_path, str):
-                    summary["invalid_ocr_text_paths"] += 1
-                    ocr_integrity = "INVALID_PATH"
-                else:
-                    ocr_path = lore_intake_resolve_recorded_path(
-                        raw_ocr_path, report_path, (INTAKE_DIR, FACTORY)
-                    )
-                    if ocr_path is None or not ocr_path.is_file():
-                        summary["missing_ocr_text_files"] += 1
-                        ocr_integrity = "MISSING_FILE"
-                    else:
-                        verification = lore_intake_verify_artifact(
-                            ocr_path, metadata.get("ocr_text_sha256")
-                        )
-                        ocr_integrity = verification["status"]
-                        if ocr_integrity == "INVALID_HASH":
-                            summary["invalid_ocr_text_hashes"] += 1
-                        elif ocr_integrity == "HASH_MISMATCH":
-                            summary["ocr_text_hash_mismatches"] += 1
-                        elif ocr_integrity == "UNREADABLE":
-                            summary["unreadable_ocr_text_files"] += 1
-                page_start = metadata.get("ocr_page_start")
-                page_limit = metadata.get("ocr_page_limit")
-                page_end = metadata.get("ocr_page_end_requested")
-                valid_page_range = (
-                    isinstance(page_start, int) and not isinstance(page_start, bool) and page_start >= 1
-                    and isinstance(page_limit, int) and not isinstance(page_limit, bool) and 1 <= page_limit <= 25
-                    and (page_end is None or (
-                        isinstance(page_end, int) and not isinstance(page_end, bool)
-                        and page_end == page_start + page_limit - 1
-                    ))
-                )
-                if valid_page_range:
-                    ocr_page_range = f"{page_start}-{page_start + page_limit - 1}"
-                else:
-                    summary["invalid_ocr_page_ranges"] += 1
-                    ocr_integrity = "INVALID_PAGE_RANGE"
+            ocr_audit = lore_intake_audit_ocr_history(
+                metadata, report_path, (INTAKE_DIR, FACTORY)
+            )
+            for counter, count in ocr_audit["counts"].items():
+                summary[counter] += count
+            ocr_integrity = ocr_audit["integrity"]
+            ocr_page_range = ocr_audit["page_ranges"]
+            ocr_text_path = ocr_audit["latest_text_path"]
 
             kind = str(classification.get("kind") or "unmatched")
             name = str(classification.get("name") or "(unresolved)")
@@ -16659,7 +16758,7 @@ def lore_intake_review_dashboard():
                    "location": location, "confidence": str(classification.get("confidence") or "LOW"),
                    "evidence": evidence or "none", "duplicate": duplicate, "unresolved": unresolved,
                    "staged_integrity": staged_integrity, "ocr_integrity": ocr_integrity,
-                   "ocr_page_range": ocr_page_range, "ocr_text_path": str(metadata.get("ocr_text_path") or ""),
+                   "ocr_page_range": ocr_page_range, "ocr_text_path": ocr_text_path,
                    "pdf_title": str(metadata.get("pdf_title") or ""),
                    "extracted_entity_candidates": [candidate for candidate in classification.get("extracted_entity_candidates", []) if isinstance(candidate, dict)] if isinstance(classification.get("extracted_entity_candidates", []), list) else [],
                    "extracted_relationships": [relationship for relationship in classification.get("extracted_relationships", []) if isinstance(relationship, dict)] if isinstance(classification.get("extracted_relationships", []), list) else []}
@@ -16699,14 +16798,14 @@ def lore_intake_review_dashboard():
                       "invalid_staged_hashes", "staged_hash_mismatches", "unreadable_staged_files",
                       "missing_ocr_text_paths", "invalid_ocr_text_paths", "missing_ocr_text_files",
                       "invalid_ocr_text_hashes", "ocr_text_hash_mismatches", "unreadable_ocr_text_files",
-                      "invalid_ocr_page_ranges")):
+                      "invalid_ocr_page_ranges", "malformed_ocr_batches", "overlapping_ocr_page_ranges")):
         print("INTAKE DATA WARNINGS — read-only; no source or canon data was changed")
         print(f"  Malformed manifests: {summary['malformed_manifests']} | Malformed batch entries: {summary['malformed_batches']} | Missing record paths: {summary['missing_record_paths']} | Invalid record paths: {summary['invalid_record_paths']}")
         print(f"  Missing reports: {summary['missing_reports']} | Unreadable reports: {summary['unreadable_reports']} | Malformed reports: {summary['malformed_reports']} | Malformed items: {summary['malformed_items']} | Missing statuses: {summary['missing_statuses']} | Unknown statuses: {summary['unknown_statuses']}")
         print(f"  Malformed classifications: {summary['malformed_classifications']} | Malformed metadata: {summary['malformed_metadata']} | Bad entity candidates: {summary['malformed_candidates']} | Bad relationship candidates: {summary['malformed_relationship_candidates']}")
         print(f"  Missing source paths: {summary['missing_sources']} | Malformed evidence: {summary['malformed_evidence']} | Reused report paths: {summary['duplicate_report_paths']}")
         print(f"  Missing staged files: {summary['missing_staged_files']} | Invalid staged hashes: {summary['invalid_staged_hashes']} | Staged hash mismatches: {summary['staged_hash_mismatches']} | Unreadable staged files: {summary['unreadable_staged_files']}")
-        print(f"  Missing OCR text paths: {summary['missing_ocr_text_paths']} | Invalid OCR paths: {summary['invalid_ocr_text_paths']} | Missing OCR text files: {summary['missing_ocr_text_files']} | Invalid OCR hashes: {summary['invalid_ocr_text_hashes']} | OCR hash mismatches: {summary['ocr_text_hash_mismatches']} | Unreadable OCR files: {summary['unreadable_ocr_text_files']} | Invalid OCR page ranges: {summary['invalid_ocr_page_ranges']}")
+        print(f"  Missing OCR text paths: {summary['missing_ocr_text_paths']} | Invalid OCR paths: {summary['invalid_ocr_text_paths']} | Missing OCR text files: {summary['missing_ocr_text_files']} | Invalid OCR hashes: {summary['invalid_ocr_text_hashes']} | OCR hash mismatches: {summary['ocr_text_hash_mismatches']} | Unreadable OCR files: {summary['unreadable_ocr_text_files']} | Invalid OCR page ranges: {summary['invalid_ocr_page_ranges']} | Malformed OCR batches: {summary['malformed_ocr_batches']} | Overlapping OCR ranges: {summary['overlapping_ocr_page_ranges']}")
     print(f"Evidence graph: {graph['entity_count']} entities | {graph['relationship_count']} relationships | "
           f"{len(graph['duplicate_name_warnings'])} name conflicts | "
           f"{len(graph['archive_id_conflicts'])} archive-ID conflicts | "
