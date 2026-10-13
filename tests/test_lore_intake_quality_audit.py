@@ -69,7 +69,7 @@ class LoreIntakeQualityAuditTests(unittest.TestCase):
         }
         result = self.audit("not-a-record-list", graph)
         self.assertEqual(result["summary"]["input_shape_finding_count"], 2)
-        self.assertEqual(result["summary"]["finding_group_counts"]["input_shape_findings"], 2)
+        self.assertEqual(result["review_summary"]["finding_group_counts"]["input_shape_findings"], 2)
         self.assertEqual(result["summary"]["entity_structure_finding_count"], 1)
         self.assertTrue(result["review_only"])
         self.assertFalse(result["canon_written"])
