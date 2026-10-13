@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 46.0.
+# Current version: 47.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "46.0"
+FACTORY_VERSION = "47.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15943,14 +15943,31 @@ def lore_intake_build_evidence_graph(records):
 
 def lore_intake_quality_audit(records, graph):
     """Score staged lore evidence and surface conflicts; never merges or writes canon."""
-    records = records if isinstance(records, list) else []
-    graph = graph if isinstance(graph, dict) else {}
+    input_shape_findings = []
+    if not isinstance(records, list):
+        input_shape_findings.append({"type": "records_wrong_type", "actual_type": type(records).__name__})
+        records = []
+    if not isinstance(graph, dict):
+        input_shape_findings.append({"type": "graph_wrong_type", "actual_type": type(graph).__name__})
+        graph = {}
+
+    def safe_string_list(value):
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value
+                if isinstance(item, (str, int, float)) and not isinstance(item, bool) and str(item).strip()]
 
     def norm(value):
         return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
 
-    entities = graph.get("entities", []) if isinstance(graph.get("entities"), list) else []
-    relationships = graph.get("relationships", []) if isinstance(graph.get("relationships"), list) else []
+    raw_entities = graph.get("entities", [])
+    raw_relationships = graph.get("relationships", [])
+    if not isinstance(raw_entities, list):
+        input_shape_findings.append({"type": "entities_wrong_type", "actual_type": type(raw_entities).__name__})
+    if not isinstance(raw_relationships, list):
+        input_shape_findings.append({"type": "relationships_wrong_type", "actual_type": type(raw_relationships).__name__})
+    entities = raw_entities if isinstance(raw_entities, list) else []
+    relationships = raw_relationships if isinstance(raw_relationships, list) else []
     allowed_kinds = {"creature", "monster", "cryptid", "entity", "character", "location",
                      "world", "book", "series", "object", "faction", "lore", "unmatched", "ambiguous"}
     entity_names = {norm(row.get("name")) for row in entities if isinstance(row, dict) and norm(row.get("name"))}
@@ -16003,7 +16020,7 @@ def lore_intake_quality_audit(records, graph):
                 pair = sorted([str(left.get("name", "")), str(right.get("name", ""))], key=str.casefold)
                 near_duplicates.append({"names": pair, "kind": left.get("kind", "entity"),
                                         "similarity": round(ratio, 3),
-                                        "source_files": sorted(set((left.get("source_files") or []) + (right.get("source_files") or [])))})
+                                        "source_files": sorted(set(safe_string_list(left.get("source_files")) + safe_string_list(right.get("source_files"))))})
     seen_pairs, unique_near_duplicates = set(), []
     for row in near_duplicates:
         key = (row["kind"], tuple(x.casefold() for x in row["names"]))
@@ -16207,7 +16224,10 @@ def lore_intake_quality_audit(records, graph):
                     valid_pages.append(int(page))
                 except (TypeError, ValueError):
                     continue
-            duplicates = sorted({page for page in valid_pages if valid_pages.count(page) > 1})
+            page_counts = {}
+            for page in valid_pages:
+                page_counts[page] = page_counts.get(page, 0) + 1
+            duplicates = sorted(page for page, count in page_counts.items() if count > 1)
             if duplicates:
                 repeated_page_findings.append({
                     "type": "repeated_source_page_reference", "record_type": source_label,
@@ -16559,14 +16579,15 @@ def lore_intake_quality_audit(records, graph):
             continue
         filename = str(record.get("file") or "(unknown source)")
         flags, score = [], 100
-        confidence = str(record.get("confidence") or "LOW").upper()
+        confidence = str(record.get("confidence") or "LOW").strip().upper()
         if confidence == "LOW":
             score -= 25
             flags.append("low confidence")
         elif confidence not in {"HIGH", "MEDIUM"}:
             score -= 20
             flags.append("unknown confidence")
-        if not str(record.get("evidence") or "").strip() or str(record.get("evidence") or "").strip().casefold() == "none":
+        evidence_text = str(record.get("evidence") or "").strip()
+        if evidence_text.casefold() in {"", "none", "unknown", "n/a", "null", "not provided", "no evidence"}:
             score -= 15
             flags.append("missing evidence")
         if record.get("unresolved"):
@@ -16596,7 +16617,7 @@ def lore_intake_quality_audit(records, graph):
     queue.sort(key=lambda row: (row["score"], row["file"].casefold()))
     return {
         "schema_version": 1, "review_only": True, "canon_written": False,
-        "record_count": len(records), "quality_queue": queue,
+        "record_count": len(records), "input_shape_findings": input_shape_findings, "quality_queue": queue,
         "near_duplicate_suggestions": unique_near_duplicates,
         "contradictions": contradictions, "invalid_entity_types": invalid_types,
         "unresolved_relationships": unresolved,
@@ -16624,7 +16645,7 @@ def lore_intake_quality_audit(records, graph):
         "review_summary": {
             # Finding-instance total: overlapping findings are intentionally counted in each group.
             "total_findings": sum(len(items) for items in (
-                invalid_types, unresolved, unique_near_duplicates, provenance_findings, alias_conflicts,
+                input_shape_findings, invalid_types, unresolved, unique_near_duplicates, provenance_findings, alias_conflicts,
                 relationship_quality_findings, duplicate_source_findings, evidence_findings, context_findings,
                 candidate_findings, confidence_findings, repeated_page_findings, duplicate_alias_findings,
                 relationship_provenance_findings, duplicate_relationship_findings, entity_structure_findings,
@@ -16657,6 +16678,7 @@ def lore_intake_quality_audit(records, graph):
             "canon_written": False,
         },
         "summary": {
+            "input_shape_finding_count": len(input_shape_findings),
             "high_priority_count": sum(1 for row in queue if row["priority"] == "HIGH"),
             "near_duplicate_count": len(unique_near_duplicates),
             "contradiction_count": len(contradictions),
