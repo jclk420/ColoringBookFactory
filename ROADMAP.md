@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v50.0 — OCR Batch Metadata Consistency
+- Checks batch-count and latest-batch summary consistency.
+- Distinguishes exact duplicate page ranges from overlaps.
+- Flags malformed confidence, method, and warning-list fields.
+- Ensures all OCR integrity findings trigger dashboard warnings and adds regression tests.
+
 ### v49.0 — OCR Source Provenance and Warning Visibility
 - Stores original source SHA-256 with each new OCR evidence batch.
 - Audits retained batch hashes against the intake record.
