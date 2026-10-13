@@ -2,6 +2,11 @@
 
 ## Shipped
 
+### v39.0 — Intake Data Validation and Diagnostics
+- Validates manifest type and report-path fields before attempting file access.
+- Separates missing files, unreadable reports, malformed report items, and missing statuses in diagnostics.
+- Keeps all findings read-only and does not auto-repair intake records.
+
 ### v36.0 — Evidence Traceability and Ambiguity Review
 - Cross-kind name and relationship endpoint ambiguity warnings.
 - Duplicate source-path normalization checks and candidate evidence/page/source traceability findings.
@@ -10,9 +15,9 @@
 
 This roadmap separates shipped work from future candidates. Planned items are not implemented until their code, tests, and release notes are committed.
 
-## Implemented on the current upgrade branch
+## Historical upgrade notes
 
-### v38.0 — Intake Dashboard Resilience
+### v38.0 — Intake Dashboard Resilience (shipped)
 - Validates manifest batch collections and reports malformed batch entries.
 - Counts unreadable and malformed reports instead of silently hiding them.
 - Safely filters malformed extracted-candidate collections before rendering dashboard output.
