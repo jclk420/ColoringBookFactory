@@ -14859,8 +14859,13 @@ def lore_intake_next_ocr_page_start(metadata):
                 expected_end = start + limit - 1
                 if end is None or (isinstance(end, int) and not isinstance(end, bool) and end == expected_end):
                     ends.append(expected_end)
+    top_start = metadata.get("ocr_page_start")
+    top_limit = metadata.get("ocr_page_limit")
     top_end = metadata.get("ocr_page_end_requested")
-    if isinstance(top_end, int) and not isinstance(top_end, bool) and top_end >= 1:
+    if (isinstance(top_start, int) and not isinstance(top_start, bool) and top_start >= 1
+            and isinstance(top_limit, int) and not isinstance(top_limit, bool) and 1 <= top_limit <= 25
+            and isinstance(top_end, int) and not isinstance(top_end, bool)
+            and top_end == top_start + top_limit - 1):
         ends.append(top_end)
     return max(ends) + 1 if ends else 1
 

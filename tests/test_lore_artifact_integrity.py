@@ -74,6 +74,8 @@ class LoreArtifactIntegrityTests(unittest.TestCase):
             {"page_start": 1, "page_limit": 10, "page_end_requested": 10},
             {"page_start": 11, "page_limit": 10, "page_end_requested": 20},
         ]}), 21)
+        self.assertEqual(next_start({"ocr_page_start": 1, "ocr_page_limit": 10,
+                                     "ocr_page_end_requested": 999}), 1)
 
     def test_relative_artifact_paths_resolve_beside_the_report_first(self):
         namespace = {"Path": Path}

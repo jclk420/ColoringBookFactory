@@ -1,6 +1,7 @@
 """Fast, dependency-free integrity tests for the Coloring Book Factory source."""
 import ast
 import datetime
+import hashlib
 import json
 import pathlib
 import re
@@ -768,12 +769,18 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertIsNotNone(node, "v26 read-only lore intake dashboard must exist")
         helper = self.functions["lore_intake_build_evidence_graph"][0]
         namespace = {"Path": pathlib.Path, "INTAKE_DIR": pathlib.Path("."),
-                     "INTAKE_MANIFEST_FILENAME": "manifest.json", "re": re,
+                     "FACTORY": pathlib.Path("."), "INTAKE_MANIFEST_FILENAME": "manifest.json", "re": re,
                      "lore_intake_build_evidence_graph": None,
                      "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8"))}
-        helper_namespace = {"re": re}
+        helper_namespace = {"re": re, "Path": pathlib.Path,
+                            "lore_intake_sha256": lambda p: hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()}
         exec(compile(ast.Module(body=[helper], type_ignores=[]), "<v30-evidence-graph>", "exec"), helper_namespace)
         namespace["lore_intake_build_evidence_graph"] = helper_namespace["lore_intake_build_evidence_graph"]
+        artifact_helpers = [self.functions[name][0] for name in (
+            "lore_intake_resolve_recorded_path", "lore_intake_verify_artifact", "lore_intake_audit_ocr_history"
+        )]
+        exec(compile(ast.Module(body=artifact_helpers, type_ignores=[]), "<v43-artifact-audit>", "exec"), helper_namespace)
+        namespace.update(helper_namespace)
         exec(compile(ast.Module(body=[node], type_ignores=[]), "<v26-dashboard-test>", "exec"), namespace)
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
