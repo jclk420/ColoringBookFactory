@@ -12,6 +12,13 @@ This roadmap separates shipped work from future candidates. Planned items are no
 
 ## Implemented on the current upgrade branch
 
+### v38.0 — Intake Dashboard Resilience
+- Validates manifest batch collections and reports malformed batch entries.
+- Counts unreadable and malformed reports instead of silently hiding them.
+- Safely filters malformed extracted-candidate collections before rendering dashboard output.
+- Keeps all diagnostics read-only; no canon, source artwork, or staged data is rewritten.
+
+
 ### v26.0 — Lore Intake Review Dashboard
 - Adds a consolidated, read-only queue view across intake batches and their reports.
 - Summarizes staged, approved, rejected, unresolved, and duplicate-warning counts.
