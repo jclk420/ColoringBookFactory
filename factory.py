@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "37.0"
+FACTORY_VERSION = "38.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -16302,7 +16302,8 @@ def lore_intake_review_dashboard():
     """Read-only summary of staged intake records; never changes manifests or canon."""
     manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
     summary = {"batches": 0, "items": 0, "pending": 0, "approved": 0,
-               "rejected": 0, "duplicates": 0, "unresolved": 0, "records": []}
+               "rejected": 0, "duplicates": 0, "unresolved": 0, "records": [],
+               "unreadable_reports": 0, "malformed_reports": 0, "malformed_batches": 0}
     if not manifest_path.exists():
         print("No intake manifest exists yet. Run Lore Intake first.")
         return summary
@@ -16313,9 +16314,17 @@ def lore_intake_review_dashboard():
         summary["error"] = str(error)
         return summary
     batches = manifest.get("batches", []) if isinstance(manifest, dict) else []
+    if not isinstance(batches, list):
+        print("Intake manifest has an invalid 'batches' field; expected a list. No records were changed.")
+        summary["error"] = "manifest_batches_wrong_type"
+        summary["malformed_batches"] = 1
+        return summary
     summary["batches"] = len(batches)
     for batch in batches:
-        record_value = batch.get("record") if isinstance(batch, dict) else None
+        if not isinstance(batch, dict):
+            summary["malformed_batches"] += 1
+            continue
+        record_value = batch.get("record")
         if not record_value:
             continue
         report_path = Path(record_value)
@@ -16324,8 +16333,12 @@ def lore_intake_review_dashboard():
         try:
             report = load_json(report_path)
         except Exception:
+            summary["unreadable_reports"] += 1
             continue
-        for item in report.get("items", []) if isinstance(report, dict) else []:
+        if not isinstance(report, dict) or not isinstance(report.get("items", []), list):
+            summary["malformed_reports"] += 1
+            continue
+        for item in report.get("items", []):
             if not isinstance(item, dict):
                 continue
             classification = item.get("classification") if isinstance(item.get("classification"), dict) else {}
@@ -16343,8 +16356,8 @@ def lore_intake_review_dashboard():
                    "location": location, "confidence": str(classification.get("confidence") or "LOW"),
                    "evidence": evidence or "none", "duplicate": duplicate, "unresolved": unresolved,
                    "pdf_title": str(metadata.get("pdf_title") or ""),
-                   "extracted_entity_candidates": classification.get("extracted_entity_candidates", []),
-                   "extracted_relationships": classification.get("extracted_relationships", [])}
+                   "extracted_entity_candidates": [candidate for candidate in classification.get("extracted_entity_candidates", []) if isinstance(candidate, dict)] if isinstance(classification.get("extracted_entity_candidates", []), list) else [],
+                   "extracted_relationships": [relationship for relationship in classification.get("extracted_relationships", []) if isinstance(relationship, dict)] if isinstance(classification.get("extracted_relationships", []), list) else []}
             summary["records"].append(row)
             summary["items"] += 1
             if status == "STAGED_FOR_REVIEW":
@@ -16377,6 +16390,9 @@ def lore_intake_review_dashboard():
     print(f"Batches: {summary['batches']} | Items: {summary['items']} | Pending: {summary['pending']} | "
           f"Approved: {summary['approved']} | Rejected: {summary['rejected']}")
     print(f"Unresolved: {summary['unresolved']} | Duplicate warnings: {summary['duplicates']}")
+    if summary["unreadable_reports"] or summary["malformed_reports"] or summary["malformed_batches"]:
+        print("INTAKE DATA WARNINGS — read-only; no source or canon data was changed")
+        print(f"  Unreadable reports: {summary['unreadable_reports']} | Malformed reports: {summary['malformed_reports']} | Malformed batch entries: {summary['malformed_batches']}")
     print(f"Evidence graph: {graph['entity_count']} entities | {graph['relationship_count']} relationships | "
           f"{len(graph['duplicate_name_warnings'])} name conflicts | "
           f"{len(graph['archive_id_conflicts'])} archive-ID conflicts | "
