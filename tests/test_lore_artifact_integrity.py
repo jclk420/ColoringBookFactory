@@ -75,10 +75,13 @@ class LoreArtifactIntegrityTests(unittest.TestCase):
             evidence = Path(temp) / "OCR_TEXT_P1.txt"
             evidence.write_text("page evidence\n", encoding="utf-8")
             digest = hashlib.sha256(evidence.read_bytes()).hexdigest()
+            evidence2 = Path(temp) / "OCR_TEXT_P11.txt"
+            evidence2.write_text("second batch evidence\n", encoding="utf-8")
+            digest2 = hashlib.sha256(evidence2.read_bytes()).hexdigest()
             metadata = {"ocr_batches": [
                 {"text_path": str(evidence), "text_sha256": digest,
                  "page_start": 1, "page_limit": 10, "page_end_requested": 10},
-                {"text_path": str(evidence), "text_sha256": digest,
+                {"text_path": str(evidence2), "text_sha256": digest2,
                  "page_start": 11, "page_limit": 10, "page_end_requested": 20},
             ]}
             result = audit(metadata, report, ())
