@@ -14450,6 +14450,22 @@ def lore_intake_extract_text_entities(text):
                 end_id = "HSN-CR-" + re.search(r"([0-9O]{3})$", end_match.group(1), re.IGNORECASE).group(1).upper().replace("O", "0")
                 if end_id != archive_id:
                     archive_warnings.append("Mismatched closing archive ID: " + end_id + " (expected " + archive_id + ")")
+                    # A closing ID is also source evidence. Preserve it as an
+                    # alternative candidate so cross-creature collisions can be
+                    # surfaced by the evidence graph instead of being hidden
+                    # inside a warning string.
+                    alternatives = creature_row.setdefault("archive_id_candidates", [])
+                    known_ids = {str(row.get("archive_id", "")).upper()
+                                 for row in alternatives if isinstance(row, dict)}
+                    known_ids.add(str(creature_row.get("archive_id") or "").upper())
+                    if end_id not in known_ids:
+                        alternatives.append({
+                            "archive_id": end_id,
+                            "evidence": field_line,
+                            "confidence": "LOW",
+                            "review_required": True,
+                            "source_role": "closing_marker",
+                        })
                 break
             if archive_id_pattern.search(field_line):
                 break
