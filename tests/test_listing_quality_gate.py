@@ -165,6 +165,7 @@ class ListingQualityGateTests(unittest.TestCase):
             }
             namespace = {
                 "Path": pathlib.Path,
+                "re": re,
                 "datetime": FixedDateTime,
                 "FACTORY_VERSION": "30.0",
                 "MARKETING_DIR_NAME": "MARKETING",
