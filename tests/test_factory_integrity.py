@@ -963,8 +963,10 @@ class FactoryIntegrityTests(unittest.TestCase):
         module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
         namespace = {"re": re}
         exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
-        self.assertEqual(namespace["lore_intake_extract_text_entities"](""), {
-            "entity_candidates": [], "relationships": []})
+        empty_result = namespace["lore_intake_extract_text_entities"]("")
+        self.assertEqual(empty_result["entity_candidates"], [])
+        self.assertEqual(empty_result["relationships"], [])
+        self.assertEqual(empty_result["extraction_summary"]["entity_count"], 0)
         self.assertEqual(namespace["lore_intake_extract_text_entities"](None), {
             "entity_candidates": [], "relationships": []})
         node = self.functions["lore_intake_extract_text_entities"][0]
