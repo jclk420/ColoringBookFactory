@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 45.0.
+# Current version: 46.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "45.0"
+FACTORY_VERSION = "46.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14983,7 +14983,12 @@ def lore_intake_write_text_atomic(path, text):
                 stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(str(temp_path), str(path))
+        # Hard-link creation is atomic and fails if the destination already exists.
+        os.link(str(temp_path), str(path))
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         temp_path = None
     finally:
         if temp_path is not None:
@@ -15578,7 +15583,26 @@ def lore_intake_ocr_pending_file():
     if "ocr_batches" in existing_metadata and not isinstance(existing_metadata.get("ocr_batches"), list):
         print("The existing OCR batch history is malformed. No OCR report changes were made.")
         return {"status": "ERROR", "attached": False}
-    previous_batches = existing_metadata.get("ocr_batches", [])
+    previous_batches = list(existing_metadata.get("ocr_batches", []))
+    # Migrate legacy single-batch metadata into history before appending new OCR.
+    if not previous_batches and any(key in existing_metadata for key in (
+        "ocr_status", "ocr_text_path", "ocr_page_start", "ocr_page_limit"
+    )):
+        previous_batches = [{
+            "page_start": existing_metadata.get("ocr_page_start"),
+            "page_limit": existing_metadata.get("ocr_page_limit"),
+            "page_end_requested": existing_metadata.get("ocr_page_end_requested"),
+            "text_path": existing_metadata.get("ocr_text_path"),
+            "text_sha256": existing_metadata.get("ocr_text_sha256"),
+            "text_characters": existing_metadata.get("ocr_text_characters"),
+            "pages_processed": existing_metadata.get("ocr_pages_processed"),
+            "method": "legacy",
+            "warnings": list(existing_metadata.get("ocr_warnings", []))
+                if isinstance(existing_metadata.get("ocr_warnings", []), list) else [],
+            "confidence": existing_metadata.get("ocr_confidence", "LOW"),
+            "status": existing_metadata.get("ocr_status", "REVIEW"),
+            "generated_at": existing_metadata.get("ocr_generated_at", "legacy"),
+        }]
     default_start_page = lore_intake_next_ocr_page_start(existing_metadata)
     page_limit = 1 if source.suffix.casefold() != ".pdf" else 10
     ocr_start_page = 1
@@ -15645,9 +15669,13 @@ def lore_intake_ocr_pending_file():
     page_end = ocr_start_page + page_limit - 1
     persisted_text = batch_text if batch_text.endswith("\n") else batch_text + "\n"
     text_digest = sha256(persisted_text.encode("utf-8")).hexdigest()
-    text_path = report_path.parent / (
-        f"OCR_TEXT_{safe_stem}_{source_digest}_P{ocr_start_page}-{page_end}_D{text_digest[:8]}.txt"
-    )
+    run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    text_prefix = f"OCR_TEXT_{safe_stem}_{source_digest}_P{ocr_start_page}-{page_end}_T{run_stamp}"
+    text_path = report_path.parent / f"{text_prefix}_D{text_digest[:8]}.txt"
+    collision_index = 2
+    while text_path.exists():
+        text_path = report_path.parent / f"{text_prefix}_{collision_index}_D{text_digest[:8]}.txt"
+        collision_index += 1
     try:
         lore_intake_write_text_atomic(text_path, batch_text)
     except OSError as error:
@@ -15730,7 +15758,16 @@ def lore_intake_ocr_pending_file():
         "review_only": True,
     }
     item["metadata"] = metadata
-    save_json(report_path, report)
+    try:
+        save_json(report_path, report)
+    except Exception as error:
+        try:
+            text_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        print(f"Could not update the intake report: {error}")
+        print("The new OCR text file was removed when possible; the report was not intentionally changed.")
+        return {"status": "ERROR", "attached": False, "text_saved": False, "report_saved": False}
 
     print("\nOCR review results attached to the pending intake record.")
     print(f"Pages in this OCR batch: {ocr.get('batch_pages_processed', 0)}")
