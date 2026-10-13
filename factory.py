@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 38.0.
+# Current version: 39.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "38.0"
+FACTORY_VERSION = "39.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -16303,7 +16303,9 @@ def lore_intake_review_dashboard():
     manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
     summary = {"batches": 0, "items": 0, "pending": 0, "approved": 0,
                "rejected": 0, "duplicates": 0, "unresolved": 0, "records": [],
-               "unreadable_reports": 0, "malformed_reports": 0, "malformed_batches": 0}
+               "unreadable_reports": 0, "malformed_reports": 0, "malformed_batches": 0,
+               "malformed_manifests": 0, "missing_record_paths": 0, "invalid_record_paths": 0,
+               "missing_reports": 0, "malformed_items": 0, "missing_statuses": 0}
     if not manifest_path.exists():
         print("No intake manifest exists yet. Run Lore Intake first.")
         return summary
@@ -16313,7 +16315,12 @@ def lore_intake_review_dashboard():
         print(f"Cannot read intake manifest: {error}")
         summary["error"] = str(error)
         return summary
-    batches = manifest.get("batches", []) if isinstance(manifest, dict) else []
+    if not isinstance(manifest, dict):
+        print("Intake manifest is malformed; expected a JSON object. No records were changed.")
+        summary["error"] = "manifest_wrong_type"
+        summary["malformed_manifests"] = 1
+        return summary
+    batches = manifest.get("batches", [])
     if not isinstance(batches, list):
         print("Intake manifest has an invalid 'batches' field; expected a list. No records were changed.")
         summary["error"] = "manifest_batches_wrong_type"
@@ -16326,10 +16333,22 @@ def lore_intake_review_dashboard():
             continue
         record_value = batch.get("record")
         if not record_value:
+            summary["missing_record_paths"] += 1
             continue
-        report_path = Path(record_value)
-        if not report_path.is_absolute():
-            report_path = INTAKE_DIR / report_path
+        if not isinstance(record_value, str):
+            # JSON manifests must store paths as strings; avoid requiring os in isolated test namespaces.
+            summary["invalid_record_paths"] += 1
+            continue
+        try:
+            report_path = Path(record_value)
+            if not report_path.is_absolute():
+                report_path = INTAKE_DIR / report_path
+        except (TypeError, ValueError, OSError):
+            summary["invalid_record_paths"] += 1
+            continue
+        if not report_path.is_file():
+            summary["missing_reports"] += 1
+            continue
         try:
             report = load_json(report_path)
         except Exception:
@@ -16340,10 +16359,14 @@ def lore_intake_review_dashboard():
             continue
         for item in report.get("items", []):
             if not isinstance(item, dict):
+                summary["malformed_items"] += 1
                 continue
             classification = item.get("classification") if isinstance(item.get("classification"), dict) else {}
             metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-            status = str(item.get("status") or "UNKNOWN").upper()
+            raw_status = item.get("status")
+            if not raw_status:
+                summary["missing_statuses"] += 1
+            status = str(raw_status or "UNKNOWN").upper()
             kind = str(classification.get("kind") or "unmatched")
             name = str(classification.get("name") or "(unresolved)")
             world = str(classification.get("world") or "Unassigned World")
@@ -16390,9 +16413,10 @@ def lore_intake_review_dashboard():
     print(f"Batches: {summary['batches']} | Items: {summary['items']} | Pending: {summary['pending']} | "
           f"Approved: {summary['approved']} | Rejected: {summary['rejected']}")
     print(f"Unresolved: {summary['unresolved']} | Duplicate warnings: {summary['duplicates']}")
-    if summary["unreadable_reports"] or summary["malformed_reports"] or summary["malformed_batches"]:
+    if any(summary[key] for key in ("unreadable_reports", "malformed_reports", "malformed_batches", "malformed_manifests", "missing_record_paths", "invalid_record_paths", "missing_reports", "malformed_items", "missing_statuses")):
         print("INTAKE DATA WARNINGS — read-only; no source or canon data was changed")
-        print(f"  Unreadable reports: {summary['unreadable_reports']} | Malformed reports: {summary['malformed_reports']} | Malformed batch entries: {summary['malformed_batches']}")
+        print(f"  Malformed manifests: {summary['malformed_manifests']} | Malformed batch entries: {summary['malformed_batches']} | Missing record paths: {summary['missing_record_paths']} | Invalid record paths: {summary['invalid_record_paths']}")
+        print(f"  Missing reports: {summary['missing_reports']} | Unreadable reports: {summary['unreadable_reports']} | Malformed reports: {summary['malformed_reports']} | Malformed items: {summary['malformed_items']} | Missing statuses: {summary['missing_statuses']}")
     print(f"Evidence graph: {graph['entity_count']} entities | {graph['relationship_count']} relationships | "
           f"{len(graph['duplicate_name_warnings'])} name conflicts | "
           f"{len(graph['archive_id_conflicts'])} archive-ID conflicts | "

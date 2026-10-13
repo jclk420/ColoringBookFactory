@@ -18,8 +18,8 @@ class DashboardResilienceTests(unittest.TestCase):
         cls.dashboard = ast.get_source_segment(cls.source, matches[0])
 
     def test_factory_version_is_consistent(self):
-        self.assertIn('FACTORY_VERSION = "38.0"', self.source)
-        self.assertIn("# Current version: 38.0.", self.source)
+        self.assertIn('FACTORY_VERSION = "39.0"', self.source)
+        self.assertIn("# Current version: 39.0.", self.source)
 
     def test_malformed_manifest_batches_are_reported_and_returned_safely(self):
         self.assertIn('manifest_batches_wrong_type', self.dashboard)
@@ -33,6 +33,15 @@ class DashboardResilienceTests(unittest.TestCase):
     def test_candidate_lists_are_type_checked_before_display(self):
         self.assertIn('if isinstance(classification.get("extracted_entity_candidates", []), list)', self.dashboard)
         self.assertIn('if isinstance(classification.get("extracted_relationships", []), list)', self.dashboard)
+
+    def test_manifest_and_report_paths_are_validated(self):
+        for token in ("manifest_wrong_type", "missing_record_paths", "invalid_record_paths", "missing_reports"):
+            with self.subTest(token=token):
+                self.assertIn(token, self.dashboard)
+
+    def test_malformed_items_and_missing_statuses_are_counted(self):
+        self.assertIn('"malformed_items"] += 1', self.dashboard)
+        self.assertIn('"missing_statuses"] += 1', self.dashboard)
 
     def test_dashboard_remains_read_only(self):
         self.assertIn("READ ONLY", self.dashboard)
