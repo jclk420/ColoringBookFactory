@@ -1,5 +1,14 @@
 # Changelog
 
+## v57.0 — Platform Readiness & Upload Checklist
+
+- Adds a platform-by-platform publishing checklist for each enabled platform.
+- Checks required title/author metadata, listing-description completeness, KDP keyword/category presence, profile page-count/file-count/file-size limits, and package-manifest integrity.
+- Detects stale platform packages when the recorded MASTER SHA-256 differs from the current MASTER; missing source fingerprints are flagged for review rather than treated as verified.
+- Generates `REPORTS/PUBLISHING_READINESS_CHECKLIST.json` with READY / REVIEW / BLOCKED statuses and explicit manual upload/preview/live-product steps.
+- Keeps uploads manual and honest: a local READY result is not represented as a platform acceptance or publication.
+- Adds runtime tests for freshness, missing fingerprints, listing metadata warnings, and disabled platform configurations.
+
 ## v56.0 — Unified Publishing Release Audit
 
 - Adds one publishing-menu action that runs the existing read-only release preflight and package-manifest verification together.
