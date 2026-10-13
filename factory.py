@@ -16879,7 +16879,7 @@ def lore_intake_review_dashboard():
                 metadata, report_path, (INTAKE_DIR, FACTORY)
             )
             for counter, count in ocr_audit["counts"].items():
-                summary[counter] += count
+                summary[counter] = summary.get(counter, 0) + count
             ocr_integrity = ocr_audit["integrity"]
             ocr_page_range = ocr_audit["page_ranges"]
             ocr_text_path = ocr_audit["latest_text_path"]
@@ -16955,7 +16955,7 @@ def lore_intake_review_dashboard():
         print(f"  Malformed classifications: {summary['malformed_classifications']} | Malformed metadata: {summary['malformed_metadata']} | Bad entity candidates: {summary['malformed_candidates']} | Bad relationship candidates: {summary['malformed_relationship_candidates']}")
         print(f"  Missing source paths: {summary['missing_sources']} | Malformed evidence: {summary['malformed_evidence']} | Reused report paths: {summary['duplicate_report_paths']}")
         print(f"  Missing staged files: {summary['missing_staged_files']} | Invalid staged hashes: {summary['invalid_staged_hashes']} | Staged hash mismatches: {summary['staged_hash_mismatches']} | Unreadable staged files: {summary['unreadable_staged_files']}")
-        print(f"  Missing OCR text paths: {summary['missing_ocr_text_paths']} | Invalid OCR paths: {summary['invalid_ocr_text_paths']} | Missing OCR text files: {summary['missing_ocr_text_files']} | Invalid OCR hashes: {summary['invalid_ocr_text_hashes']} | OCR hash mismatches: {summary['ocr_text_hash_mismatches']} | Unreadable OCR files: {summary['unreadable_ocr_text_files']} | Invalid OCR page ranges: {summary['invalid_ocr_page_ranges']} | Malformed OCR batches: {summary['malformed_ocr_batches']} | Duplicate OCR paths: {summary['duplicate_ocr_text_paths']} | OCR paths outside allowed roots: {summary['ocr_text_paths_outside_roots']} | Overlapping OCR ranges: {summary['overlapping_ocr_page_ranges']}")
+        print(f"  Missing OCR text paths: {summary['missing_ocr_text_paths']} | Invalid OCR paths: {summary['invalid_ocr_text_paths']} | Missing OCR text files: {summary['missing_ocr_text_files']} | Invalid OCR hashes: {summary['invalid_ocr_text_hashes']} | OCR hash mismatches: {summary['ocr_text_hash_mismatches']} | Unreadable OCR files: {summary['unreadable_ocr_text_files']} | Invalid OCR page ranges: {summary['invalid_ocr_page_ranges']} | Malformed OCR batches: {summary['malformed_ocr_batches']} | Duplicate OCR paths: {summary.get('duplicate_ocr_text_paths', 0)} | OCR paths outside allowed roots: {summary.get('ocr_text_paths_outside_roots', 0)} | Overlapping OCR ranges: {summary['overlapping_ocr_page_ranges']}")
     print(f"Evidence graph: {graph['entity_count']} entities | {graph['relationship_count']} relationships | "
           f"{len(graph['duplicate_name_warnings'])} name conflicts | "
           f"{len(graph['archive_id_conflicts'])} archive-ID conflicts | "
