@@ -18,8 +18,8 @@ class DashboardResilienceTests(unittest.TestCase):
         cls.dashboard = ast.get_source_segment(cls.source, matches[0])
 
     def test_factory_version_is_consistent(self):
-        self.assertIn('FACTORY_VERSION = "47.0"', self.source)
-        self.assertIn("# Current version: 47.0.", self.source)
+        self.assertIn('FACTORY_VERSION = "48.0"', self.source)
+        self.assertIn("# Current version: 48.0.", self.source)
 
     def test_malformed_manifest_batches_are_reported_and_returned_safely(self):
         self.assertIn('manifest_batches_wrong_type', self.dashboard)
@@ -72,7 +72,7 @@ class DashboardResilienceTests(unittest.TestCase):
         for token in (
             "missing_staged_files", "invalid_staged_hashes", "staged_hash_mismatches",
             "missing_ocr_text_paths", "missing_ocr_text_files", "ocr_text_hash_mismatches",
-            "invalid_ocr_page_ranges", "malformed_ocr_batches", "overlapping_ocr_page_ranges",
+            "invalid_ocr_page_ranges", "malformed_ocr_batches", "overlapping_ocr_page_ranges", "duplicate_ocr_text_paths", "ocr_text_paths_outside_roots",
             "lore_intake_audit_ocr_history",
         ):
             with self.subTest(token=token):

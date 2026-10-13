@@ -1,5 +1,14 @@
 # Changelog
 
+## v48.0 — OCR Evidence Reference Integrity
+
+- Detects when multiple OCR batches point to the same evidence file.
+- Flags recorded OCR evidence paths that resolve outside the report directory and configured intake roots.
+- Keeps out-of-root artifacts unverified rather than reading their contents for hash validation.
+- Adds explicit dashboard counters for duplicate and out-of-root OCR paths.
+- Adds regression coverage for duplicate references, out-of-root paths, and source-file non-mutation.
+- Preserves legacy OCR metadata support and read-only/no-canon-write behavior.
+
 ## v47.0 — Intake Audit Resilience and Data-Shape Diagnostics
 
 - Reports non-list record inputs and malformed graph entity/relationship collections instead of silently treating them as empty.
