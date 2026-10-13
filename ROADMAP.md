@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v52.0 — Canon Registry Write Guards
+- Rejects unsafe world/series folder IDs.
+- Validates world, Series Bible, and world-index payloads before writes.
+- Refuses to overwrite malformed existing canon files or conflicting IDs.
+- Adds regression coverage for read-only fallbacks and valid registry writes.
+
 ### v51.0 — JSON State and Production Queue Resilience
 - Validates persisted build state, build history, production queue, and world-index shapes.
 - Fails closed on malformed queue records and rejects invalid saves.
