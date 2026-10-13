@@ -2,6 +2,13 @@
 
 ## Shipped
 
+### v40.0 — Comprehensive Intake Integrity Diagnostics
+- Adds separate counts for malformed classification and metadata objects.
+- Counts invalid entity/relationship candidate entries, unknown statuses, missing source paths, and malformed evidence collections.
+- Detects report files referenced repeatedly by manifest entries.
+- Keeps diagnostics advisory and read-only; no intake repairs, approvals, source edits, or canon writes occur.
+
+
 ### v39.0 — Intake Data Validation and Diagnostics
 - Validates manifest type and report-path fields before attempting file access.
 - Separates missing files, unreadable reports, malformed report items, and missing statuses in diagnostics.

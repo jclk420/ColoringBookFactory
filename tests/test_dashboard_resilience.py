@@ -18,8 +18,8 @@ class DashboardResilienceTests(unittest.TestCase):
         cls.dashboard = ast.get_source_segment(cls.source, matches[0])
 
     def test_factory_version_is_consistent(self):
-        self.assertIn('FACTORY_VERSION = "39.0"', self.source)
-        self.assertIn("# Current version: 39.0.", self.source)
+        self.assertIn('FACTORY_VERSION = "40.0"', self.source)
+        self.assertIn("# Current version: 40.0.", self.source)
 
     def test_malformed_manifest_batches_are_reported_and_returned_safely(self):
         self.assertIn('manifest_batches_wrong_type', self.dashboard)
@@ -42,6 +42,23 @@ class DashboardResilienceTests(unittest.TestCase):
     def test_malformed_items_and_missing_statuses_are_counted(self):
         self.assertIn('"malformed_items"] += 1', self.dashboard)
         self.assertIn('"missing_statuses"] += 1', self.dashboard)
+
+
+    def test_dashboard_reports_malformed_nested_fields(self):
+        for field in ("malformed_classifications", "malformed_metadata", "malformed_candidates",
+                      "malformed_relationship_candidates", "malformed_evidence"):
+            with self.subTest(field=field):
+                self.assertIn(field, self.dashboard)
+
+    def test_dashboard_reports_status_and_source_quality(self):
+        for field in ("unknown_statuses", "missing_sources", "duplicate_report_paths"):
+            with self.subTest(field=field):
+                self.assertIn(field, self.dashboard)
+
+    def test_dashboard_deduplicates_report_path_warnings_without_mutation(self):
+        self.assertIn("seen_report_paths", self.dashboard)
+        self.assertIn("duplicate_report_paths", self.dashboard)
+        self.assertIn("No records were changed", self.dashboard)
 
     def test_dashboard_remains_read_only(self):
         self.assertIn("READ ONLY", self.dashboard)

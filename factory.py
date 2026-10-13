@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 39.0.
+# Current version: 40.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "39.0"
+FACTORY_VERSION = "40.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -16305,7 +16305,10 @@ def lore_intake_review_dashboard():
                "rejected": 0, "duplicates": 0, "unresolved": 0, "records": [],
                "unreadable_reports": 0, "malformed_reports": 0, "malformed_batches": 0,
                "malformed_manifests": 0, "missing_record_paths": 0, "invalid_record_paths": 0,
-               "missing_reports": 0, "malformed_items": 0, "missing_statuses": 0}
+               "missing_reports": 0, "malformed_items": 0, "missing_statuses": 0,
+               "unknown_statuses": 0, "malformed_classifications": 0, "malformed_metadata": 0,
+               "malformed_candidates": 0, "malformed_relationship_candidates": 0,
+               "missing_sources": 0, "malformed_evidence": 0, "duplicate_report_paths": 0}
     if not manifest_path.exists():
         print("No intake manifest exists yet. Run Lore Intake first.")
         return summary
@@ -16327,6 +16330,7 @@ def lore_intake_review_dashboard():
         summary["malformed_batches"] = 1
         return summary
     summary["batches"] = len(batches)
+    seen_report_paths = set()
     for batch in batches:
         if not isinstance(batch, dict):
             summary["malformed_batches"] += 1
@@ -16349,6 +16353,11 @@ def lore_intake_review_dashboard():
         if not report_path.is_file():
             summary["missing_reports"] += 1
             continue
+        normalized_report_path = str(report_path.resolve()).casefold()
+        if normalized_report_path in seen_report_paths:
+            summary["duplicate_report_paths"] += 1
+        else:
+            seen_report_paths.add(normalized_report_path)
         try:
             report = load_json(report_path)
         except Exception:
@@ -16361,20 +16370,40 @@ def lore_intake_review_dashboard():
             if not isinstance(item, dict):
                 summary["malformed_items"] += 1
                 continue
-            classification = item.get("classification") if isinstance(item.get("classification"), dict) else {}
-            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            raw_classification = item.get("classification")
+            raw_metadata = item.get("metadata")
+            if raw_classification is not None and not isinstance(raw_classification, dict):
+                summary["malformed_classifications"] += 1
+            if raw_metadata is not None and not isinstance(raw_metadata, dict):
+                summary["malformed_metadata"] += 1
+            classification = raw_classification if isinstance(raw_classification, dict) else {}
+            metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
             raw_status = item.get("status")
             if not raw_status:
                 summary["missing_statuses"] += 1
             status = str(raw_status or "UNKNOWN").upper()
+            if status not in {"STAGED_FOR_REVIEW", "APPROVED", "REJECTED", "DUPLICATE_IN_BATCH", "DUPLICATE_ACROSS_BATCHES", "UNKNOWN"}:
+                summary["unknown_statuses"] += 1
             kind = str(classification.get("kind") or "unmatched")
             name = str(classification.get("name") or "(unresolved)")
             world = str(classification.get("world") or "Unassigned World")
             location = str(classification.get("location") or "Unassigned Location")
-            evidence = ", ".join(classification.get("matched_in", [])) if isinstance(classification.get("matched_in"), list) else ""
+            matched_in = classification.get("matched_in", [])
+            if matched_in is not None and not isinstance(matched_in, list):
+                summary["malformed_evidence"] += 1
+            evidence = ", ".join(str(entry) for entry in matched_in if isinstance(entry, str)) if isinstance(matched_in, list) else ""
+            raw_source = item.get("source") or item.get("staged_path")
+            if not isinstance(raw_source, str) or not raw_source.strip():
+                summary["missing_sources"] += 1
+            raw_candidates = classification.get("extracted_entity_candidates", [])
+            raw_relationships = classification.get("extracted_relationships", [])
+            if isinstance(raw_candidates, list):
+                summary["malformed_candidates"] += sum(1 for candidate in raw_candidates if not isinstance(candidate, dict))
+            if isinstance(raw_relationships, list):
+                summary["malformed_relationship_candidates"] += sum(1 for relationship in raw_relationships if not isinstance(relationship, dict))
             duplicate = bool(item.get("duplicate") or item.get("duplicate_of") or "DUPLICATE" in status)
             unresolved = kind in {"ambiguous", "unmatched"} or not classification.get("name")
-            row = {"file": Path(str(item.get("source") or item.get("staged_path") or "?")).name,
+            row = {"file": Path(raw_source if isinstance(raw_source, str) and raw_source.strip() else "?").name,
                    "status": status, "kind": kind, "name": name, "world": world,
                    "location": location, "confidence": str(classification.get("confidence") or "LOW"),
                    "evidence": evidence or "none", "duplicate": duplicate, "unresolved": unresolved,
@@ -16413,10 +16442,12 @@ def lore_intake_review_dashboard():
     print(f"Batches: {summary['batches']} | Items: {summary['items']} | Pending: {summary['pending']} | "
           f"Approved: {summary['approved']} | Rejected: {summary['rejected']}")
     print(f"Unresolved: {summary['unresolved']} | Duplicate warnings: {summary['duplicates']}")
-    if any(summary[key] for key in ("unreadable_reports", "malformed_reports", "malformed_batches", "malformed_manifests", "missing_record_paths", "invalid_record_paths", "missing_reports", "malformed_items", "missing_statuses")):
+    if any(summary[key] for key in ("unreadable_reports", "malformed_reports", "malformed_batches", "malformed_manifests", "missing_record_paths", "invalid_record_paths", "missing_reports", "malformed_items", "missing_statuses", "unknown_statuses", "malformed_classifications", "malformed_metadata", "malformed_candidates", "malformed_relationship_candidates", "missing_sources", "malformed_evidence", "duplicate_report_paths")):
         print("INTAKE DATA WARNINGS — read-only; no source or canon data was changed")
         print(f"  Malformed manifests: {summary['malformed_manifests']} | Malformed batch entries: {summary['malformed_batches']} | Missing record paths: {summary['missing_record_paths']} | Invalid record paths: {summary['invalid_record_paths']}")
-        print(f"  Missing reports: {summary['missing_reports']} | Unreadable reports: {summary['unreadable_reports']} | Malformed reports: {summary['malformed_reports']} | Malformed items: {summary['malformed_items']} | Missing statuses: {summary['missing_statuses']}")
+        print(f"  Missing reports: {summary['missing_reports']} | Unreadable reports: {summary['unreadable_reports']} | Malformed reports: {summary['malformed_reports']} | Malformed items: {summary['malformed_items']} | Missing statuses: {summary['missing_statuses']} | Unknown statuses: {summary['unknown_statuses']}")
+        print(f"  Malformed classifications: {summary['malformed_classifications']} | Malformed metadata: {summary['malformed_metadata']} | Bad entity candidates: {summary['malformed_candidates']} | Bad relationship candidates: {summary['malformed_relationship_candidates']}")
+        print(f"  Missing source paths: {summary['missing_sources']} | Malformed evidence: {summary['malformed_evidence']} | Reused report paths: {summary['duplicate_report_paths']}")
     print(f"Evidence graph: {graph['entity_count']} entities | {graph['relationship_count']} relationships | "
           f"{len(graph['duplicate_name_warnings'])} name conflicts | "
           f"{len(graph['archive_id_conflicts'])} archive-ID conflicts | "
