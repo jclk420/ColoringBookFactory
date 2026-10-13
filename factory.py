@@ -14384,24 +14384,54 @@ def lore_intake_extract_text_entities(text):
             current_creature = creature_match.group(1).strip(" \t:;,.|")
             add_entity("creature", current_creature, line)
             continue
+        # Explicit aliases attach to the active creature candidate; they are
+        # evidence, not a destructive rename or a canon-level merge.
+        alias_match = re.match(r"^(?:also known as|aka|alias|aliases)\s*[:\-]\s*(.{3,100})$", line, re.IGNORECASE)
+        if alias_match and current_creature:
+            alias_value = alias_match.group(1).strip(" \t:;,.|")
+            creature = next((row for row in result["entity_candidates"]
+                             if row.get("kind") == "creature" and str(row.get("name", "")).casefold() == current_creature.casefold()), None)
+            if creature and alias_value.casefold() != current_creature.casefold():
+                aliases = creature.setdefault("aliases", [])
+                for value in re.split(r"\s*(?:;|\||/|,|\band\b)\s*", alias_value, flags=re.IGNORECASE):
+                    value = value.strip()
+                    if value and value.casefold() != current_creature.casefold() and not any(str(old).casefold() == value.casefold() for old in aliases):
+                        aliases.append(value)
+                if line not in creature.setdefault("evidence_lines", []):
+                    creature["evidence_lines"].append(line)
+            continue
         labeled_match = re.match(
-            r"^(location|habitat|site|world|book|series)(?:\s+name)?\s*[:\-]\s*(.{3,100})$",
+            r"^(location|habitat|site|region|setting|realm|world|book|series)(?:\s+name)?\s*[:\-]\s*(.{3,100})$",
             line, re.IGNORECASE)
         if labeled_match:
-            kind = labeled_match.group(1).casefold()
+            raw_kind = labeled_match.group(1).casefold()
+            kind = {"region": "location", "setting": "location", "realm": "world"}.get(raw_kind, raw_kind)
             name = labeled_match.group(2).strip(" \t:;,.|")
             add_entity(kind, name, line)
-            if current_creature and kind in {"location", "habitat", "site"}:
-                relation = "reported_habitat" if kind == "habitat" else "located_at"
-                add_relationship(current_creature, relation, "location", name, line)
+            if current_creature:
+                if kind == "habitat":
+                    add_relationship(current_creature, "reported_habitat", "location", name, line)
+                elif kind in {"location", "site"}:
+                    add_relationship(current_creature, "located_at", "location", name, line)
+                elif kind == "world":
+                    add_relationship(current_creature, "associated_with_world", "world", name, line)
+                elif kind == "book":
+                    add_relationship(current_creature, "appears_in_book", "book", name, line)
+                elif kind == "series":
+                    add_relationship(current_creature, "belongs_to_series", "series", name, line)
             continue
         relation_match = re.match(
-            r"^(?:found|located|contained|discovered|originates)\s+"
-            r"(?:in|at|within|from|near|beneath|under|outside)\s*[:\-]?\s*(.{3,100})$",
+            r"^(found|located|contained|discovered|originates|lives|dwells|haunts|lurks)\s+"
+            r"(?:in|at|within|from|near|beneath|under|outside|around)\s*[:\-]?\s*(.{3,100})$",
             line, re.IGNORECASE)
         if current_creature and relation_match:
-            add_relationship(current_creature, "located_at", "location",
-                             relation_match.group(1), line)
+            verb = relation_match.group(1).casefold()
+            relation = {"found": "found_at", "located": "located_at", "contained": "contained_at",
+                        "discovered": "discovered_at", "originates": "reported_origin",
+                        "lives": "reported_habitat", "dwells": "reported_habitat",
+                        "haunts": "haunts_location", "lurks": "lurks_at"}.get(verb, "located_at")
+            object_kind = "origin" if relation == "reported_origin" else "location"
+            add_relationship(current_creature, relation, object_kind, relation_match.group(2), line)
 
     # HSN archive format: creature name + epithet precede "H.S.N. FILE",
     # followed by a record ID and labeled metadata. OCR often confuses O with 0.
@@ -14560,6 +14590,10 @@ def lore_intake_extract_text_entities(text):
         "archive_warning_count": sum(len(row.get("archive_warnings", [])) for row in result["entity_candidates"]),
         "low_confidence_count": sum(1 for row in result["entity_candidates"] + result["relationships"]
                                     if str(row.get("confidence", "LOW")).upper() == "LOW"),
+        "entity_kind_counts": {kind: sum(1 for row in result["entity_candidates"] if row.get("kind") == kind)
+                               for kind in sorted({str(row.get("kind", "unknown")) for row in result["entity_candidates"]})},
+        "relationship_type_counts": {relation: sum(1 for row in result["relationships"] if row.get("relation") == relation)
+                                     for relation in sorted({str(row.get("relation", "unknown")) for row in result["relationships"]})},
     }
     return result
 
