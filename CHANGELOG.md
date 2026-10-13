@@ -22,6 +22,15 @@
 - Keeps all findings advisory; no source files, artwork, Series Bible, or canon records are changed.
 
 
+## v34.0 — Lore Review Data Hardening
+
+- Flags unsupported confidence labels rather than silently treating them as valid evidence.
+- Detects repeated source-page references in intake records, entities, and relationships.
+- Identifies duplicate aliases within an entity and malformed alias fields.
+- Checks relationships for missing source-file, evidence, or page provenance.
+- Flags exact normalized duplicate relationship candidates without deleting or merging them.
+- All checks are advisory and review-only; canon and source artwork are unchanged.
+
 Release notes for the source-controlled ColoringBookFactory application. See `ROADMAP.md` for more implementation detail. These notes describe code capabilities; they do not certify any specific local book or marketplace package as released.
 
 ## v30.0 — Cross-Batch Lore Evidence Graph
