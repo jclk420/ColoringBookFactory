@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 32.0.
+# Current version: 33.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "32.0"
+FACTORY_VERSION = "33.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -15705,6 +15705,91 @@ def lore_intake_quality_audit(records, graph):
                 "relation": links[0].get("relation", ""), "objects": objects, "source_files": files
             })
 
+    # v33 advisory consistency checks; these never rewrite entity names or canon.
+    duplicate_source_findings = []
+    source_owners = {}
+    for row in entities:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        kind = str(row.get("kind") or "entity").casefold()
+        files = row.get("source_files") if isinstance(row.get("source_files"), list) else []
+        for file_name in files:
+            path_key = str(file_name or "").strip().replace("/", "\\").casefold()
+            if path_key:
+                source_owners.setdefault(path_key, []).append({"name": name, "kind": kind, "source_file": str(file_name)})
+    for path_key, owners in sorted(source_owners.items()):
+        identities = {(item["kind"], norm(item["name"])) for item in owners if norm(item["name"])}
+        if len(identities) > 1:
+            duplicate_source_findings.append({"normalized_source_file": path_key, "owners": owners})
+
+    evidence_findings = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        confidence = str(record.get("confidence") or "").strip().upper()
+        evidence_text = str(record.get("evidence") or "").strip()
+        filename = str(record.get("file") or "(unknown source)")
+        if confidence == "HIGH" and (not evidence_text or evidence_text.casefold() in {"none", "unknown", "n/a"}):
+            evidence_findings.append({"type": "high_confidence_without_evidence", "file": filename,
+                                      "confidence": confidence, "evidence": evidence_text})
+        page_values = record.get("source_pages", [])
+        if page_values and not isinstance(page_values, list):
+            evidence_findings.append({"type": "source_pages_wrong_type", "file": filename,
+                                      "actual_type": type(page_values).__name__})
+        elif isinstance(page_values, list):
+            invalid = []
+            for page in page_values:
+                try:
+                    if isinstance(page, bool) or int(page) < 1 or str(int(page)) != str(page).strip():
+                        invalid.append(page)
+                except (TypeError, ValueError):
+                    invalid.append(page)
+            if invalid:
+                evidence_findings.append({"type": "invalid_record_source_pages", "file": filename,
+                                          "invalid_source_pages": invalid})
+
+    context_findings = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        world = str(record.get("world") or "").strip()
+        location = str(record.get("location") or "").strip()
+        if world and location and norm(world) == norm(location):
+            context_findings.append({"type": "world_equals_location", "file": str(record.get("file") or ""),
+                                     "world": world, "location": location})
+        for field in ("world", "location"):
+            value = str(record.get(field) or "").strip()
+            if value and (value.casefold() in {"unknown", "none", "n/a", "null"} or value.casefold().startswith("unassigned")):
+                context_findings.append({"type": "placeholder_context_value", "file": str(record.get("file") or ""),
+                                         "field": field, "value": value})
+
+    candidate_findings = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        candidates = record.get("extracted_entity_candidates", [])
+        if not isinstance(candidates, list):
+            if candidates not in (None, ""):
+                candidate_findings.append({"type": "candidate_list_wrong_type",
+                                           "file": str(record.get("file") or ""), "actual_type": type(candidates).__name__})
+            continue
+        seen = {}
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                candidate_findings.append({"type": "candidate_wrong_type",
+                                           "file": str(record.get("file") or ""), "actual_type": type(candidate).__name__})
+                continue
+            name_key = norm(candidate.get("name"))
+            kind_key = str(candidate.get("kind") or "entity").casefold()
+            if name_key:
+                seen.setdefault((kind_key, name_key), []).append(candidate)
+        for (kind_key, name_key), duplicates in seen.items():
+            if len(duplicates) > 1:
+                candidate_findings.append({"type": "duplicate_candidate_in_record",
+                                           "file": str(record.get("file") or ""), "kind": kind_key,
+                                           "normalized_name": name_key, "count": len(duplicates)})
+
     contradictions = []
     for warning in graph.get("duplicate_name_warnings", []) if isinstance(graph.get("duplicate_name_warnings"), list) else []:
         contradictions.append({"type": "name_context_conflict", "detail": warning})
@@ -15758,6 +15843,10 @@ def lore_intake_quality_audit(records, graph):
         "provenance_findings": provenance_findings,
         "alias_conflicts": alias_conflicts,
         "relationship_quality_findings": relationship_quality_findings,
+        "duplicate_source_findings": duplicate_source_findings,
+        "evidence_findings": evidence_findings,
+        "context_findings": context_findings,
+        "candidate_findings": candidate_findings,
         "summary": {
             "high_priority_count": sum(1 for row in queue if row["priority"] == "HIGH"),
             "near_duplicate_count": len(unique_near_duplicates),
@@ -15767,6 +15856,10 @@ def lore_intake_quality_audit(records, graph):
             "provenance_finding_count": len(provenance_findings),
             "alias_conflict_count": len(alias_conflicts),
             "relationship_quality_finding_count": len(relationship_quality_findings),
+            "duplicate_source_finding_count": len(duplicate_source_findings),
+            "evidence_finding_count": len(evidence_findings),
+            "context_finding_count": len(context_findings),
+            "candidate_finding_count": len(candidate_findings),
         },
     }
 

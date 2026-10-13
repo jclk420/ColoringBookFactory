@@ -1,5 +1,13 @@
 # Changelog
 
+## v33.0 — Lore Consistency Guards
+
+- Flags one source file attributed to multiple distinct lore entities for review.
+- Flags high-confidence intake records without usable evidence and invalid record-level page provenance.
+- Highlights suspicious world/location placeholders and identical world/location values.
+- Detects duplicate extracted candidates and malformed candidate-list structures.
+- All checks remain read-only; no names, relationships, canon, or artwork are changed.
+
 ## v32.0 — Lore Provenance and Relationship Integrity
 
 - Flags entities missing source-file, evidence, or page provenance and identifies invalid page numbers.
