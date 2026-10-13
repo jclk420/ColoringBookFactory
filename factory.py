@@ -9,6 +9,7 @@ import sys
 import subprocess
 import zipfile
 import re
+import difflib
 import os
 import tempfile
 from datetime import datetime
