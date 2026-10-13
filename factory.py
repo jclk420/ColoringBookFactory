@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 55.0.
+# Current version: 56.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "55.0"
+FACTORY_VERSION = "56.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -3255,6 +3255,27 @@ def write_readiness_report(project, settings, built_pages, kdp_errors, kdp_warni
     return report
 
 
+def save_json_no_clobber(path, data):
+    """Create a JSON file only if the destination does not already exist."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    created = False
+    try:
+        with open(path, "x", encoding="utf-8") as stream:
+            created = True
+            json.dump(data, stream, indent=4, ensure_ascii=False, default=str)
+            stream.write(chr(10))
+            stream.flush()
+            os.fsync(stream.fileno())
+    except Exception:
+        if created:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+
 def create_build_snapshot(project, settings, book, images, built_pages, final_pdf):
     """Keep a compact immutable build record so finished books can be audited later."""
     if not settings.get("build_snapshots_enabled", True):
@@ -3262,7 +3283,6 @@ def create_build_snapshot(project, settings, book, images, built_pages, final_pd
     snapshots = project / "BUILD_SNAPSHOTS"
     snapshots.mkdir(exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = snapshots / f"build_{stamp}.json"
     snapshot = {
         "factory_version": FACTORY_VERSION,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -3273,8 +3293,15 @@ def create_build_snapshot(project, settings, book, images, built_pages, final_pd
         "pages_built": len(built_pages),
         "final_pdf_sha256": artifact_sha256(final_pdf) if Path(final_pdf).exists() else None,
     }
-    save_json(path, snapshot)
-    return path
+    counter = 1
+    while True:
+        suffix = "" if counter == 1 else f"_{counter:02d}"
+        path = snapshots / f"build_{stamp}{suffix}.json"
+        try:
+            save_json_no_clobber(path, snapshot)
+            return path
+        except FileExistsError:
+            counter += 1
 
 # ============================================================
 # COMPLETE BOOK BUILD

@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v56.0 — Immutable Build Snapshot Safety
+- Uses exclusive file creation for build snapshots instead of overwriting same-second names.
+- Adds deterministic collision suffixes and safe cleanup of incomplete newly created files.
+- Adds regression tests proving existing snapshots remain unchanged across repeated builds.
+
+
 ### v55.0 — Build Cache and Delivery Artifact Integrity
 - Requires complete, internally consistent delivery artifacts before a build can be skipped as cached.
 - Verifies package interior/report identity and checksum manifests when enabled.

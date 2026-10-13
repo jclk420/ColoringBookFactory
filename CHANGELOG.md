@@ -1,5 +1,13 @@
 # Changelog
 
+## v56.0 — Immutable Build Snapshot Safety
+
+- Creates build snapshots with exclusive no-clobber writes so same-second builds cannot overwrite prior audit records.
+- Adds collision suffixes while preserving the original timestamp-based snapshot naming pattern.
+- Cleans up only newly created partial snapshot files if serialization fails.
+- Adds runtime regression coverage for collisions and snapshot immutability.
+
+
 ## v55.0 — Build Cache and Delivery Artifact Integrity
 
 - Replaces the minimal cache check with verification of the interior PDF, successful report, KDP manifest, checklist, readiness report, and configured optional artifacts.
