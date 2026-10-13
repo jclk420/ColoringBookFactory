@@ -14342,7 +14342,9 @@ def lore_intake_extract_text_entities(text):
             return True
         if re.fullmatch(r"(?:\[?(?:OCR|PDF TEXT) PAGE \d+\]?|H\.?\s*S\.?\s*N\.?\s*FILE.*|HSN[- ]?CR[- ]?[0-9O]{3}|NIGHTMARE CRYPTIDS.*|HOLLOW STITCH.*|ARCHIVE COPY.*|END FILE.*|\d{1,3}|PAGE \d+)", line, re.I):
             return True
-        if re.fullmatch(r"(?:CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)", line, re.I):
+        if re.fullmatch(r"(?:CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE|CONTENTS|TABLE OF CONTENTS|INTRODUCTION|HOW TO USE THIS BOOK|COLORING TEST PAGE|COPYRIGHT|DEDICATION|ABOUT THE AUTHOR|CLOSING FILE|ARCHIVE INDEX)", line, re.I):
+            return True
+        if re.match(r"^(?:ISBN|WWW\.|HTTPS?://|COPYRIGHT\s|ALL RIGHTS RESERVED|PRINTED IN )", line, re.I):
             return True
         return False
 
@@ -14418,7 +14420,9 @@ def lore_intake_extract_text_entities(text):
         if canonical.casefold() in {
             "table of contents", "the hollow stitch nursery", "department of unnatural fauna",
             "recovered archive", "how to read the files", "archivist notice",
-        }:
+            "contents", "introduction", "how to use this book", "coloring test page",
+            "copyright", "dedication", "about the author", "closing file", "archive index",
+        } or re.match(r"^(?:ISBN|COPYRIGHT|ALL RIGHTS RESERVED|NIGHTMARE WORLD|A HORROR COLORING)", canonical, re.I):
             continue
         current_creature = canonical
         creature_row = add_entity(
@@ -14500,6 +14504,12 @@ def lore_intake_extract_text_entities(text):
                     if label == "ORIGIN":
                         add_relationship(current_creature, "reported_origin", "origin", value,
                                          "ORIGIN | " + value + " | " + archive_id)
+                    elif label == "DOCUMENTED ABILITY":
+                        add_relationship(current_creature, "has_reported_ability", "ability", value,
+                                         "DOCUMENTED ABILITY | " + value + " | " + archive_id)
+                    elif label == "OBSERVED WEAKNESS":
+                        add_relationship(current_creature, "has_reported_weakness", "weakness", value,
+                                         "OBSERVED WEAKNESS | " + value + " | " + archive_id)
             field_index += 1
         if archive_fields:
             creature_row["archive_fields"] = archive_fields
@@ -15336,7 +15346,7 @@ def lore_intake_build_evidence_graph(records):
         return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
 
     def add_entity(kind, name, world, location, source_file, confidence, evidence,
-                   archive_id="", archive_fields=None, aliases=None):
+                   archive_id="", archive_fields=None, aliases=None, source_pages=None):
         name = str(name or "").strip()
         key_name = norm(name)
         if not key_name:
@@ -15350,12 +15360,16 @@ def lore_intake_build_evidence_graph(records):
             "archive_id": str(archive_id or ""),
             "confidence": str(confidence or "LOW"),
             "source_files": [], "evidence": [], "aliases": [],
-            "archive_fields": {},
+            "source_pages": [], "archive_fields": {},
         })
         if source_file and source_file not in row["source_files"]:
             row["source_files"].append(source_file)
         if evidence and evidence not in row["evidence"]:
             row["evidence"].append(evidence)
+        for page_number in source_pages if isinstance(source_pages, list) else []:
+            if page_number not in row["source_pages"]:
+                row["source_pages"].append(page_number)
+        row["source_pages"].sort()
         if str(confidence or "LOW").upper() == "HIGH":
             row["confidence"] = "HIGH"
         for alias in aliases if isinstance(aliases, list) else []:
@@ -15393,7 +15407,7 @@ def lore_intake_build_evidence_graph(records):
                        candidate.get("confidence", "LOW"),
                        candidate.get("evidence") or candidate.get("source") or "extracted text",
                        candidate.get("archive_id"), candidate.get("archive_fields"),
-                       candidate.get("aliases"))
+                       candidate.get("aliases"), candidate.get("source_pages"))
             # Include alternative OCR IDs in conflict detection without choosing
             # a winner or changing the candidate's primary ID.
             for alternate in candidate.get("archive_id_candidates", []):
@@ -15420,13 +15434,17 @@ def lore_intake_build_evidence_graph(records):
                 "subject": subject, "relation": relation,
                 "object_kind": link.get("object_kind") or "entity", "object": obj,
                 "confidence": str(link.get("confidence") or "LOW"),
-                "source_files": [], "evidence": [],
+                "source_files": [], "evidence": [], "source_pages": [],
             })
             if source_file not in row["source_files"]:
                 row["source_files"].append(source_file)
             evidence = str(link.get("evidence") or "").strip()
             if evidence and evidence not in row["evidence"]:
                 row["evidence"].append(evidence)
+            for page_number in link.get("source_pages", []) if isinstance(link.get("source_pages"), list) else []:
+                if page_number not in row["source_pages"]:
+                    row["source_pages"].append(page_number)
+            row["source_pages"].sort()
 
     entity_rows = sorted(entities.values(), key=lambda row: (row["kind"].casefold(), row["name"].casefold()))
     relationship_rows = sorted(relationships.values(), key=lambda row: (row["subject"].casefold(), row["relation"], row["object"].casefold()))
