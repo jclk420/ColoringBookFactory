@@ -2,6 +2,13 @@
 
 ## Shipped
 
+### v38.0 — Intake Dashboard Resilience
+- Validates manifest batch collections and reports malformed batch entries.
+- Counts unreadable and malformed reports instead of silently hiding them.
+- Safely filters malformed extracted-candidate collections before rendering dashboard output.
+- Keeps all diagnostics read-only; no canon, source artwork, or staged data is rewritten.
+
+
 ### v36.0 — Evidence Traceability and Ambiguity Review
 - Cross-kind name and relationship endpoint ambiguity warnings.
 - Duplicate source-path normalization checks and candidate evidence/page/source traceability findings.
