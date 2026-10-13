@@ -16039,9 +16039,9 @@ def lore_intake_quality_audit(records, graph):
             if not isinstance(row, dict):
                 continue
             files_value = row.get("source_files")
-            if row_type == "record":
+            if row_type == "record" and not isinstance(files_value, list):
                 one_file = str(row.get("file") or "").strip()
-                files_value = [one_file] if one_file else []
+                files_value = [one_file] if one_file else files_value
             if files_value is None:
                 continue
             if not isinstance(files_value, list):
