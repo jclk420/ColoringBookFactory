@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 51.0.
+# Current version: 52.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "51.0"
+FACTORY_VERSION = "52.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -125,6 +125,12 @@ def load_build_history(project):
         elif not isinstance(data.get("builds"), list):
             print(f"WARNING: Build history list is malformed in {path}; using an empty in-memory history.")
             data["builds"] = []
+        else:
+            valid_builds = [build for build in data["builds"] if isinstance(build, dict)]
+            malformed_count = len(data["builds"]) - len(valid_builds)
+            if malformed_count:
+                print(f"WARNING: Build history contains {malformed_count} malformed record(s) in {path}; invalid records were ignored in memory.")
+                data["builds"] = valid_builds
         data.setdefault("version", FACTORY_VERSION)
         return data
     except Exception as error:
@@ -204,6 +210,13 @@ def load_build_state(project):
         if not isinstance(data.get("images", {}), dict):
             print(f"WARNING: Build state images field is malformed in {path}; using an empty in-memory image map.")
             data["images"] = {}
+        else:
+            valid_images = {name: record for name, record in data["images"].items()
+                            if isinstance(name, str) and isinstance(record, dict)}
+            malformed_count = len(data["images"]) - len(valid_images)
+            if malformed_count:
+                print(f"WARNING: Build state contains {malformed_count} malformed image record(s) in {path}; invalid records were ignored in memory.")
+                data["images"] = valid_images
         if data.get("last_build") is not None and not isinstance(data.get("last_build"), dict):
             print(f"WARNING: Build state last_build field is malformed in {path}; using None in memory.")
             data["last_build"] = None
@@ -215,6 +228,17 @@ def load_build_state(project):
         return defaults
 
 def save_build_state(project, state):
+    """Validate build-state structure before touching the persisted file."""
+    if not isinstance(state, dict):
+        raise ValueError("build state must be a dictionary")
+    images = state.get("images", {})
+    if not isinstance(images, dict):
+        raise ValueError("build state images must be a dictionary")
+    if any(not isinstance(record, dict) for record in images.values()):
+        raise ValueError("every build-state image record must be a dictionary")
+    last_build = state.get("last_build")
+    if last_build is not None and not isinstance(last_build, dict):
+        raise ValueError("build state last_build must be a dictionary or None")
     save_json(project / BUILD_STATE_FILE, state)
 
 
@@ -384,7 +408,12 @@ def world_slug(name):
 
 
 def world_path(world_id):
-    return WORLDS_DIR / str(world_id)
+    """Resolve a world folder only from a single safe directory name."""
+    value = str(world_id).strip()
+    if (not value or value in {".", ".."} or Path(value).is_absolute()
+            or "/" in value or "\\" in value or ":" in value or chr(0) in value):
+        raise ValueError("World ID must be a safe folder name, not a path.")
+    return WORLDS_DIR / value
 
 
 def load_world_index():
@@ -405,41 +434,88 @@ def load_world_index():
         elif not isinstance(data.get("worlds"), dict):
             print(f"WARNING: World index registry is malformed in {path}; using an empty in-memory registry.")
             data["worlds"] = {}
+        else:
+            valid_worlds = {}
+            malformed_count = 0
+            for world_id, record in data["worlds"].items():
+                if not isinstance(world_id, str) or not world_id.strip() or not isinstance(record, dict):
+                    malformed_count += 1
+                    continue
+                recorded_id = record.get("world_id")
+                if recorded_id is not None and str(recorded_id) != world_id:
+                    malformed_count += 1
+                    continue
+                valid_worlds[world_id] = record
+            if malformed_count:
+                print(f"WARNING: World index contains {malformed_count} malformed registry entr(y/ies) in {path}; invalid entries were ignored in memory.")
+                data["worlds"] = valid_worlds
         return data
     except Exception as error:
         print(f"WARNING: Could not read world index: {error}. Using in-memory defaults; the file was not modified.")
         return defaults
 
 def save_world_index(index):
+    """Validate world-index structure before writing it."""
+    if not isinstance(index, dict):
+        raise ValueError("world index must be a dictionary")
+    worlds = index.get("worlds", {})
+    if not isinstance(worlds, dict):
+        raise ValueError("world index worlds must be a dictionary")
+    for world_id, record in worlds.items():
+        if not isinstance(world_id, str) or not world_id.strip() or not isinstance(record, dict):
+            raise ValueError("world index entries must map non-empty IDs to dictionaries")
+        recorded_id = record.get("world_id")
+        if recorded_id is not None and str(recorded_id) != world_id:
+            raise ValueError(f"world index key/ID mismatch for {world_id!r}")
     WORLDS_DIR.mkdir(parents=True, exist_ok=True)
-    index["version"] = WORLD_SCHEMA_VERSION
-    index["engine_version"] = WORLD_ENGINE_VERSION
-    save_json(WORLDS_DIR / WORLD_INDEX_FILENAME, index)
+    payload = dict(index)
+    payload["version"] = WORLD_SCHEMA_VERSION
+    payload["engine_version"] = WORLD_ENGINE_VERSION
+    save_json(WORLDS_DIR / WORLD_INDEX_FILENAME, payload)
 
 
 def load_world(world_id):
-    path = world_path(world_id) / "world.json"
-    if not path.exists():
-        return None
     try:
+        path = world_path(world_id) / "world.json"
+        if not path.exists():
+            return None
         data = load_json(path)
         if not isinstance(data, dict):
-            return None
+            raise ValueError("world record must be a JSON object")
+        recorded_id = data.get("world_id")
+        if recorded_id is not None and str(recorded_id) != str(world_id):
+            raise ValueError("world record ID does not match the requested world folder")
+        collection_fields = (
+            "series", "rules", "timeline", "characters", "creatures", "locations",
+            "objects", "factions", "lore", "books", "relationships",
+        )
         data.setdefault("schema_version", WORLD_SCHEMA_VERSION)
-        data.setdefault("series", [])
-        data.setdefault("relationships", [])
-        data.setdefault("books", [])
+        for field in collection_fields:
+            if field not in data:
+                data[field] = []
+            elif not isinstance(data[field], list):
+                print(f"WARNING: World {world_id} field {field!r} is malformed; using an empty in-memory list.")
+                data[field] = []
         return data
     except Exception as error:
-        print(f"WARNING: Could not load world {world_id}: {error}")
+        print(f"WARNING: Could not load world {world_id}: {error}. The file was not modified.")
         return None
 
 
 def save_world(world):
+    if not isinstance(world, dict):
+        raise ValueError("world must be a dictionary")
     wid = str(world.get("world_id", "")).strip()
     if not wid:
         raise ValueError("World is missing world_id")
     folder = world_path(wid)
+    collection_fields = (
+        "series", "rules", "timeline", "characters", "creatures", "locations",
+        "objects", "factions", "lore", "books", "relationships",
+    )
+    for field in collection_fields:
+        if field in world and not isinstance(world[field], list):
+            raise ValueError(f"world field {field!r} must be a list")
     folder.mkdir(parents=True, exist_ok=True)
     save_json(folder / "world.json", world)
     index = load_world_index()

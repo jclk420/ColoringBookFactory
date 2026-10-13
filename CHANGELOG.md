@@ -1,5 +1,14 @@
 # Changelog
 
+## v52.0 — Deep Persisted-State and World-Path Integrity
+
+- Filters malformed build-history records and image-state entries in memory while preserving original JSON files.
+- Validates nested build-state writes and world-index writes before replacing persisted data.
+- Validates world collection fields and world identity on load; malformed collections fall back in memory only.
+- Rejects unsafe world IDs that could escape the configured worlds directory.
+- Adds runtime regression coverage for malformed records, rejected writes, and path traversal.
+
+
 ## v51.0 — JSON State and Production Queue Resilience
 
 - Validates build-state root objects and key field types before callers consume them.
