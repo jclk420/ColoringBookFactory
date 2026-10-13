@@ -59,5 +59,33 @@ class LoreIntakeQualityAuditTests(unittest.TestCase):
         self.assertEqual(result["unresolved_relationships"][0]["missing_endpoints"], ["object"])
 
 
+    def test_malformed_graph_shapes_and_source_file_fields_are_reported_safely(self):
+        graph = {
+            "entities": [
+                {"kind": "creature", "name": "Willow Stalker", "source_files": ["a.pdf"]},
+                {"kind": "creature", "name": "Willow Stalkers", "source_files": "b.pdf"},
+            ],
+            "relationships": "not-a-list",
+        }
+        result = self.audit("not-a-record-list", graph)
+        self.assertEqual(result["summary"]["input_shape_finding_count"], 2)
+        self.assertEqual(result["summary"]["finding_group_counts"]["input_shape_findings"], 2)
+        self.assertEqual(result["summary"]["entity_structure_finding_count"], 1)
+        self.assertTrue(result["review_only"])
+        self.assertFalse(result["canon_written"])
+        self.assertEqual(graph["relationships"], "not-a-list")
+
+    def test_placeholder_evidence_and_whitespace_confidence_are_scored_correctly(self):
+        records = [{
+            "file": "placeholder.pdf", "kind": "creature", "name": "Ash Maw",
+            "confidence": " high ", "evidence": "N/A", "unresolved": False, "duplicate": False,
+        }]
+        result = self.audit(records, {"entities": [], "relationships": []})
+        item = result["quality_queue"][0]
+        self.assertIn("missing evidence", item["flags"])
+        self.assertNotIn("unknown confidence", item["flags"])
+        self.assertEqual(result["summary"]["evidence_finding_count"], 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
