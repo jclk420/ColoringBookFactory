@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 54.0.
+# Current version: 55.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "54.0"
+FACTORY_VERSION = "55.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -3280,6 +3280,88 @@ def create_build_snapshot(project, settings, book, images, built_pages, final_pd
 # COMPLETE BOOK BUILD
 # ============================================================
 
+def package_checksums_valid(package):
+    """Verify a package checksum list against every direct-child delivery file."""
+    package = Path(package)
+    checksum_file = package / "SHA256SUMS.txt"
+    if not checksum_file.is_file():
+        return False
+    expected = {}
+    try:
+        for line in checksum_file.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            if "  " not in line:
+                return False
+            digest, name = line.split("  ", 1)
+            if (len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest)
+                    or not name or Path(name).name != name or name in {".", ".."} or name in expected):
+                return False
+            expected[name] = digest.lower()
+        actual = {path.name for path in package.iterdir()
+                  if path.is_file() and path.name != "SHA256SUMS.txt"}
+        if not expected or set(expected) != actual:
+            return False
+        return all(file_hash(package / name).lower() == digest for name, digest in expected.items())
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def cached_build_is_complete(project, settings, final_pdf, report_file):
+    """Treat a build as cached only when its core delivery artifacts are complete and consistent."""
+    project = Path(project)
+    final_pdf = Path(final_pdf)
+    report_file = Path(report_file)
+    package = project / "KDP_PACKAGE"
+    try:
+        if not final_pdf.is_file() or final_pdf.stat().st_size <= 0:
+            return False
+        if not report_file.is_file() or "STATUS: BUILD SUCCESSFUL" not in report_file.read_text(encoding="utf-8"):
+            return False
+        if not package.is_dir():
+            return False
+        required = ("BUILD_REPORT.txt", "KDP_CHECKLIST.txt", "kdp_manifest.json", "PRODUCTION_READINESS.txt")
+        for name in required:
+            artifact = package / name
+            if not artifact.is_file() or artifact.stat().st_size <= 0:
+                return False
+        if file_hash(package / "BUILD_REPORT.txt") != file_hash(report_file):
+            return False
+        manifest = load_json(package / "kdp_manifest.json")
+        if not isinstance(manifest, dict):
+            return False
+        interior_name = manifest.get("interior_pdf")
+        if not isinstance(interior_name, str) or not interior_name or Path(interior_name).name != interior_name:
+            return False
+        interior = package / interior_name
+        if not interior.is_file() or interior.stat().st_size <= 0 or file_hash(interior) != file_hash(final_pdf):
+            return False
+        if settings.get("kdp_generate_cover", True):
+            cover_name = manifest.get("cover_pdf")
+            if not isinstance(cover_name, str) or not cover_name or Path(cover_name).name != cover_name:
+                return False
+            cover = package / cover_name
+            if not cover.is_file() or cover.stat().st_size <= 0:
+                return False
+        if settings.get("metadata_export_enabled", True):
+            for name in ("BOOK_METADATA.json", "BOOK_METADATA.txt"):
+                if not (package / name).is_file() or (package / name).stat().st_size <= 0:
+                    return False
+        if settings.get("production_manifest_enabled", True):
+            artifact = package / "PRODUCTION_MANIFEST.json"
+            if not artifact.is_file() or artifact.stat().st_size <= 0:
+                return False
+        if settings.get("checksum_artifacts", True) and not package_checksums_valid(package):
+            return False
+        if settings.get("build_snapshots_enabled", True):
+            snapshots = project / "BUILD_SNAPSHOTS"
+            if not snapshots.is_dir() or not any(path.is_file() and path.suffix.lower() == ".json" for path in snapshots.iterdir()):
+                return False
+        return True
+    except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+        return False
+
+
 def build_book(project):
     setup_project(project)
     try:
@@ -3353,12 +3435,7 @@ def build_book(project):
 
     final_pdf = project / "FINAL" / f"{settings.get('title', project.name)}.pdf"
     report_file = project / "REPORTS" / "final_report.txt"
-    if (
-        state.get("build_fingerprint") == current_fingerprint
-        and final_pdf.exists()
-        and report_file.exists()
-        and "STATUS: BUILD SUCCESSFUL" in report_file.read_text(encoding="utf-8")
-    ):
+    if state.get("build_fingerprint") == current_fingerprint and cached_build_is_complete(project, settings, final_pdf, report_file):
         print("\nNO CHANGES DETECTED - BUILD SKIPPED.")
         print("Cached build is already valid.")
         return {"status": "SKIPPED", "project": str(project), "reason": "cached build is valid"}
@@ -3447,23 +3524,6 @@ def build_book(project):
                     world_continuity_report(world)
                 except Exception as error:
                     print(f"WARNING: World Bible refresh failed: {error}")
-        state = load_build_state(project)
-        state["version"] = FACTORY_VERSION
-        state["images"] = {}
-        for name, data in current_inventory.items():
-            try:
-                source = next(x for x in images if x.name == name)
-                identity = artwork_identity_id(source)
-            except StopIteration:
-                identity = name
-            state["images"][identity] = dict(data)
-            state["images"][identity]["source_name"] = name
-            state["images"][identity]["process_signature"] = settings_fingerprint(settings)
-            state["images"][identity]["processed_id"] = f"ART-{identity.split('-', 1)[-1][:16]}.png"
-        state["build_fingerprint"] = current_fingerprint
-        state["last_build"] = datetime.now().isoformat(timespec="seconds")
-        save_build_state(project, state)
-
         package, cover_file = write_kdp_package(
             project, settings, final_pdf, report, len(built_pages), kdp_errors, kdp_warnings,
             prebuilt_cover=cover_file, prebuilt_cover_errors=cover_errors, prebuilt_cover_warnings=cover_warnings
@@ -3484,6 +3544,23 @@ def build_book(project):
         snapshot = create_build_snapshot(project, settings, book, images, built_pages, final_pdf)
         if snapshot:
             print(f"Build snapshot: {snapshot}")
+        # Commit the build fingerprint only after delivery files and optional integrity artifacts exist.
+        state = load_build_state(project)
+        state["version"] = FACTORY_VERSION
+        state["images"] = {}
+        for name, data in current_inventory.items():
+            try:
+                source = next(x for x in images if x.name == name)
+                identity = artwork_identity_id(source)
+            except StopIteration:
+                identity = name
+            state["images"][identity] = dict(data)
+            state["images"][identity]["source_name"] = name
+            state["images"][identity]["process_signature"] = settings_fingerprint(settings)
+            state["images"][identity]["processed_id"] = f"ART-{identity.split('-', 1)[-1][:16]}.png"
+        state["build_fingerprint"] = current_fingerprint
+        state["last_build"] = datetime.now().isoformat(timespec="seconds")
+        save_build_state(project, state)
         print(f"KDP package: {package}")
         if cover_file:
             print(f"Auto cover: {cover_file}")

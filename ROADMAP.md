@@ -2,6 +2,13 @@
 
 ## Shipped
 
+### v55.0 — Build Cache and Delivery Artifact Integrity
+- Requires complete, internally consistent delivery artifacts before a build can be skipped as cached.
+- Verifies package interior/report identity and checksum manifests when enabled.
+- Delays persisted build fingerprint updates until packaging and optional integrity outputs are complete.
+- Adds regression tests for missing artifacts, modified package files, and cache acceptance.
+
+
 ### v54.0 — Resumable Production Queue and Explicit Build Results
 - Makes build outcomes explicit so queue orchestration can distinguish success, cached skips, not-ready builds, and failures.
 - Preserves unsuccessful or missing queue items and persists progress after each successful build.
