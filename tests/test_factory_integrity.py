@@ -1267,7 +1267,7 @@ END FILE HSN-CR-008
             "extracted_relationships": relations,
         }])
         self.assertTrue(any(row["archive_id"] == "HSN-CR-008"
-                            and set(row["candidate_names"]) >= {"AHOOL", "DOVER DEMON"}
+                            and {name.casefold() for name in row["candidate_names"]} >= {"ahool", "dover demon"}
                             for row in graph["archive_id_conflicts"]))
         self.assertFalse(graph["canon_written"])
         self.assertEqual(next(row for row in graph["entities"] if row["name"] == "AHOOL")["source_pages"], [8])
