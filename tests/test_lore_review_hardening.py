@@ -117,6 +117,42 @@ class LoreReviewHardeningTests(unittest.TestCase):
         self.assertEqual(result["unresolved_relationships"], [])
         self.assertFalse(result["canon_written"])
 
+    def test_review_summary_covers_groups_and_recommends_hold(self):
+        result = self.audit(
+            [{"file": "scan.pdf", "confidence": "ABSOLUTE", "evidence": "unknown",
+              "world": "Unknown", "location": "Unknown"}],
+            {"entities": [{"name": "Ash Maw", "kind": "creature"}],
+             "relationships": [{"subject": "Missing", "relation": "guards", "object": "Gate"}]})
+        summary = result["review_summary"]
+        self.assertEqual(summary["recommended_status"], "HOLD_FOR_REVIEW")
+        self.assertFalse(summary["canon_written"])
+        for key in ("invalid_entity_types", "unresolved_relationships", "provenance_findings",
+                    "relationship_quality_findings", "confidence_findings", "context_findings",
+                    "candidate_findings", "repeated_page_findings", "duplicate_alias_findings",
+                    "relationship_provenance_findings", "entity_structure_findings",
+                    "relationship_structure_findings", "record_structure_findings",
+                    "entity_kind_name_collisions", "ambiguous_relationship_endpoints",
+                    "source_path_findings", "candidate_traceability_findings", "evidence_quality_findings"):
+            with self.subTest(group=key):
+                self.assertIn(key, summary["finding_group_counts"])
+        self.assertEqual(summary["finding_group_counts"]["confidence_findings"],
+                         len(result["confidence_findings"]))
+        self.assertTrue(any(item["finding_group"] == "context_findings"
+                            for item in result["actionable_review"]))
+        self.assertTrue(all(item.get("recommended_status") for item in result["actionable_review"]))
+
+    def test_clean_audit_has_no_findings_recommendation(self):
+        result = self.audit([], {"entities": [], "relationships": []})
+        self.assertEqual(result["review_summary"]["recommended_status"], "NO_FINDINGS")
+        self.assertEqual(result["review_summary"]["total_findings"], 0)
+
+    def test_queue_flags_make_recommendation_explicit_without_mutation(self):
+        record = {"file": "cryptids.pdf", "confidence": "LOW", "evidence": ""}
+        result = self.audit([record], {"entities": [], "relationships": []})
+        self.assertEqual(result["quality_queue"][0]["recommended_status"], "HOLD_FOR_REVIEW")
+        self.assertEqual(record["confidence"], "LOW")
+        self.assertFalse(result["canon_written"])
+
     def test_duplicate_relationships_are_flagged_but_not_removed(self):
         links = [
             {"subject": "Ash Maw", "relation": "guards", "object": "Gate", "source_files": ["a.pdf"]},

@@ -1,5 +1,13 @@
 # Changelog
 
+## v37.0 — Intake Review Decisions and Complete Finding Summaries
+
+- Extends plain-language review actions to all major finding groups, including context, evidence, relationship quality, repeated pages, and duplicate aliases.
+- Adds advisory `recommended_status` values to review groups and queue items; these are guidance only and never approve or change records.
+- Makes the audit-wide summary count every published finding group and exposes per-group counts for dashboard consistency.
+- Defines totals as finding instances, explicitly allowing one underlying issue to appear in multiple groups.
+- Adds regression tests for clean audits, malformed/conflicting source data, summary coverage, advisory holds, and no-mutation guarantees.
+
 ## v36.0 — Evidence Traceability and Ambiguity Review
 
 - Flags identical normalized names used across different entity kinds and ambiguous relationship endpoints.

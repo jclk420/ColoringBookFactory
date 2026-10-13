@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "36.0"
+FACTORY_VERSION = "37.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -16122,27 +16122,39 @@ def lore_intake_quality_audit(records, graph):
                     "type": "placeholder_record_evidence", "file": filename, "field": field, "value": value.strip()
                 })
 
-    # Plain-language actions keep the dashboard useful without changing source data.
+    # Plain-language actions are advisory; they never change source data or canon.
+    # Group counts are finding instances, so one issue may be represented in multiple groups.
     actionable_review = []
     action_specs = [
-        ("entity_structure_findings", entity_structure_findings, "Check entity names, list fields, aliases, and possible duplicate entries."),
-        ("relationship_structure_findings", relationship_structure_findings, "Correct relationship fields and verify source evidence before approval."),
-        ("record_structure_findings", record_structure_findings, "Check the source filename, candidate/page lists, and replace placeholder evidence."),
-        ("provenance_findings", provenance_findings, "Attach the original source file, evidence text, and valid page numbers."),
-        ("alias_conflicts", alias_conflicts, "Review each alias mapping; keep distinct entities separate unless evidence confirms they are the same."),
-        ("unresolved_relationships", unresolved, "Resolve the missing subject/object names or leave the relationship explicitly unassigned."),
-        ("duplicate_relationship_findings", duplicate_relationship_findings, "Compare the cited sources and decide whether these are repeated evidence or distinct claims."),
-        ("confidence_findings", confidence_findings, "Use HIGH, MEDIUM, or LOW and keep confidence aligned with evidence."),
-        ("entity_kind_name_collisions", entity_kind_name_collisions, "Confirm whether same-named entries are distinct entity types; do not merge based on names alone."),
-        ("ambiguous_relationship_endpoints", ambiguous_relationship_endpoints, "Choose the intended entity for each relationship endpoint using source evidence."),
-        ("source_path_findings", source_path_findings, "Standardize source paths and remove duplicate references only after checking the original records."),
-        ("candidate_traceability_findings", candidate_traceability_findings, "Attach the candidate name, original source file, exact evidence, and valid page number before approval."),
-        ("evidence_quality_findings", evidence_quality_findings, "Replace placeholder evidence and lower confidence when the source does not support the claim."),
+        ("invalid_entity_types", invalid_types, "Confirm the entity kind and correct unsupported labels.", "HIGH"),
+        ("near_duplicate_suggestions", unique_near_duplicates, "Compare names and source evidence; do not merge based on similarity alone.", "REVIEW"),
+        ("entity_structure_findings", entity_structure_findings, "Check entity names, list fields, aliases, and possible duplicate entries.", "HIGH"),
+        ("relationship_structure_findings", relationship_structure_findings, "Correct relationship fields and verify source evidence before approval.", "HIGH"),
+        ("record_structure_findings", record_structure_findings, "Check the source filename, candidate/page lists, and replace placeholder evidence.", "HIGH"),
+        ("provenance_findings", provenance_findings, "Attach the original source file, evidence text, and valid page numbers.", "HIGH"),
+        ("alias_conflicts", alias_conflicts, "Review each alias mapping; keep distinct entities separate unless evidence confirms they are the same.", "HIGH"),
+        ("unresolved_relationships", unresolved, "Resolve missing subject/object names or leave the relationship explicitly unassigned.", "HIGH"),
+        ("duplicate_relationship_findings", duplicate_relationship_findings, "Compare cited sources and decide whether these are repeated evidence or distinct claims.", "REVIEW"),
+        ("confidence_findings", confidence_findings, "Use HIGH, MEDIUM, or LOW and keep confidence aligned with evidence.", "HIGH"),
+        ("entity_kind_name_collisions", entity_kind_name_collisions, "Confirm whether same-named entries are distinct entity types; do not merge based on names alone.", "HIGH"),
+        ("ambiguous_relationship_endpoints", ambiguous_relationship_endpoints, "Choose the intended entity for each relationship endpoint using source evidence.", "HIGH"),
+        ("source_path_findings", source_path_findings, "Review source path conflicts without rewriting original paths.", "HIGH"),
+        ("candidate_traceability_findings", candidate_traceability_findings, "Attach candidate name, original source file, exact evidence, and valid page number before approval.", "HIGH"),
+        ("evidence_quality_findings", evidence_quality_findings, "Replace placeholder evidence and lower confidence when the source does not support the claim.", "HIGH"),
+        ("relationship_quality_findings", relationship_quality_findings, "Verify complete relationship fields, self-links, and conflicting targets against the source.", "HIGH"),
+        ("duplicate_source_findings", duplicate_source_findings, "Review source ownership conflicts and preserve original attribution until resolved.", "HIGH"),
+        ("evidence_findings", evidence_findings, "Check confidence, evidence text, and page references against the original document.", "HIGH"),
+        ("context_findings", context_findings, "Resolve placeholder or contradictory world/location assignments from source evidence.", "HIGH"),
+        ("candidate_findings", candidate_findings, "Correct malformed or repeated extracted candidates without deleting source evidence.", "REVIEW"),
+        ("repeated_page_findings", repeated_page_findings, "Check repeated page references and confirm they are intentional.", "REVIEW"),
+        ("duplicate_alias_findings", duplicate_alias_findings, "Review repeated aliases and malformed alias values; do not merge entities automatically.", "REVIEW"),
+        ("relationship_provenance_findings", relationship_provenance_findings, "Attach source file, evidence, and page provenance to each relationship.", "HIGH"),
     ]
-    for finding_key, findings, next_step in action_specs:
+    for finding_key, findings, next_step, priority in action_specs:
         if findings:
             actionable_review.append({"finding_group": finding_key, "count": len(findings),
-                                      "priority": "HIGH" if finding_key in {"record_structure_findings", "provenance_findings", "alias_conflicts", "unresolved_relationships"} else "REVIEW",
+                                      "priority": priority,
+                                      "recommended_status": "HOLD_FOR_REVIEW" if priority == "HIGH" else "REVIEW",
                                       "next_step": next_step})
     actionable_review.sort(key=lambda item: (0 if item["priority"] == "HIGH" else 1, -item["count"], item["finding_group"]))
 
@@ -16185,9 +16197,12 @@ def lore_intake_quality_audit(records, graph):
                         score -= 5
                         flags.append("candidate lacks page provenance")
         score = max(0, min(100, score))
+        unique_flags = list(dict.fromkeys(flags))
+        queue_priority = "HIGH" if score < 60 or record.get("duplicate") or unique_flags else "REVIEW"
         queue.append({"file": filename, "score": score,
-                      "priority": "HIGH" if score < 60 or record.get("duplicate") else "REVIEW",
-                      "flags": list(dict.fromkeys(flags)), "kind": record.get("kind", "unmatched"),
+                      "priority": queue_priority,
+                      "recommended_status": "HOLD_FOR_REVIEW" if unique_flags or record.get("unresolved") or record.get("duplicate") else "REVIEW",
+                      "flags": unique_flags, "kind": record.get("kind", "unmatched"),
                       "name": record.get("name", "(unresolved)")})
     queue.sort(key=lambda row: (row["score"], row["file"].casefold()))
     return {
@@ -16218,9 +16233,38 @@ def lore_intake_quality_audit(records, graph):
         "candidate_traceability_findings": candidate_traceability_findings,
         "evidence_quality_findings": evidence_quality_findings,
         "review_summary": {
-            "total_findings": sum(len(items) for items in (entity_structure_findings, relationship_structure_findings, record_structure_findings, provenance_findings, alias_conflicts, unresolved, duplicate_relationship_findings, confidence_findings, entity_kind_name_collisions, ambiguous_relationship_endpoints, source_path_findings, candidate_traceability_findings, evidence_quality_findings)),
+            # Finding-instance total: overlapping findings are intentionally counted in each group.
+            "total_findings": sum(len(items) for items in (
+                invalid_types, unresolved, unique_near_duplicates, provenance_findings, alias_conflicts,
+                relationship_quality_findings, duplicate_source_findings, evidence_findings, context_findings,
+                candidate_findings, confidence_findings, repeated_page_findings, duplicate_alias_findings,
+                relationship_provenance_findings, duplicate_relationship_findings, entity_structure_findings,
+                relationship_structure_findings, record_structure_findings, entity_kind_name_collisions,
+                ambiguous_relationship_endpoints, source_path_findings, candidate_traceability_findings,
+                evidence_quality_findings
+            )),
+            "finding_group_counts": {key: len(items) for key, items in (
+                ("invalid_entity_types", invalid_types), ("unresolved_relationships", unresolved),
+                ("near_duplicate_suggestions", unique_near_duplicates), ("provenance_findings", provenance_findings),
+                ("alias_conflicts", alias_conflicts), ("relationship_quality_findings", relationship_quality_findings),
+                ("duplicate_source_findings", duplicate_source_findings), ("evidence_findings", evidence_findings),
+                ("context_findings", context_findings), ("candidate_findings", candidate_findings),
+                ("confidence_findings", confidence_findings), ("repeated_page_findings", repeated_page_findings),
+                ("duplicate_alias_findings", duplicate_alias_findings),
+                ("relationship_provenance_findings", relationship_provenance_findings),
+                ("duplicate_relationship_findings", duplicate_relationship_findings),
+                ("entity_structure_findings", entity_structure_findings),
+                ("relationship_structure_findings", relationship_structure_findings),
+                ("record_structure_findings", record_structure_findings),
+                ("entity_kind_name_collisions", entity_kind_name_collisions),
+                ("ambiguous_relationship_endpoints", ambiguous_relationship_endpoints),
+                ("source_path_findings", source_path_findings),
+                ("candidate_traceability_findings", candidate_traceability_findings),
+                ("evidence_quality_findings", evidence_quality_findings)
+            )},
             "high_priority_groups": sum(1 for item in actionable_review if item["priority"] == "HIGH"),
             "review_groups": sum(1 for item in actionable_review if item["priority"] == "REVIEW"),
+            "recommended_status": "HOLD_FOR_REVIEW" if any(item["priority"] == "HIGH" for item in actionable_review) else ("REVIEW" if actionable_review else "NO_FINDINGS"),
             "canon_written": False,
         },
         "summary": {
