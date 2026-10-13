@@ -1,6 +1,6 @@
 # ColoringBookFactory
 
-**Current factory version: 36.0**
+**Current factory version: 37.0**
 
 ColoringBookFactory is a Windows-oriented Python application for producing coloring books, organizing world/series lore, preparing marketplace listing drafts, and checking production packages before release.
 
@@ -30,7 +30,7 @@ The main menu includes book creation/import, production, publishing, marketing, 
 4. Use the read-only dashboard to inspect candidates, duplicates, provenance, and unresolved relationships.
 5. Explicitly review and approve candidates before using the separate canon tools.
 
-Unknown or ambiguous matches must remain review items. OCR-derived text is evidence, not canon. The read-only quality audit also flags missing or invalid page provenance, alias conflicts, incomplete relationships, conflicting targets, source files attributed to multiple distinct entities, high-confidence records without evidence, suspicious context placeholders, duplicate extracted candidates, unknown confidence labels, repeated page references, duplicate aliases, missing relationship provenance, and duplicate relationship candidates, malformed entity/relationship/record fields, duplicate canonical entities, aliases colliding with canonical names, and plain-language review actions, cross-kind name collisions, ambiguous relationship endpoints, duplicate source-path references, candidate-level traceability gaps, and placeholder/high-confidence evidence conflicts. Intake staging and diagnostic dashboards should not modify original source files or silently promote candidates into a Series Bible.
+Unknown or ambiguous matches must remain review items. OCR-derived text is evidence, not canon. The read-only quality audit provides complete finding-group counts, advisory hold/review recommendations, and plain-language next steps. It also flags missing or invalid page provenance, alias conflicts, incomplete relationships, conflicting targets, source files attributed to multiple distinct entities, high-confidence records without evidence, suspicious context placeholders, duplicate extracted candidates, unknown confidence labels, repeated page references, duplicate aliases, missing relationship provenance, and duplicate relationship candidates, malformed entity/relationship/record fields, duplicate canonical entities, aliases colliding with canonical names, and plain-language review actions, cross-kind name collisions, ambiguous relationship endpoints, duplicate source-path references, candidate-level traceability gaps, and placeholder/high-confidence evidence conflicts. Intake staging and diagnostic dashboards should not modify original source files or silently promote candidates into a Series Bible.
 
 ### 2. Prepare marketplace listings
 
