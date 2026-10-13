@@ -2,6 +2,13 @@
 
 ## Shipped
 
+### v56.0 — Publishing Readiness and Audit Safety
+- Audits listing drafts for invalid entered prices, duplicate tags/keywords, KDP keyword review thresholds, long titles, and physical-fulfillment language in digital descriptions.
+- Adds per-platform and aggregate content-audit summaries to listing exports.
+- Preserves immutable build snapshots across same-second builds using exclusive file creation and collision suffixes.
+- Adds regression coverage for audit findings and snapshot collision safety.
+
+
 ### v55.0 — Build Cache and Delivery Artifact Integrity
 - Requires complete, internally consistent delivery artifacts before a build can be skipped as cached.
 - Verifies package interior/report identity and checksum manifests when enabled.
