@@ -924,6 +924,40 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(result["extracted_entity_candidates"], extracted["entity_candidates"])
         self.assertEqual(result["extracted_relationships"], extracted["relationships"])
 
+    def test_v30_archive_id_conflicts_are_preserved_for_review(self):
+        names = ["lore_intake_extract_text_entities", "lore_intake_build_evidence_graph"]
+        module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
+        namespace = {"re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        text = (
+            "Ahool\nWinged cryptid\nH.S.N. FILE\nHSN-CR-008\n"
+            "CLASSIFICATION: Aerial\nEND FILE HSN-CR-003\n"
+            "Ahool\nWinged cryptid\nH.S.N. FILE\nHSN-CR-003\n"
+            "CLASSIFICATION: Aerial\nEND FILE HSN-CR-003\n"
+        )
+        extracted = namespace["lore_intake_extract_text_entities"](text)
+        ahool = next(row for row in extracted["entity_candidates"]
+                     if row["kind"] == "creature" and row["name"] == "Ahool")
+        self.assertEqual(ahool["archive_id"], "HSN-CR-008")
+        self.assertIn("HSN-CR-003", {
+            row["archive_id"] for row in ahool.get("archive_id_candidates", [])
+        })
+        self.assertTrue(any("Conflicting archive IDs" in warning
+                            for warning in ahool.get("archive_warnings", [])))
+        graph = namespace["lore_intake_build_evidence_graph"]([{
+            "file": "cryptids.pdf", "kind": "book", "name": "Nightmare Cryptids",
+            "world": "Nightmare World", "location": "Hollow Stitch Nursery",
+            "extracted_entity_candidates": [ahool, {
+                "kind": "creature", "name": "Dover Demon",
+                "archive_id": "HSN-CR-008", "confidence": "LOW",
+            }],
+        }])
+        self.assertTrue(graph["review_only"])
+        self.assertFalse(graph["canon_written"])
+        self.assertTrue(any(row["archive_id"] == "HSN-CR-008"
+                            and set(row["candidate_names"]) == {"ahool", "dover demon"}
+                            for row in graph["archive_id_conflicts"]))
+
     def test_v272_text_extraction_is_empty_safe_and_does_not_promote_canon(self):
         names = ["lore_intake_extract_text_entities"]
         module = ast.Module(body=[self.functions[name][0] for name in names], type_ignores=[])
