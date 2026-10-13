@@ -2,6 +2,13 @@
 
 ## Shipped
 
+### v47.0 — Intake Audit Resilience and Data-Shape Diagnostics
+- Reports malformed top-level records and graph collections as actionable audit findings.
+- Handles malformed source-file list fields without crashing similarity analysis.
+- Normalizes confidence labels and recognizes placeholder evidence in review scoring.
+- Uses linear-time duplicate page counting and adds regression coverage.
+- Preserves review-only, non-mutating, no-canon-write behavior.
+
 ### v46.0 — Non-Destructive OCR Evidence Writes
 - Uses unique per-run OCR evidence paths and no-clobber finalization.
 - Preserves legacy single-batch OCR metadata when creating a multi-batch history.

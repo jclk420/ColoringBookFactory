@@ -1,5 +1,15 @@
 # Changelog
 
+## v47.0 — Intake Audit Resilience and Data-Shape Diagnostics
+
+- Reports non-list record inputs and malformed graph entity/relationship collections instead of silently treating them as empty.
+- Prevents near-duplicate suggestions from crashing when an entity's source-file field has the wrong type.
+- Adds explicit actionable review guidance and summary counts for malformed top-level inputs.
+- Treats placeholder evidence consistently and trims confidence labels before scoring.
+- Replaces quadratic repeated-page counting with a linear-time count pass.
+- Adds runtime regression tests for malformed inputs, input immutability, placeholder evidence, and confidence normalization.
+- Keeps the audit advisory-only: no canon writes, auto-approval, or source-artwork changes.
+
 ## v46.0 — Non-Destructive OCR Evidence Writes
 
 - Gives each OCR run a unique evidence filename, preserving prior files even when the same page range is rerun with identical text.
