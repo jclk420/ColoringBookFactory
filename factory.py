@@ -13403,7 +13403,7 @@ def v56_publishing_release_audit(project=None):
 def publishing_menu():
     while True:
         print("\n" + "=" * 78); print(f"PUBLISH / EXPORT — v{FACTORY_VERSION}"); print("=" * 78)
-        print("1. Publish Current Book\\n2. Platform & Publishing Center\\n3. Rebuild One Platform\\n4. Production Release Center\\n5. Marketing Center\\n6. Open Delivery Folder\\n7. Publishing Release Audit (preflight + package checks)\\n8. Back")
+        print("1. Publish Current Book\n2. Platform & Publishing Center\n3. Rebuild One Platform\n4. Production Release Center\n5. Marketing Center\n6. Open Delivery Folder\n7. Publishing Release Audit (preflight + package checks)\n8. Back")
         c=input("Choose: ").strip()
         if c=="1": cb13_build_and_publish_project()
         elif c=="2": platform_center()
