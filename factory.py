@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 55.0.
+# Current version: 56.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "55.0"
+FACTORY_VERSION = "56.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -3255,17 +3255,38 @@ def write_readiness_report(project, settings, built_pages, kdp_errors, kdp_warni
     return report
 
 
+def save_json_no_clobber(path, data):
+    """Create a JSON audit record only when its destination does not already exist."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    created = False
+    try:
+        with open(path, "x", encoding="utf-8") as stream:
+            created = True
+            json.dump(data, stream, indent=4, ensure_ascii=False, default=str)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    except Exception:
+        if created:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+
 def create_build_snapshot(project, settings, book, images, built_pages, final_pdf):
     """Keep a compact immutable build record so finished books can be audited later."""
     if not settings.get("build_snapshots_enabled", True):
         return None
-    snapshots = project / "BUILD_SNAPSHOTS"
-    snapshots.mkdir(exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = snapshots / f"build_{stamp}.json"
+    snapshots = Path(project) / "BUILD_SNAPSHOTS"
+    snapshots.mkdir(parents=True, exist_ok=True)
+    now = datetime.now()
+    stamp = now.strftime("%Y%m%d-%H%M%S")
     snapshot = {
         "factory_version": FACTORY_VERSION,
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "timestamp": now.isoformat(timespec="seconds"),
         "title": settings.get("title"),
         "settings": settings,
         "manifest": book,
@@ -3273,8 +3294,15 @@ def create_build_snapshot(project, settings, book, images, built_pages, final_pd
         "pages_built": len(built_pages),
         "final_pdf_sha256": artifact_sha256(final_pdf) if Path(final_pdf).exists() else None,
     }
-    save_json(path, snapshot)
-    return path
+    counter = 1
+    while True:
+        suffix = "" if counter == 1 else f"_{counter:02d}"
+        path = snapshots / f"build_{stamp}{suffix}.json"
+        try:
+            save_json_no_clobber(path, snapshot)
+            return path
+        except FileExistsError:
+            counter += 1
 
 # ============================================================
 # COMPLETE BOOK BUILD
@@ -18035,6 +18063,95 @@ def v21_canon_tools_menu():
 
 
 # ============================================================
+# v30.0 — PUBLISHING CONTENT & FIELD AUDIT
+# Advisory validation only; it never invents listing data or publishes products.
+# ============================================================
+
+def v30_listing_content_audit(platform_name, fields, source_keywords=None):
+    """Find common listing-quality risks without changing user-authored content."""
+    fields = fields if isinstance(fields, dict) else {}
+    platform = str(platform_name or "").strip()
+    issues = []
+
+    def issue(key, severity, message):
+        issues.append({"key": key, "severity": severity, "message": message})
+
+    title = ""
+    for key in ("book_title", "product_name", "product_title", "name", "title"):
+        value = fields.get(key)
+        if isinstance(value, str) and value.strip():
+            title = value.strip()
+            break
+    if title:
+        limit = 200 if platform == "KDP" else 140
+        if len(title) > limit:
+            issue("title_length", "warning",
+                  f"Title is {len(title)} characters; review readability and the target platform's current title limits (local review threshold: {limit}).")
+
+    description = ""
+    for key in ("description", "full_description"):
+        value = fields.get(key)
+        if isinstance(value, str) and value.strip():
+            description = value.strip()
+            break
+    if platform in {"Gumroad", "Payhip", "Digital PDF"} and description:
+        physical_terms = re.compile(
+            r"\b(?:paperback|hardcover|physical copy|printed and shipped|shipping included|ships? to you|mailed to you|delivered to your door)\b",
+            re.IGNORECASE,
+        )
+        matches = list(dict.fromkeys(match.group(0).lower() for match in physical_terms.finditer(description)))
+        if matches:
+            issue("digital_physical_language", "warning",
+                  "Digital-download description may imply physical fulfillment (" + ", ".join(matches) + "). Review wording; the factory has not rewritten it.")
+
+    raw_keywords = source_keywords
+    if raw_keywords is None:
+        raw_keywords = next((fields.get(key) for key in ("keywords", "tags", "tags_or_keywords")
+                             if fields.get(key) not in (None, "")), [])
+    if isinstance(raw_keywords, str):
+        keywords = [part.strip() for part in re.split(r"[,\n]", raw_keywords)]
+    elif isinstance(raw_keywords, (list, tuple, set)):
+        keywords = [str(part).strip() for part in raw_keywords]
+    else:
+        keywords = []
+    keywords = [item for item in keywords if item]
+    lowered = [item.casefold() for item in keywords]
+    duplicates = sorted({item for item in lowered if lowered.count(item) > 1})
+    if duplicates:
+        issue("duplicate_keywords", "warning",
+              "Duplicate keywords/tags found: " + ", ".join(duplicates) + ". Remove repeats or keep them only if intentional.")
+    if platform == "KDP":
+        if len(keywords) > 7:
+            issue("kdp_keyword_count", "warning",
+                  f"{len(keywords)} source keywords found; KDP listing preparation uses up to 7 keyword fields. Review which 7 are most relevant.")
+        if any(len(item) > 50 for item in keywords):
+            issue("kdp_keyword_length", "warning",
+                  "One or more KDP keyword phrases exceed the factory's 50-character review threshold.")
+
+    raw_price = next((fields.get(key) for key in ("price", "list_price")
+                      if fields.get(key) not in (None, "")), None)
+    if raw_price is not None:
+        try:
+            price_text = str(raw_price).strip().replace("$", "").replace(",", "")
+            price_value = float(price_text)
+            if not (price_value > 0 and price_value < float("inf")):
+                raise ValueError("price must be positive and finite")
+        except (TypeError, ValueError, OverflowError):
+            issue("invalid_price", "error",
+                  "A price is present but is not a valid positive finite amount. Correct it before using this listing.")
+    errors = sum(1 for item in issues if item["severity"] == "error")
+    return {
+        "schema_version": 1,
+        "platform": platform,
+        "status": "NEEDS_CORRECTION" if errors else ("REVIEW_WARNINGS" if issues else "PASS"),
+        "error_count": errors,
+        "warning_count": sum(1 for item in issues if item["severity"] == "warning"),
+        "issues": issues,
+        "note": "Advisory content checks only. No listing text, price, artwork, or publication state was changed.",
+    }
+
+
+# ============================================================
 # v29.0 — PLATFORM LISTING QUALITY GATE
 # Structured, actionable completeness checks; never invents price or category.
 # ============================================================
@@ -18133,6 +18250,12 @@ def v22_listing_text(data):
             lines.extend(f"{k}: {v}" for k, v in value.items())
         else:
             lines.append(str(value) if value not in (None, "") else "(not set — fill in on the platform)")
+    audit = data.get("content_audit") or {}
+    if audit:
+        lines += ["", f"CONTENT AUDIT: {audit.get('status', 'REVIEW')} — "
+                  f"{audit.get('error_count', 0)} error(s), {audit.get('warning_count', 0)} warning(s)"]
+        for item in audit.get("issues", []):
+            lines.append(f"- {str(item.get('severity', 'warning')).upper()}: {item.get('message', '')}")
     gate = data.get("quality_gate") or {}
     if gate:
         lines += ["", f"QUALITY GATE: {gate.get('status', 'REVIEW')} — {gate.get('score_percent', 0)}% required-field completeness"]
@@ -18302,6 +18425,10 @@ def v22_build_platform_listing(project, platform_name, settings=None):
         status = "BLOCKED_MISSING_MASTER"
     elif not author or not raw_description:
         status = "REVIEW"
+    content_audit = v30_listing_content_audit(platform_name, fields, settings.get("keywords"))
+    warnings.extend(item["message"] for item in content_audit["issues"])
+    if content_audit["error_count"] and status != "BLOCKED_MISSING_MASTER":
+        status = "REVIEW"
     quality_gate = v29_listing_quality_gate(
         platform_name,
         fields,
@@ -18326,6 +18453,7 @@ def v22_build_platform_listing(project, platform_name, settings=None):
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "fields": fields,
         "quality_gate": quality_gate,
+        "content_audit": content_audit,
         "assets": assets,
         "warnings": list(dict.fromkeys(warnings)),
         "published": False,
@@ -18359,6 +18487,9 @@ def v22_build_all_platform_listings(project=None):
             "quality_score": data["quality_gate"]["score_percent"],
             "quality_status": data["quality_gate"]["status"],
             "user_actions": len(data["quality_gate"]["user_actions"]),
+            "content_audit_errors": data.get("content_audit", {}).get("error_count", 0),
+            "content_audit_warnings": data.get("content_audit", {}).get("warning_count", 0),
+            "content_audit_status": data.get("content_audit", {}).get("status", "UNKNOWN"),
             "folder": str(folder),
         })
     report = {
@@ -18370,6 +18501,8 @@ def v22_build_all_platform_listings(project=None):
         "ready_for_review": sum(1 for row in results if row["status"] == "READY_FOR_REVIEW"),
         "review": sum(1 for row in results if row["status"] == "REVIEW"),
         "blocked": sum(1 for row in results if row["status"] == "BLOCKED_MISSING_MASTER"),
+        "content_audit_errors": sum(1 for row in results if row.get("content_audit_errors", 0)),
+        "content_audit_warnings": sum(row.get("content_audit_warnings", 0) for row in results),
         "platforms": results,
         "note": "Listing drafts only. Nothing was uploaded or published; prices, categories, and final claims require user review."
     }
