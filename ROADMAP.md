@@ -2,6 +2,14 @@
 
 ## Shipped
 
+### v54.0 — Resumable Production Queue and Explicit Build Results
+- Makes build outcomes explicit so queue orchestration can distinguish success, cached skips, not-ready builds, and failures.
+- Preserves unsuccessful or missing queue items and persists progress after each successful build.
+- Continues after individual exceptions rather than abandoning or clearing the full queue.
+- Prevents duplicate queue additions and supports queue maintenance when no projects currently exist.
+- Adds runtime regression tests for resume behavior and user-friendly queue handling.
+
+
 ### v53.0 — Restore Safe Production Queue Path Handling
 - Corrects the queue item schema to match production_queue_menu, which stores project paths as strings.
 - Validates each path stays inside the configured Projects folder before queue load/save.
