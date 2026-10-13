@@ -1,5 +1,13 @@
 # Changelog
 
+## v46.0 — Non-Destructive OCR Evidence Writes
+
+- Gives each OCR run a unique evidence filename, preserving prior files even when the same page range is rerun with identical text.
+- Finalizes OCR text with a no-clobber hard link; an existing evidence path is never replaced.
+- Migrates legacy single-batch OCR metadata into retained history before appending a new batch.
+- Removes a newly written text file when the atomic report update fails, preventing orphaned evidence where possible.
+- Adds tests proving existing OCR evidence is preserved and legacy page-range hints remain usable.
+
 ## v45.0 — OCR Source Identity Guard
 
 - Verifies the selected OCR file and its staged intake copy against the recorded source SHA-256 before OCR begins.

@@ -17,7 +17,7 @@ def load_helper(name, namespace):
         raise AssertionError(f"Expected exactly one {name} helper")
     helper_names = {"lore_intake_resolve_recorded_path", "lore_intake_verify_artifact",
                     "lore_intake_audit_ocr_history", "lore_intake_next_ocr_page_start",
-                    "lore_intake_validate_ocr_source"}
+                    "lore_intake_validate_ocr_source", "lore_intake_write_text_atomic"}
     helpers = [node for node in tree.body
                if isinstance(node, ast.FunctionDef) and node.name in helper_names]
     exec(compile(ast.Module(body=helpers, type_ignores=[]), str(FACTORY_PATH), "exec"), namespace)
@@ -90,10 +90,25 @@ class LoreArtifactIntegrityTests(unittest.TestCase):
             overlap = audit(metadata, report, ())
             self.assertEqual(overlap["counts"]["overlapping_ocr_page_ranges"], 1)
 
+    def test_ocr_text_writer_never_overwrites_existing_evidence(self):
+        namespace = {"Path": Path, "tempfile": tempfile, "os": __import__("os")}
+        writer = load_helper("lore_intake_write_text_atomic", namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            existing = Path(temp) / "existing.txt"
+            existing.write_text("original evidence\n", encoding="utf-8")
+            with self.assertRaises(FileExistsError):
+                writer(existing, "replacement evidence")
+            self.assertEqual(existing.read_text(encoding="utf-8"), "original evidence\n")
+            fresh = Path(temp) / "fresh.txt"
+            writer(fresh, "new evidence")
+            self.assertEqual(fresh.read_text(encoding="utf-8"), "new evidence\n")
+
     def test_next_ocr_start_uses_highest_saved_range(self):
         namespace = {"Path": Path}
         next_start = load_helper("lore_intake_next_ocr_page_start", namespace)
         self.assertEqual(next_start({}), 1)
+        self.assertEqual(next_start({"ocr_page_start": 1, "ocr_page_limit": 10,
+                                     "ocr_page_end_requested": 10}), 11)
         self.assertEqual(next_start({"ocr_batches": [
             {"page_start": 1, "page_limit": 10, "page_end_requested": 10},
             {"page_start": 11, "page_limit": 10, "page_end_requested": 20},

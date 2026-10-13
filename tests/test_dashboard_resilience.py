@@ -18,8 +18,8 @@ class DashboardResilienceTests(unittest.TestCase):
         cls.dashboard = ast.get_source_segment(cls.source, matches[0])
 
     def test_factory_version_is_consistent(self):
-        self.assertIn('FACTORY_VERSION = "45.0"', self.source)
-        self.assertIn("# Current version: 45.0.", self.source)
+        self.assertIn('FACTORY_VERSION = "46.0"', self.source)
+        self.assertIn("# Current version: 46.0.", self.source)
 
     def test_malformed_manifest_batches_are_reported_and_returned_safely(self):
         self.assertIn('manifest_batches_wrong_type', self.dashboard)
@@ -82,6 +82,15 @@ class DashboardResilienceTests(unittest.TestCase):
         self.assertIn("lore_intake_validate_ocr_source", self.source)
         self.assertIn("Source integrity changed during OCR", self.source)
         self.assertIn("No OCR evidence or intake metadata was attached.", self.source)
+
+    def test_ocr_evidence_writer_is_no_clobber_and_legacy_history_is_preserved(self):
+        writer_start = self.source.index("def lore_intake_write_text_atomic(")
+        writer_end = self.source.index("\ndef lore_intake_inspect_file", writer_start)
+        writer = self.source[writer_start:writer_end]
+        self.assertIn("os.link(str(temp_path), str(path))", writer)
+        self.assertNotIn("os.replace(str(temp_path), str(path))", writer)
+        self.assertIn('"ocr_generated_at", "legacy"', self.source)
+        self.assertIn('Could not update the intake report', self.source)
 
     def test_dashboard_remains_read_only(self):
         self.assertIn("READ ONLY", self.dashboard)
