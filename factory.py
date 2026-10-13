@@ -14286,6 +14286,15 @@ def lore_intake_extract_text_entities(text):
         return result
 
     lines = [re.sub(r"\s+", " ", raw).strip(" \t-•") for raw in text.splitlines()]
+    # Keep page markers as provenance instead of treating them as candidate names.
+    line_pages = []
+    active_page = None
+    for raw_line in lines:
+        page_match = re.search(r"\[(?:OCR|PDF TEXT) PAGE\s+(\d+)\]", raw_line, re.IGNORECASE)
+        if page_match:
+            active_page = int(page_match.group(1))
+        line_pages.append(active_page)
+    current_source_pages = []
     seen_entities = set()
     seen_relationships = set()
     current_creature = ""
@@ -14303,6 +14312,7 @@ def lore_intake_extract_text_entities(text):
             "kind": kind, "name": name, "source": "pdf_text",
             "evidence": evidence, "confidence": "LOW",
             "note": "Text-derived candidate; verify before approval",
+            "source_pages": list(current_source_pages),
         }
         if aliases:
             row["aliases"] = [str(alias).strip() for alias in aliases if str(alias).strip()]
@@ -14323,6 +14333,7 @@ def lore_intake_extract_text_entities(text):
             "object": object_name, "source": "pdf_text", "evidence": evidence,
             "confidence": "LOW",
             "note": "Textual relationship candidate; verify before approval",
+            "source_pages": list(current_source_pages),
         })
         seen_relationships.add(key)
 
@@ -14331,13 +14342,16 @@ def lore_intake_extract_text_entities(text):
             return True
         if re.fullmatch(r"(?:\[?(?:OCR|PDF TEXT) PAGE \d+\]?|H\.?\s*S\.?\s*N\.?\s*FILE.*|HSN[- ]?CR[- ]?[0-9O]{3}|NIGHTMARE CRYPTIDS.*|HOLLOW STITCH.*|ARCHIVE COPY.*|END FILE.*|\d{1,3}|PAGE \d+)", line, re.I):
             return True
-        if re.fullmatch(r"(?:CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE)", line, re.I):
+        if re.fullmatch(r"(?:CLASSIFICATION|THREAT LEVEL|ORIGIN|DOCUMENTED ABILITY|OBSERVED WEAKNESS|STATUS|LEGEND|HOLLOW STITCH RECORD|NURSERY DIRECTIVE|CONTENTS|TABLE OF CONTENTS|INTRODUCTION|HOW TO USE THIS BOOK|COLORING TEST PAGE|COPYRIGHT|DEDICATION|ABOUT THE AUTHOR|CLOSING FILE|ARCHIVE INDEX)", line, re.I):
+            return True
+        if re.match(r"^(?:ISBN|WWW\.|HTTPS?://|COPYRIGHT\s|ALL RIGHTS RESERVED|PRINTED IN )", line, re.I):
             return True
         return False
 
     # Preserve the original explicit-label parser for documents that use labels such
     # as "Creature: ..." or "Location: ...".
     for index, line in enumerate(lines):
+        current_source_pages = [line_pages[index]] if line_pages[index] is not None else []
         if not line or len(line) > 180:
             continue
         creature_match = re.match(
@@ -14369,6 +14383,7 @@ def lore_intake_extract_text_entities(text):
     # followed by a record ID and labeled metadata. OCR often confuses O with 0.
     archive_id_pattern = re.compile(r"HSN[- ]?CR[- ]?([0-9O]{3})", re.IGNORECASE)
     for index, line in enumerate(lines):
+        current_source_pages = [line_pages[index]] if line_pages[index] is not None else []
         # OCR may put the ID on an "HSN. FILE ..." line; ignore closing markers.
         if re.match(r"^END\s+FILE\b", line, re.IGNORECASE):
             continue
@@ -14405,7 +14420,9 @@ def lore_intake_extract_text_entities(text):
         if canonical.casefold() in {
             "table of contents", "the hollow stitch nursery", "department of unnatural fauna",
             "recovered archive", "how to read the files", "archivist notice",
-        }:
+            "contents", "introduction", "how to use this book", "coloring test page",
+            "copyright", "dedication", "about the author", "closing file", "archive index",
+        } or re.match(r"^(?:ISBN|COPYRIGHT|ALL RIGHTS RESERVED|NIGHTMARE WORLD|A HORROR COLORING)", canonical, re.I):
             continue
         current_creature = canonical
         creature_row = add_entity(
@@ -14450,6 +14467,22 @@ def lore_intake_extract_text_entities(text):
                 end_id = "HSN-CR-" + re.search(r"([0-9O]{3})$", end_match.group(1), re.IGNORECASE).group(1).upper().replace("O", "0")
                 if end_id != archive_id:
                     archive_warnings.append("Mismatched closing archive ID: " + end_id + " (expected " + archive_id + ")")
+                    # A closing ID is also source evidence. Preserve it as an
+                    # alternative candidate so cross-creature collisions can be
+                    # surfaced by the evidence graph instead of being hidden
+                    # inside a warning string.
+                    alternatives = creature_row.setdefault("archive_id_candidates", [])
+                    known_ids = {str(row.get("archive_id", "")).upper()
+                                 for row in alternatives if isinstance(row, dict)}
+                    known_ids.add(str(creature_row.get("archive_id") or "").upper())
+                    if end_id not in known_ids:
+                        alternatives.append({
+                            "archive_id": end_id,
+                            "evidence": field_line,
+                            "confidence": "LOW",
+                            "review_required": True,
+                            "source_role": "closing_marker",
+                        })
                 break
             if archive_id_pattern.search(field_line):
                 break
@@ -14471,11 +14504,28 @@ def lore_intake_extract_text_entities(text):
                     if label == "ORIGIN":
                         add_relationship(current_creature, "reported_origin", "origin", value,
                                          "ORIGIN | " + value + " | " + archive_id)
+                    elif label == "DOCUMENTED ABILITY":
+                        add_relationship(current_creature, "has_reported_ability", "ability", value,
+                                         "DOCUMENTED ABILITY | " + value + " | " + archive_id)
+                    elif label == "OBSERVED WEAKNESS":
+                        add_relationship(current_creature, "has_reported_weakness", "weakness", value,
+                                         "OBSERVED WEAKNESS | " + value + " | " + archive_id)
             field_index += 1
         if archive_fields:
             creature_row["archive_fields"] = archive_fields
         if archive_warnings:
-            creature_row["archive_warnings"] = archive_warnings
+            existing_warnings = creature_row.setdefault("archive_warnings", [])
+            for warning in archive_warnings:
+                if warning not in existing_warnings:
+                    existing_warnings.append(warning)
+        # Capture page numbers for all metadata evidence lines, not only the ID line.
+        archive_pages = sorted({line_pages[pos] for pos in range(index, min(field_index + 1, len(lines)))
+                                if line_pages[pos] is not None})
+        existing_pages = creature_row.setdefault("source_pages", [])
+        for page_number in archive_pages:
+            if page_number not in existing_pages:
+                existing_pages.append(page_number)
+        existing_pages.sort()
 
     return result
 
@@ -15296,7 +15346,7 @@ def lore_intake_build_evidence_graph(records):
         return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
 
     def add_entity(kind, name, world, location, source_file, confidence, evidence,
-                   archive_id="", archive_fields=None, aliases=None):
+                   archive_id="", archive_fields=None, aliases=None, source_pages=None):
         name = str(name or "").strip()
         key_name = norm(name)
         if not key_name:
@@ -15310,12 +15360,16 @@ def lore_intake_build_evidence_graph(records):
             "archive_id": str(archive_id or ""),
             "confidence": str(confidence or "LOW"),
             "source_files": [], "evidence": [], "aliases": [],
-            "archive_fields": {},
+            "source_pages": [], "archive_fields": {},
         })
         if source_file and source_file not in row["source_files"]:
             row["source_files"].append(source_file)
         if evidence and evidence not in row["evidence"]:
             row["evidence"].append(evidence)
+        for page_number in source_pages if isinstance(source_pages, list) else []:
+            if page_number not in row["source_pages"]:
+                row["source_pages"].append(page_number)
+        row["source_pages"].sort()
         if str(confidence or "LOW").upper() == "HIGH":
             row["confidence"] = "HIGH"
         for alias in aliases if isinstance(aliases, list) else []:
@@ -15353,7 +15407,7 @@ def lore_intake_build_evidence_graph(records):
                        candidate.get("confidence", "LOW"),
                        candidate.get("evidence") or candidate.get("source") or "extracted text",
                        candidate.get("archive_id"), candidate.get("archive_fields"),
-                       candidate.get("aliases"))
+                       candidate.get("aliases"), candidate.get("source_pages"))
             # Include alternative OCR IDs in conflict detection without choosing
             # a winner or changing the candidate's primary ID.
             for alternate in candidate.get("archive_id_candidates", []):
@@ -15380,13 +15434,17 @@ def lore_intake_build_evidence_graph(records):
                 "subject": subject, "relation": relation,
                 "object_kind": link.get("object_kind") or "entity", "object": obj,
                 "confidence": str(link.get("confidence") or "LOW"),
-                "source_files": [], "evidence": [],
+                "source_files": [], "evidence": [], "source_pages": [],
             })
             if source_file not in row["source_files"]:
                 row["source_files"].append(source_file)
             evidence = str(link.get("evidence") or "").strip()
             if evidence and evidence not in row["evidence"]:
                 row["evidence"].append(evidence)
+            for page_number in link.get("source_pages", []) if isinstance(link.get("source_pages"), list) else []:
+                if page_number not in row["source_pages"]:
+                    row["source_pages"].append(page_number)
+            row["source_pages"].sort()
 
     entity_rows = sorted(entities.values(), key=lambda row: (row["kind"].casefold(), row["name"].casefold()))
     relationship_rows = sorted(relationships.values(), key=lambda row: (row["subject"].casefold(), row["relation"], row["object"].casefold()))
@@ -15514,6 +15572,14 @@ def lore_intake_review_dashboard():
             print(f"  Text candidate (LOW confidence): {candidate.get('kind', 'entity')} '{candidate.get('name', '')}' — verify manually")
         for relationship in row["extracted_relationships"][:8]:
             print(f"  Relationship candidate (LOW confidence): {relationship.get('subject', '')} — {relationship.get('relation', '')} — {relationship.get('object', '')}")
+    if graph["archive_id_conflicts"]:
+        print("\nARCHIVE-ID CONFLICT DETAILS — REVIEW REQUIRED")
+        for conflict in graph["archive_id_conflicts"]:
+            print(f"  {conflict['archive_id']}: " + ", ".join(conflict["candidate_names"]))
+    if graph["unresolved_relationships"]:
+        print("\nUNRESOLVED RELATIONSHIP DETAILS — REVIEW REQUIRED")
+        for link in graph["unresolved_relationships"][:12]:
+            print(f"  {link['subject']} — {link['relation']} — {link['object']}")
     print("\nRead-only dashboard: no manifest, source file, registry, or canon was changed.")
     return summary
 

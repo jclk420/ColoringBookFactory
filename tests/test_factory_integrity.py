@@ -1149,6 +1149,10 @@ END FILE HSN-CR-003
         self.assertEqual(creature["archive_fields"]["observed_weakness"], "Silence")
         self.assertTrue(any("Mismatched closing archive ID: HSN-CR-003" in warning
                             for warning in creature.get("archive_warnings", [])))
+        self.assertTrue(any(row.get("archive_id") == "HSN-CR-003" and
+                            row.get("source_role") == "closing_marker" and
+                            row.get("review_required") is True
+                            for row in creature.get("archive_id_candidates", [])))
         self.assertEqual(creature["confidence"], "LOW")
         self.assertIn("verify before approval", creature["note"])
 
@@ -1221,6 +1225,52 @@ END FILE HSN-CR-003
         self.assertIn('"canon_written": False', segment)
 
 
+
+
+    def test_v30_bundle_tracks_page_provenance_and_archive_metadata_relationships(self):
+        node = self.functions["lore_intake_extract_text_entities"][0]
+        module = ast.Module(body=[node], type_ignores=[])
+        namespace = {"re": re}
+        exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+        sample = """[OCR PAGE 8]
+AHOOL
+The Winged Terror
+H.S.N. FILE HSN-CR-008
+ORIGIN Remote mountain caves
+DOCUMENTED ABILITY Sonic cry
+OBSERVED WEAKNESS Bright light
+END FILE HSN-CR-003
+[OCR PAGE 9]
+DOVER DEMON
+The Dover Entity
+H.S.N. FILE HSN-CR-008
+END FILE HSN-CR-008
+"""
+        result = namespace["lore_intake_extract_text_entities"](sample)
+        ahool = next(row for row in result["entity_candidates"] if row["name"] == "AHOOL")
+        self.assertEqual(ahool["source_pages"], [8])
+        relations = result["relationships"]
+        self.assertTrue(any(row["relation"] == "reported_origin" and row["source_pages"] == [8]
+                            for row in relations))
+        self.assertTrue(any(row["relation"] == "has_reported_ability" for row in relations))
+        self.assertTrue(any(row["relation"] == "has_reported_weakness" for row in relations))
+        self.assertTrue(any(row.get("source_role") == "closing_marker"
+                            and row.get("archive_id") == "HSN-CR-003"
+                            for row in ahool.get("archive_id_candidates", [])))
+        graph_node = self.functions["lore_intake_build_evidence_graph"][0]
+        graph_module = ast.Module(body=[graph_node], type_ignores=[])
+        graph_ns = {"re": re}
+        exec(compile(graph_module, str(FACTORY_PATH), "exec"), graph_ns)
+        graph = graph_ns["lore_intake_build_evidence_graph"]([{
+            "file": "cryptids.pdf", "kind": "book", "name": "Nightmare Cryptids",
+            "extracted_entity_candidates": result["entity_candidates"],
+            "extracted_relationships": relations,
+        }])
+        self.assertTrue(any(row["archive_id"] == "HSN-CR-008"
+                            and {name.casefold() for name in row["candidate_names"]} >= {"ahool", "dover demon"}
+                            for row in graph["archive_id_conflicts"]))
+        self.assertFalse(graph["canon_written"])
+        self.assertEqual(next(row for row in graph["entities"] if row["name"] == "AHOOL")["source_pages"], [8])
 
 
 if __name__ == "__main__":
