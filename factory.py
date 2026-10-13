@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 40.0.
+# Current version: 41.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "40.0"
+FACTORY_VERSION = "41.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -14789,6 +14789,32 @@ def lore_intake_sha256(path):
     return digest.hexdigest()
 
 
+def lore_intake_write_text_atomic(path, text):
+    """Atomically persist OCR evidence text without touching the source or canon."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="\n", dir=str(path.parent),
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as stream:
+            temp_path = Path(stream.name)
+            stream.write(str(text))
+            if not str(text).endswith("\n"):
+                stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(str(temp_path), str(path))
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 
 def lore_intake_inspect_file(path, max_text_chars=6000):
     """Return lightweight file metadata; PDF text extraction is optional and best-effort."""
@@ -15274,6 +15300,22 @@ def lore_intake_ocr_pending_file():
         print(f"File not found: {source}")
         return {"status": "ERROR", "attached": False}
 
+    # PDF OCR can be split into repeatable, non-overlapping page ranges.
+    page_limit = 1 if source.suffix.casefold() != ".pdf" else 10
+    ocr_start_page = 1
+    if source.suffix.casefold() == ".pdf":
+        raw_limit = input("PDF OCR page limit (1-25) [10]: ").strip()
+        raw_start = input("First PDF page for this batch [1]: ").strip()
+        try:
+            page_limit = int(raw_limit) if raw_limit else 10
+            ocr_start_page = int(raw_start) if raw_start else 1
+        except ValueError:
+            print("Page limit and start page must be whole numbers. No intake record was changed.")
+            return {"status": "ERROR", "attached": False}
+        if not 1 <= page_limit <= 25 or ocr_start_page < 1:
+            print("Page limit must be 1-25 and the first page must be 1 or greater. No intake record was changed.")
+            return {"status": "ERROR", "attached": False}
+
     manifest_path = INTAKE_DIR / INTAKE_MANIFEST_FILENAME
     if not manifest_path.exists():
         print("No intake manifest exists yet. Run Lore Intake first.")
@@ -15316,19 +15358,40 @@ def lore_intake_ocr_pending_file():
         return {"status": "REVIEW", "attached": False, "matches": len(matches)}
 
     try:
-        from lore_ocr import lore_ocr_extract_text
+        from lore_ocr import lore_ocr_extract_text, lore_ocr_select_page_range
     except Exception as error:
         print(f"OCR helper unavailable: {error}")
         return {"status": "UNAVAILABLE", "attached": False}
-    ocr = lore_ocr_extract_text(source)
+    ocr = lore_ocr_extract_text(source, page_limit=page_limit, ocr_start_page=ocr_start_page)
     if ocr.get("status") != "REVIEW":
         print(f"OCR did not run: {ocr.get('status')}")
         for warning in ocr.get("warnings", []):
             print(f"  Warning: {warning}")
         return {"status": ocr.get("status", "ERROR"), "attached": False, "warnings": ocr.get("warnings", [])}
 
-    extracted = lore_intake_extract_text_entities(ocr.get("text", ""))
     report_path, report, item = matches[0]
+    batch_text = lore_ocr_select_page_range(
+        ocr.get("text", ""), ocr_start_page, page_limit
+    )
+    # Keep each OCR batch's extracted text beside its report, with the page range
+    # and source digest in the filename so later batches cannot overwrite it.
+    source_digest = str(item.get("sha256") or lore_intake_sha256(source))[:8]
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", source.stem).strip("._-")[:60] or "source"
+    page_end = ocr_start_page + page_limit - 1
+    text_path = report_path.parent / (
+        f"OCR_TEXT_{safe_stem}_{source_digest}_P{ocr_start_page}-{page_end}.txt"
+    )
+    try:
+        lore_intake_write_text_atomic(text_path, batch_text)
+    except OSError as error:
+        print(f"Could not safely save OCR evidence text: {error}")
+        print("The intake report was not changed.")
+        return {"status": "ERROR", "attached": False, "text_saved": False}
+    ocr["text"] = batch_text
+    ocr["batch_pages_processed"] = len(re.findall(
+        r"(?m)^\[(?:PDF TEXT|OCR) PAGE \d+\]$", batch_text
+    ))
+    extracted = lore_intake_extract_text_entities(batch_text)
     classification = item.get("classification") if isinstance(item.get("classification"), dict) else {}
     old_entities = classification.get("extracted_entity_candidates", [])
     old_relationships = classification.get("extracted_relationships", [])
@@ -15370,7 +15433,14 @@ def lore_intake_ocr_pending_file():
     item["classification"] = classification
     metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
     metadata["ocr_status"] = "REVIEW"
-    metadata["ocr_pages_processed"] = ocr.get("pages_processed", 0)
+    metadata["ocr_pages_processed"] = ocr.get("batch_pages_processed", 0)
+    metadata["ocr_pages_total_detected"] = ocr.get("pages_processed", 0)
+    metadata["ocr_page_start"] = ocr_start_page
+    metadata["ocr_page_limit"] = page_limit
+    metadata["ocr_page_end_requested"] = page_end
+    metadata["ocr_text_path"] = str(text_path)
+    metadata["ocr_text_characters"] = len(batch_text)
+    metadata["ocr_text_sha256"] = sha256(batch_text.encode("utf-8")).hexdigest()
     metadata["ocr_warnings"] = ocr.get("warnings", [])
     metadata["ocr_confidence"] = "LOW"
     metadata["ocr_candidate_summary"] = {
@@ -15387,7 +15457,9 @@ def lore_intake_ocr_pending_file():
     save_json(report_path, report)
 
     print("\nOCR review results attached to the pending intake record.")
-    print(f"Pages processed: {ocr.get('pages_processed', 0)}")
+    print(f"Pages in this OCR batch: {ocr.get('batch_pages_processed', 0)}")
+    print(f"Requested page range: {ocr_start_page}-{page_end}")
+    print(f"Extracted text saved: {text_path}")
     print(f"New entity candidates added: {len(added_entities)}")
     print(f"New relationship candidates added: {len(added_relationships)}")
     print(f"Duplicate entity candidates skipped: {len(incoming_entities) - len(added_entities)}")
@@ -15400,7 +15472,10 @@ def lore_intake_ocr_pending_file():
             "extracted_relationships": len(incoming_relationships),
             "duplicates_skipped": (len(incoming_entities) - len(added_entities)) +
                                   (len(incoming_relationships) - len(added_relationships)),
-            "pages_processed": ocr.get("pages_processed", 0)}
+            "pages_processed": ocr.get("batch_pages_processed", 0),
+            "page_start": ocr_start_page, "page_limit": page_limit,
+            "text_path": str(text_path), "text_characters": len(batch_text),
+            "text_sha256": sha256(batch_text.encode("utf-8")).hexdigest()}
 
 
 def lore_intake_build_evidence_graph(records):

@@ -163,6 +163,24 @@ class LoreOCRTests(unittest.TestCase):
         self.assertEqual(result["status"], "ERROR")
         self.assertIn("ocr_start_page", result["warnings"][0])
 
+    def test_page_range_selects_only_requested_labeled_pages(self):
+        text = (
+            "[PDF TEXT PAGE 1]\nfirst page\n\n"
+            "[OCR PAGE 2]\nsecond page\n\n"
+            "[PDF TEXT PAGE 3]\nthird page\n\n"
+            "[OCR PAGE 4]\nfourth page"
+        )
+        self.assertEqual(
+            lore_ocr.lore_ocr_select_page_range(text, 2, 2),
+            "[OCR PAGE 2]\nsecond page\n\n[PDF TEXT PAGE 3]\nthird page",
+        )
+
+    def test_page_range_rejects_invalid_limits(self):
+        with self.assertRaises(ValueError):
+            lore_ocr.lore_ocr_select_page_range("[OCR PAGE 1]\ntext", 0, 10)
+        with self.assertRaises(ValueError):
+            lore_ocr.lore_ocr_select_page_range("[OCR PAGE 1]\ntext", 1, 26)
+
     def test_capabilities_are_read_only_and_well_shaped(self):
         result = lore_ocr.lore_ocr_capabilities()
         self.assertIn("tesseract", result)

@@ -1,5 +1,14 @@
 # Changelog
 
+## v41.0 — OCR Evidence Provenance and Batch Safety
+
+- Saves OCR/native-text evidence to a separate page-range-specific text file beside the matching intake report.
+- Records the text path, page range, selected-page count, character count, and SHA-256 digest in report metadata.
+- Adds optional PDF batch page-limit/start prompts with bounded validation and non-overlapping range support.
+- Parses candidates only from the selected page range, preventing unrelated pages from leaking into a partial-batch candidate set.
+- Uses atomic text writes; failed evidence persistence leaves the intake report unchanged.
+- Adds page-range helper regression tests and preserves review-only, no-canon-write behavior.
+
 ## v40.0 — Comprehensive Intake Integrity Diagnostics
 
 - Adds separate warnings for malformed classification and metadata fields.

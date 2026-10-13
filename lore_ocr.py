@@ -319,6 +319,25 @@ def _render_pdf_pages(path: Path, *, page_limit: int, dpi: int) -> list[Any]:
     return pages
 
 
+def lore_ocr_select_page_range(text: str, start_page: int, page_limit: int) -> str:
+    """Return only explicitly page-labeled OCR/native-text blocks in a requested 1-based range."""
+    import re
+
+    if not isinstance(start_page, int) or isinstance(start_page, bool) or start_page < 1:
+        raise ValueError("start_page must be a positive 1-based page number")
+    if not isinstance(page_limit, int) or isinstance(page_limit, bool) or not 1 <= page_limit <= MAX_PAGE_LIMIT:
+        raise ValueError(f"page_limit must be an integer from 1 to {MAX_PAGE_LIMIT}")
+    end_page = start_page + page_limit - 1
+    pattern = re.compile(
+        r"(?ms)^\[(?:PDF TEXT|OCR) PAGE (\d+)\]\n.*?(?=^\[(?:PDF TEXT|OCR) PAGE \d+\]\n|\Z)"
+    )
+    return "\n\n".join(
+        match.group(0).rstrip()
+        for match in pattern.finditer(str(text or ""))
+        if start_page <= int(match.group(1)) <= end_page
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Small standalone entry point for testing OCR before factory integration."""
     import argparse
@@ -336,19 +355,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.output:
         output_path = Path(args.output)
-        import re
-        output_path = Path(args.output)
-        page_blocks = re.finditer(
-            r"(?ms)^\[(?:PDF TEXT|OCR) PAGE (\d+)\]\n.*?(?=^\[(?:PDF TEXT|OCR) PAGE \d+\]\n|\Z)",
-            result["text"],
-        )
-        batch_text = "\n\n".join(
-            match.group(0).rstrip()
-            for match in page_blocks
-            if args.ocr_start <= int(match.group(1)) < args.ocr_start + args.pages
-        )
+        batch_text = lore_ocr_select_page_range(result["text"], args.ocr_start, args.pages)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(batch_text, encoding="utf-8")
         summary = {key: value for key, value in result.items() if key != "text"}
+        summary["text_output_path"] = str(output_path)
+        summary["text_characters"] = len(batch_text)
         print(json.dumps(summary, indent=2, ensure_ascii=False))
     else:
         print(json.dumps(result, indent=2, ensure_ascii=False))

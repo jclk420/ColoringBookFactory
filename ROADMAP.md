@@ -2,6 +2,12 @@
 
 ## Shipped
 
+### v41.0 — OCR Evidence Provenance and Batch Safety
+- Persists extracted text separately with a source digest and explicit page-range filename.
+- Records page-range, text-path, character-count, and digest provenance in the pending report.
+- Adds validated page-range selection and atomic evidence-text writes.
+- Keeps OCR evidence low-confidence and review-only; no approval, source rewrite, or canon write occurs.
+
 ### v40.0 — Comprehensive Intake Integrity Diagnostics
 - Adds separate counts for malformed classification and metadata objects.
 - Counts invalid entity/relationship candidate entries, unknown statuses, missing source paths, and malformed evidence collections.
