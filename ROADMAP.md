@@ -6,6 +6,8 @@
 - Detects JSON/text platform and product-title mismatches before users rely on paste-ready listing text.
 - Adds audit counts and actionable findings to the aggregate listing readiness report and console output.
 - Adds isolated regression tests for passing artifacts, mismatches, malformed files, and non-mutation.
+- Flags missing/empty platform-specific fields for review, while keeping prices/categories as user decisions rather than invented values.
+- Adds a top-level draft review gate; consistency PASS does not mean publication approval.
 - Preserves existing listing-generation behavior; the audit never repairs or rewrites listing artifacts.
 
 ### v58.0 — Publishing Content Audit & Snapshot Safety
