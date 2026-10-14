@@ -1,3 +1,8 @@
+### v58.0 — Publishing Content Audit & Snapshot Safety
+- Restores advisory checks for price validity, duplicate keywords/tags, title length, KDP keyword thresholds, and digital listings that imply physical delivery.
+- Surfaces audit results in listing drafts and aggregate readiness reports without rewriting user content.
+- Prevents build snapshot collisions from overwriting earlier records.
+
 # Coloring Book Factory — Upgrade Roadmap
 
 ## Shipped
