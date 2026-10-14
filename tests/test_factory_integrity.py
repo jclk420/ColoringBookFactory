@@ -27,7 +27,7 @@ class FactoryIntegrityTests(unittest.TestCase):
         match = re.search(r'^FACTORY_VERSION\s*=\s*["\']([^"\']+)["\']', self.source, re.M)
         self.assertIsNotNone(match, "FACTORY_VERSION must be declared")
         self.assertRegex(match.group(1), r"^\d+\.\d+$")
-        self.assertIn('FACTORY_VERSION = "59.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "60.0"', self.source)
 
     def test_listing_quality_gate_is_registered_once(self):
         self.assertEqual(
