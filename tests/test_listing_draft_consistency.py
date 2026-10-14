@@ -41,7 +41,7 @@ def write_listing(root, platform="KDP", title="Test Book"):
         "platform": platform,
         "title": title,
         "status": "REVIEW",
-        "fields": {"book_title": title},
+        "fields": {"book_title": title, "author": "J.A.C.", "description": "A horror coloring book.", "keywords": ["horror", "coloring"], "language": "English", "print_options": {"trim_size": "8.5 x 11 in"}},
         "quality_gate": {"status": "NEEDS_INPUT", "checks": [], "user_actions": []},
     }
     (folder / "LISTING.json").write_text(json.dumps(data), encoding="utf-8")
@@ -86,6 +86,22 @@ class ListingDraftConsistencyTests(unittest.TestCase):
         self.assertEqual(report["status"], "BLOCKED")
         self.assertIn("TEXT_TITLE_MISMATCH", codes)
         self.assertIn("TEXT_PLATFORM_MISMATCH", codes)
+
+    def test_empty_required_field_is_flagged_for_review(self):
+        folder = write_listing(self.root)
+        data_path = folder / "LISTING.json"
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data["fields"]["author"] = "   "
+        data_path.write_text(json.dumps(data), encoding="utf-8")
+
+        report = self.audit(self.root, ["KDP"])
+        matches = [
+            item for item in report["findings"]
+            if item["code"] == "INCOMPLETE_FIELD" and "'author'" in item["message"]
+        ]
+
+        self.assertEqual(report["status"], "REVIEW")
+        self.assertEqual(len(matches), 1)
 
     def test_missing_and_malformed_artifacts_are_reported_without_repair(self):
         folder = self.root / "Gumroad"
