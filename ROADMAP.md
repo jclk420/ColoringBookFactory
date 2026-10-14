@@ -5,10 +5,6 @@
 - Surfaces audit results in listing drafts and aggregate readiness reports without rewriting user content.
 - Prevents build snapshot collisions from overwriting earlier records.
 
-# Coloring Book Factory — Upgrade Roadmap
-
-
-
 ## Shipped
 
 ### v55.0 — Build Cache and Delivery Artifact Integrity
