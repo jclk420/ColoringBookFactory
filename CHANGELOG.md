@@ -7,6 +7,8 @@
 - Detects platform-header and product-title mismatches between JSON and text drafts.
 - Adds consistency status, error/warning counts, and detailed findings to `LISTING_READINESS.json`.
 - Prints actionable consistency findings after listing generation and adds regression tests for clean, mismatched, malformed, and non-mutating cases.
+- Flags missing or empty platform-specific listing fields for review while leaving deliberate price/category decisions blank; a consistency PASS is not publication approval.
+- Adds a top-level draft review gate and a regression test for incomplete required fields.
 - Does not upload, publish, infer metadata, or repair user listing content.
 
 
