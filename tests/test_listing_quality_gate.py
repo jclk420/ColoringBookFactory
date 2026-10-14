@@ -3,6 +3,7 @@ import ast
 import datetime as datetime_module
 import json
 import pathlib
+import re
 import tempfile
 import unittest
 
@@ -74,10 +75,10 @@ class ListingQualityGateTests(unittest.TestCase):
         nodes = {
             node.name: node for node in tree.body
             if isinstance(node, ast.FunctionDef) and node.name in {
-                "v29_listing_quality_gate", "v22_build_platform_listing"
+                "v30_listing_content_audit", "v29_listing_quality_gate", "v22_build_platform_listing"
             }
         }
-        self.assertEqual(set(nodes), {"v29_listing_quality_gate", "v22_build_platform_listing"})
+        self.assertEqual(set(nodes), {"v30_listing_content_audit", "v29_listing_quality_gate", "v22_build_platform_listing"})
         import datetime
         import tempfile
 
@@ -86,6 +87,7 @@ class ListingQualityGateTests(unittest.TestCase):
             master.write_bytes(b"test placeholder")
             namespace = {
                 "Path": pathlib.Path,
+                "re": re,
                 "datetime": datetime.datetime,
                 "FACTORY_VERSION": "30.0",
                 "GUMROAD_DEFAULT_LICENSE": "Personal use only.",
@@ -97,6 +99,8 @@ class ListingQualityGateTests(unittest.TestCase):
                 "_platform_cover": lambda project: None,
                 "load_platform_profiles": lambda: {"Payhip": {"enabled": True}},
             }
+            audit_module = ast.Module(body=[nodes["v30_listing_content_audit"]], type_ignores=[])
+            exec(compile(audit_module, "<listing-audit>", "exec"), namespace)
             helper_module = ast.Module(body=[nodes["v29_listing_quality_gate"]], type_ignores=[])
             exec(compile(helper_module, "<listing-gate>", "exec"), namespace)
             builder_module = ast.Module(body=[nodes["v22_build_platform_listing"]], type_ignores=[])
@@ -123,6 +127,7 @@ class ListingQualityGateTests(unittest.TestCase):
         source = FACTORY_PATH.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(FACTORY_PATH))
         wanted = {
+            "v30_listing_content_audit",
             "v29_listing_quality_gate",
             "v22_listing_text",
             "v22_build_platform_listing",
@@ -160,6 +165,7 @@ class ListingQualityGateTests(unittest.TestCase):
             }
             namespace = {
                 "Path": pathlib.Path,
+                "re": re,
                 "datetime": FixedDateTime,
                 "FACTORY_VERSION": "30.0",
                 "MARKETING_DIR_NAME": "MARKETING",
@@ -254,6 +260,54 @@ class ListingQualityGateTests(unittest.TestCase):
         self.assertEqual(profile["status"], "RECOMMENDED")
         self.assertIn("disabled", profile["note"].lower())
         self.assertFalse(result["published"])
+
+
+class PublishingContentAuditTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        source = FACTORY_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(FACTORY_PATH))
+        node = next((item for item in tree.body
+                    if isinstance(item, ast.FunctionDef) and item.name == "v30_listing_content_audit"), None)
+        if node is None:
+            raise AssertionError("v30_listing_content_audit must exist exactly once")
+        namespace = {"re": re}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), str(FACTORY_PATH), "exec"), namespace)
+        cls.audit = staticmethod(namespace["v30_listing_content_audit"])
+
+    def test_digital_listing_flags_physical_fulfillment_language(self):
+        result = self.audit("Gumroad", {
+            "name": "Nightmare Book",
+            "description": "A paperback coloring book shipped directly to your door.",
+            "price": "$7.99",
+            "tags": ["horror"],
+        })
+        self.assertEqual(result["status"], "REVIEW_WARNINGS")
+        self.assertIn("digital_physical_language", [item["key"] for item in result["issues"]])
+
+    def test_invalid_price_requires_correction_without_guessing(self):
+        result = self.audit("Payhip", {"name": "Book", "price": "-4.00"})
+        self.assertEqual(result["status"], "NEEDS_CORRECTION")
+        self.assertEqual(result["error_count"], 1)
+        self.assertIn("invalid_price", [item["key"] for item in result["issues"]])
+
+    def test_kdp_keyword_limit_and_duplicates_are_reported(self):
+        result = self.audit("KDP", {"book_title": "Book"}, [
+            "horror", "Horror", "cryptids", "coloring", "monsters", "dark art",
+            "printable", "adult coloring", "a" * 51,
+        ])
+        keys = [item["key"] for item in result["issues"]]
+        self.assertIn("duplicate_keywords", keys)
+        self.assertIn("kdp_keyword_count", keys)
+        self.assertIn("kdp_keyword_length", keys)
+
+    def test_clean_digital_listing_passes_and_is_not_rewritten(self):
+        fields = {"name": "Nightmare Book", "description": "A digital PDF coloring book.",
+                  "price": "$7.99", "tags": ["horror", "cryptids"]}
+        result = self.audit("Gumroad", fields)
+        self.assertEqual(result["status"], "PASS")
+        self.assertIn("No listing text", result["note"])
+        self.assertEqual(fields["price"], "$7.99")
 
 
 if __name__ == "__main__":
