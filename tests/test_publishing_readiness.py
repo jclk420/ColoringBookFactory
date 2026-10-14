@@ -39,7 +39,7 @@ class PublishingReadinessTests(unittest.TestCase):
                    "max_files": 2, "max_file_mb": 650, "require_title": True}}
         package = {"platforms": {"KDP": {"errors": [], "warnings": []}}}
         namespace = {
-            "Path": pathlib.Path, "datetime": datetime.datetime, "FACTORY_VERSION": "57.0",
+            "Path": pathlib.Path, "datetime": datetime.datetime, "FACTORY_VERSION": "58.0",
             "PLATFORM_DIRNAME": "PLATFORMS",
             "v12_active_project": lambda: None, "choose_project": lambda: None,
             "load_project_settings_safe": lambda p: settings or {"title": "Sample Book", "description": "Good description", "keywords": ["horror"], "categories": ["crafts"]},
