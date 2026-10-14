@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 58.0.
+# Current version: 59.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "58.0"
+FACTORY_VERSION = "59.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18634,6 +18634,81 @@ def v22_build_platform_listing(project, platform_name, settings=None):
     }
 
 
+def v59_listing_draft_consistency_audit(listing_root, platform_names):
+    """Audit generated listing JSON/text pairs without modifying either artifact."""
+    root = Path(listing_root)
+    findings = []
+    audited = 0
+
+    def finding(platform, severity, code, message, path=None):
+        item = {"platform": platform, "severity": severity, "code": code, "message": message}
+        if path is not None:
+            item["path"] = str(path)
+        findings.append(item)
+
+    for platform_name in platform_names if isinstance(platform_names, (list, tuple)) else []:
+        folder = root / _platform_sanitized_filename(platform_name, 40)
+        json_path = folder / "LISTING.json"
+        text_path = folder / "LISTING.txt"
+        audited += 1
+        data = None
+        if not json_path.is_file():
+            finding(platform_name, "error", "MISSING_JSON", "Generated listing JSON is missing.", json_path)
+        else:
+            try:
+                loaded = load_json(json_path)
+                if not isinstance(loaded, dict):
+                    finding(platform_name, "error", "INVALID_JSON_SHAPE", "Listing JSON root must be an object.", json_path)
+                else:
+                    data = loaded
+            except Exception as error:
+                finding(platform_name, "error", "UNREADABLE_JSON", f"Listing JSON could not be read: {type(error).__name__}: {error}", json_path)
+
+        if not text_path.is_file():
+            finding(platform_name, "error", "MISSING_TEXT", "Paste-ready listing text is missing.", text_path)
+            text = ""
+        else:
+            try:
+                text = text_path.read_text(encoding="utf-8")
+                if not text.strip():
+                    finding(platform_name, "error", "EMPTY_TEXT", "Paste-ready listing text is empty.", text_path)
+            except Exception as error:
+                text = ""
+                finding(platform_name, "error", "UNREADABLE_TEXT", f"Listing text could not be read: {type(error).__name__}: {error}", text_path)
+
+        if data is not None:
+            recorded_platform = data.get("platform")
+            if recorded_platform != platform_name:
+                finding(platform_name, "error", "PLATFORM_MISMATCH", f"Listing JSON identifies platform {recorded_platform!r}, expected {platform_name!r}.", json_path)
+            fields = data.get("fields")
+            if not isinstance(fields, dict):
+                finding(platform_name, "error", "INVALID_FIELDS", "Listing JSON fields must be an object.", json_path)
+            quality = data.get("quality_gate")
+            if not isinstance(quality, dict):
+                finding(platform_name, "warning", "MISSING_QUALITY_GATE", "Listing has no structured quality-gate record.", json_path)
+            elif not isinstance(quality.get("checks", []), list) or not isinstance(quality.get("user_actions", []), list):
+                finding(platform_name, "error", "INVALID_QUALITY_GATE", "Quality-gate checks and user_actions must be lists.", json_path)
+            title = str(data.get("title") or "").strip()
+            if title and text and f"Product: {title}" not in text:
+                finding(platform_name, "error", "TEXT_TITLE_MISMATCH", "Paste-ready text does not contain the title recorded in JSON.", text_path)
+            if text and f"PLATFORM LISTING PACKAGE — {platform_name}" not in text:
+                finding(platform_name, "error", "TEXT_PLATFORM_MISMATCH", "Paste-ready text platform header does not match the JSON platform.", text_path)
+
+    errors = sum(1 for item in findings if item["severity"] == "error")
+    warnings = sum(1 for item in findings if item["severity"] == "warning")
+    status = "BLOCKED" if errors else ("REVIEW" if warnings else "PASS")
+    return {
+        "schema_version": 1,
+        "status": status,
+        "audited_platform_count": audited,
+        "error_count": errors,
+        "warning_count": warnings,
+        "findings": findings,
+        "read_only": True,
+        "note": "Consistency diagnostics only. Listing JSON/text files are never repaired or rewritten by this audit."
+    }
+
+
 def v22_build_all_platform_listings(project=None):
     """Create JSON, text, and readiness files for all configured platform profiles."""
     project = Path(project) if project else choose_project()
@@ -18679,6 +18754,10 @@ def v22_build_all_platform_listings(project=None):
         "platforms": results,
         "note": "Listing drafts only. Nothing was uploaded or published; prices, categories, and final claims require user review."
     }
+    consistency_audit = v59_listing_draft_consistency_audit(root, platform_names)
+    report["draft_consistency_audit"] = consistency_audit
+    report["draft_consistency_errors"] = consistency_audit["error_count"]
+    report["draft_consistency_warnings"] = consistency_audit["warning_count"]
     save_json(root / "LISTING_READINESS.json", report)
     print("\n" + "=" * 72)
     print(f"PLATFORM LISTING BUILDER v{FACTORY_VERSION} — {project.name}")
@@ -18688,6 +18767,10 @@ def v22_build_all_platform_listings(project=None):
               f"quality {row['quality_score']}% / {row['quality_status']} — "
               f"{row['user_actions']} user action(s)" +
               (" [PROFILE DISABLED]" if not row["profile_enabled"] else ""))
+    print(f"Draft consistency: {consistency_audit['status']} — "
+          f"{consistency_audit['error_count']} error(s), {consistency_audit['warning_count']} warning(s)")
+    for item in consistency_audit["findings"]:
+        print(f"  {item['severity'].upper()} [{item['code']}] {item['platform']}: {item['message']}")
     print(f"Listing files: {root}")
     print("Prepared drafts only — no platform was uploaded or published.")
     return report
