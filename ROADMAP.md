@@ -1,5 +1,13 @@
 # Coloring Book Factory — Upgrade Roadmap
 
+### v59.0 — Listing Draft Consistency Audit
+- Adds a read-only consistency audit for each generated platform listing JSON/text pair.
+- Detects missing, empty, unreadable, or malformed artifacts and invalid listing field/quality-gate shapes.
+- Detects JSON/text platform and product-title mismatches before users rely on paste-ready listing text.
+- Adds audit counts and actionable findings to the aggregate listing readiness report and console output.
+- Adds isolated regression tests for passing artifacts, mismatches, malformed files, and non-mutation.
+- Preserves existing listing-generation behavior; the audit never repairs or rewrites listing artifacts.
+
 ### v58.0 — Publishing Content Audit & Snapshot Safety
 - Restores advisory checks for price validity, duplicate keywords/tags, title length, KDP keyword thresholds, and digital listings that imply physical delivery.
 - Surfaces audit results in listing drafts and aggregate readiness reports without rewriting user content.
