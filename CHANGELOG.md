@@ -1,3 +1,5 @@
+# Changelog
+
 ## v58.0 — Publishing Content Audit & Snapshot Safety
 
 - Restores advisory listing checks for invalid prices, duplicate tags/keywords, long titles, KDP keyword thresholds, and digital-download descriptions that may imply physical fulfillment.
@@ -7,6 +9,8 @@
 - Preserves v57 publishing readiness checks and does not change artwork, lore, or publication state.
 
 # Changelog
+
+
 
 ## v57.0 — Platform Readiness & Upload Checklist
 
