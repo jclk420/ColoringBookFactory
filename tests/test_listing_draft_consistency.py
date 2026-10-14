@@ -22,8 +22,8 @@ def load_audit():
 
     def sanitized(name, limit):
         import re
-        value = re.sub(r"[^A-Za-z0-9._ -]+", "_", str(name)).strip(" ._")
-        return (value or "platform")[:limit]
+        value = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name or "file")).strip("._")
+        return (value or "file")[:limit]
 
     namespace = {
         "Path": Path,
