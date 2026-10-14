@@ -18758,6 +18758,17 @@ def v22_build_all_platform_listings(project=None):
     report["draft_consistency_audit"] = consistency_audit
     report["draft_consistency_errors"] = consistency_audit["error_count"]
     report["draft_consistency_warnings"] = consistency_audit["warning_count"]
+    # Keep per-platform results intact, but expose a top-level gate so a
+    # downstream publishing workflow cannot mistake inconsistent drafts for
+    # review-ready listings.
+    report["draft_review_gate"] = {
+        "status": "BLOCKED" if consistency_audit["error_count"] else (
+            "REVIEW" if consistency_audit["warning_count"] else "PASS"
+        ),
+        "blocks_review": bool(consistency_audit["error_count"]),
+        "basis": "draft_consistency_audit",
+        "note": "PASS covers JSON/text consistency only; it is not approval to publish."
+    }
     save_json(root / "LISTING_READINESS.json", report)
     print("\n" + "=" * 72)
     print(f"PLATFORM LISTING BUILDER v{FACTORY_VERSION} — {project.name}")
