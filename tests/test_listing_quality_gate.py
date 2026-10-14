@@ -132,6 +132,7 @@ class ListingQualityGateTests(unittest.TestCase):
             "v22_listing_text",
             "v22_build_platform_listing",
             "v22_build_all_platform_listings",
+            "v59_listing_draft_consistency_audit",
         }
         nodes = [node for node in tree.body
                  if isinstance(node, ast.FunctionDef) and node.name in wanted]
@@ -187,6 +188,8 @@ class ListingQualityGateTests(unittest.TestCase):
                 },
                 "gumroad_load_overrides": lambda project: {"content_note": "", "license": "Personal use only."},
                 "save_json": save_json,
+                "load_json": lambda path: json.loads(pathlib.Path(path).read_text(encoding="utf-8")),
+                "_platform_sanitized_filename": lambda value, limit: str(value).replace(" ", "_")[:limit],
             }
             exec(compile(ast.Module(body=nodes, type_ignores=[]), "<listing-batch-runtime>", "exec"), namespace)
             report = namespace["v22_build_all_platform_listings"](project)

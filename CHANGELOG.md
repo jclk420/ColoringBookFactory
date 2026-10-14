@@ -1,5 +1,17 @@
 # Changelog
 
+## v59.0 — Listing Draft Consistency Audit
+
+- Audits generated platform listing JSON and paste-ready text as a pair without modifying either artifact.
+- Reports missing/empty/unreadable files, malformed JSON or field structures, and invalid quality-gate structures.
+- Detects platform-header and product-title mismatches between JSON and text drafts.
+- Adds consistency status, error/warning counts, and detailed findings to `LISTING_READINESS.json`.
+- Prints actionable consistency findings after listing generation and adds regression tests for clean, mismatched, malformed, and non-mutating cases.
+- Flags missing or empty platform-specific listing fields for review while leaving deliberate price/category decisions blank; a consistency PASS is not publication approval.
+- Adds a top-level draft review gate and a regression test for incomplete required fields.
+- Does not upload, publish, infer metadata, or repair user listing content.
+
+
 ## v58.0 — Publishing Content Audit & Snapshot Safety
 
 - Restores advisory listing checks for invalid prices, duplicate tags/keywords, long titles, KDP keyword thresholds, and digital-download descriptions that may imply physical fulfillment.
