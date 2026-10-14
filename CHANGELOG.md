@@ -8,10 +8,6 @@
 - Adds regression coverage for content-audit warnings/errors and immutable snapshot collision handling.
 - Preserves v57 publishing readiness checks and does not change artwork, lore, or publication state.
 
-# Changelog
-
-
-
 ## v57.0 — Platform Readiness & Upload Checklist
 
 - Adds a platform-by-platform publishing checklist for each enabled platform.
