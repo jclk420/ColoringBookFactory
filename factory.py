@@ -18838,6 +18838,7 @@ def v22_build_all_platform_listings(project=None, overwrite_existing=False):
         "project": str(project),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "listing_count": len(results),
+        "preserved_existing_drafts": sum(1 for row in results if row.get("drafts_preserved")),
         "ready_for_review": sum(1 for row in results if row["status"] == "READY_FOR_REVIEW"),
         "review": sum(1 for row in results if row["status"] == "REVIEW"),
         "blocked": sum(1 for row in results if row["status"] == "BLOCKED_MISSING_MASTER"),
