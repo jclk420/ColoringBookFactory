@@ -18683,6 +18683,26 @@ def v59_listing_draft_consistency_audit(listing_root, platform_names):
             fields = data.get("fields")
             if not isinstance(fields, dict):
                 finding(platform_name, "error", "INVALID_FIELDS", "Listing JSON fields must be an object.", json_path)
+            else:
+                # Only validate known listing fields. Deliberately blank
+                # prices/categories stay user decisions and are not invented.
+                required_fields = {
+                    "KDP": ("book_title", "author", "description", "keywords", "language", "print_options"),
+                    "Gumroad": ("name", "summary", "description", "tags", "license_terms"),
+                    "Payhip": ("product_name", "description", "author", "tags", "delivery_format", "license_terms"),
+                    "Digital PDF": ("product_title", "short_summary", "full_description", "format", "author", "keywords", "license_terms"),
+                }.get(platform_name, ("title", "description", "author", "format", "tags_or_keywords"))
+                for field_name in required_fields:
+                    value = fields.get(field_name)
+                    missing = field_name not in fields or value is None or (
+                        isinstance(value, str) and not value.strip()
+                    ) or (isinstance(value, (list, dict)) and not value)
+                    if missing:
+                        finding(
+                            platform_name, "warning", "INCOMPLETE_FIELD",
+                            f"Listing field {field_name!r} is missing or empty; review it before publishing.",
+                            json_path
+                        )
             quality = data.get("quality_gate")
             if not isinstance(quality, dict):
                 finding(platform_name, "warning", "MISSING_QUALITY_GATE", "Listing has no structured quality-gate record.", json_path)
