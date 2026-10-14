@@ -1,3 +1,11 @@
+## v58.0 — Publishing Content Audit & Snapshot Safety
+
+- Restores advisory listing checks for invalid prices, duplicate tags/keywords, long titles, KDP keyword thresholds, and digital-download descriptions that may imply physical fulfillment.
+- Includes audit results in per-platform listing drafts and the aggregate readiness report without rewriting listing text or inventing prices.
+- Prevents same-second build snapshots from overwriting prior audit records by using exclusive creation and deterministic suffixes.
+- Adds regression coverage for content-audit warnings/errors and immutable snapshot collision handling.
+- Preserves v57 publishing readiness checks and does not change artwork, lore, or publication state.
+
 # Changelog
 
 ## v57.0 — Platform Readiness & Upload Checklist
