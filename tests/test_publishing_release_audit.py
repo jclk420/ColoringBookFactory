@@ -30,7 +30,7 @@ class PublishingReleaseAuditTests(unittest.TestCase):
         namespace = {
             "Path": pathlib.Path,
             "datetime": datetime.datetime,
-            "FACTORY_VERSION": "56.0",
+            "FACTORY_VERSION": "57.0",
             "v20_release_preflight": lambda path: preflight,
             "v23_package_manifest_verify": lambda path: package_report,
             "save_json": lambda path, data: saved.update({"path": pathlib.Path(path), "data": data}),
