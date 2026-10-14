@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 59.0.
+# Current version: 60.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "59.0"
+FACTORY_VERSION = "60.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18729,7 +18729,33 @@ def v59_listing_draft_consistency_audit(listing_root, platform_names):
     }
 
 
-def v22_build_all_platform_listings(project=None):
+def v60_listing_draft_write_policy(json_path, text_path, overwrite_existing=False):
+    """Choose whether listing artifacts may be written without clobbering user edits."""
+    json_exists = Path(json_path).exists()
+    text_exists = Path(text_path).exists()
+    if overwrite_existing:
+        return {
+            "write": True,
+            "reason": "explicit_overwrite",
+            "existing_json": json_exists,
+            "existing_text": text_exists,
+        }
+    if json_exists or text_exists:
+        return {
+            "write": False,
+            "reason": "preserve_existing",
+            "existing_json": json_exists,
+            "existing_text": text_exists,
+        }
+    return {
+        "write": True,
+        "reason": "new_drafts",
+        "existing_json": False,
+        "existing_text": False,
+    }
+
+
+def v22_build_all_platform_listings(project=None, overwrite_existing=False):
     """Create JSON, text, and readiness files for all configured platform profiles."""
     project = Path(project) if project else choose_project()
     if not project:
@@ -18742,11 +18768,55 @@ def v22_build_all_platform_listings(project=None):
     results = []
     settings = load_project_settings_safe(project)
     for platform_name in platform_names:
-        data = v22_build_platform_listing(project, platform_name, settings)
         folder = root / _platform_sanitized_filename(platform_name, 40)
         folder.mkdir(parents=True, exist_ok=True)
-        save_json(folder / "LISTING.json", data)
-        (folder / "LISTING.txt").write_text(v22_listing_text(data), encoding="utf-8")
+        json_path = folder / "LISTING.json"
+        text_path = folder / "LISTING.txt"
+        write_policy = v60_listing_draft_write_policy(
+            json_path, text_path, overwrite_existing=overwrite_existing
+        )
+        if not write_policy["write"]:
+            # Preserve existing artifacts as a pair. Even a partial pair is left
+            # untouched so the consistency audit can report it without repair.
+            existing_data = {}
+            if json_path.is_file():
+                try:
+                    loaded = load_json(json_path)
+                    if isinstance(loaded, dict):
+                        existing_data = loaded
+                except Exception:
+                    existing_data = {}
+            quality = existing_data.get("quality_gate", {})
+            if not isinstance(quality, dict):
+                quality = {}
+            warnings = existing_data.get("warnings", [])
+            if not isinstance(warnings, list):
+                warnings = []
+            user_actions = quality.get("user_actions", [])
+            if not isinstance(user_actions, list):
+                user_actions = []
+            content_audit = existing_data.get("content_audit", {})
+            if not isinstance(content_audit, dict):
+                content_audit = {}
+            results.append({
+                "platform": platform_name,
+                "status": "PRESERVED_EXISTING_DRAFTS",
+                "profile_enabled": bool(existing_data.get("profile_enabled", False)),
+                "warnings": len(warnings),
+                "quality_score": quality.get("score_percent", "n/a"),
+                "quality_status": quality.get("status", "UNKNOWN"),
+                "user_actions": len(user_actions),
+                "content_audit_errors": content_audit.get("error_count", 0),
+                "content_audit_warnings": content_audit.get("warning_count", 0),
+                "content_audit_status": content_audit.get("status", "UNKNOWN"),
+                "folder": str(folder),
+                "drafts_preserved": True,
+                "write_policy_reason": write_policy["reason"],
+            })
+            continue
+        data = v22_build_platform_listing(project, platform_name, settings)
+        save_json(json_path, data)
+        text_path.write_text(v22_listing_text(data), encoding="utf-8")
         results.append({
             "platform": platform_name,
             "status": data["status"],
@@ -18759,6 +18829,8 @@ def v22_build_all_platform_listings(project=None):
             "content_audit_warnings": data.get("content_audit", {}).get("warning_count", 0),
             "content_audit_status": data.get("content_audit", {}).get("status", "UNKNOWN"),
             "folder": str(folder),
+            "drafts_preserved": False,
+            "write_policy_reason": write_policy["reason"],
         })
     report = {
         "schema_version": 1,
@@ -18819,7 +18891,23 @@ def v22_platform_listing_menu():
         if choice == "1":
             project = choose_project()
             if project:
-                v22_build_all_platform_listings(project)
+                listing_root = Path(project) / MARKETING_DIR_NAME / "LISTINGS"
+                existing_drafts = listing_root.exists() and (
+                    any(listing_root.glob("*/LISTING.json")) or
+                    any(listing_root.glob("*/LISTING.txt"))
+                )
+                overwrite_existing = False
+                if existing_drafts:
+                    answer = input(
+                        "Existing listing drafts found. Type YES to overwrite them; "
+                        "press Enter to preserve them: "
+                    ).strip()
+                    overwrite_existing = answer == "YES"
+                    if not overwrite_existing:
+                        print("Existing listing drafts will be preserved and audited.")
+                v22_build_all_platform_listings(
+                    project, overwrite_existing=overwrite_existing
+                )
         else:
             print("Invalid choice.")
 
