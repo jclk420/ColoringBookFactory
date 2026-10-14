@@ -1,5 +1,10 @@
 # Coloring Book Factory — Upgrade Roadmap
 
+### v60.0 — Non-Destructive Listing Draft Generation
+- Preserve existing listing JSON/text artifacts by default so reruns cannot silently erase manual edits.
+- Require explicit confirmation before replacing existing drafts; preserve partial pairs for diagnostics.
+- Surface preservation status in the listing readiness report and add regression tests.
+
 ### v59.0 — Listing Draft Consistency Audit
 - Adds a read-only consistency audit for each generated platform listing JSON/text pair.
 - Detects missing, empty, unreadable, or malformed artifacts and invalid listing field/quality-gate shapes.
