@@ -187,7 +187,7 @@ class ArtworkHandoffBundleTests(unittest.TestCase):
         self.assertFalse(result["published"])
 
     def test_version_and_menu_wiring(self):
-        self.assertIn('FACTORY_VERSION = "97.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "102.0"', self.source)
         self.assertIn('26. Artwork Generation Handoff & Assembly Gate', self.source)
         self.assertIn('elif c=="26": v77_artwork_handoff_menu()', self.source)
         tree = ast.parse(self.source)
