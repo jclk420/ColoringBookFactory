@@ -357,3 +357,13 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Report newly added candidates separately from duplicates already present in the pending record.
 - Persist an OCR candidate summary with extracted, added, duplicate-skipped, archive-record, and review-only counts.
 - Keep source files, primary classification, approval state, approved registry, Series Bible, and canon unchanged.
+
+
+### v63.0–v67.0 — Five-stage publishing workflow bundle (implemented on upgrade branch)
+
+- Source PDF SHA-256 provenance audit for imported PDFs.
+- Persistent per-platform manual upload checklist that carries forward user-entered status/URLs without treating readiness as proof of upload.
+- Prioritized release action plan with blocker/warning tasks and exact report paths.
+- Read-only package/listing delivery map listing exact files and candidate MASTER PDFs.
+- One-click publishing run combining listing generation, upload readiness, provenance, checklist, action plan, and delivery map.
+- Main-menu option 24; no MASTER rebuild, listing-draft overwrite, canon mutation, upload, or publication.
