@@ -1,3 +1,10 @@
+## v62.0 — Automatic Post-Import Publishing Preparation
+
+- After finished-PDF intake builds platform packages, generate platform-specific listing drafts and a consolidated upload-readiness report.
+- Existing listing drafts are preserved by calling the listing builder with overwrite disabled.
+- Writes `REPORTS/POST_IMPORT_PUBLISHING_PREP.json` linking the listing and upload-readiness reports.
+- Keeps the workflow local-only: no platform uploads or publication are performed.
+
 ## v61.0 — Consolidated Platform Upload Readiness Board
 
 - Adds one read-only board that combines platform package-manifest verification with the current listing readiness report.
