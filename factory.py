@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "82.0"
+FACTORY_VERSION = "87.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -13055,6 +13055,13 @@ def cb13_build_and_publish_project(project=None):
 
     input_dir = project / "INPUT"
     input_dir.mkdir(parents=True, exist_ok=True)
+    # v83: preserve existing INPUT artwork before any replacement. If the
+    # backup cannot be verified, abort before deleting a single source file.
+    input_backup = v83_backup_assembly_input(project, input_dir)
+    if input_backup.get("status") == "BLOCKED":
+        print("BUILD BLOCKED: existing INPUT artwork could not be safely backed up.")
+        print(f"Backup report: {input_backup.get('report_path', '')}")
+        return None
     # Replace the assembly INPUT with the immutable QA-approved set.
     for old in input_dir.iterdir():
         if old.is_file() and old.suffix.lower() in IMAGE_EXTENSIONS:
@@ -18955,6 +18962,7 @@ def factory_main_menu():
         print(" 25. Creation & Artwork Quality Center (5-stage audit)")
         print(" 26. Artwork Generation Handoff & Assembly Gate (5-stage)")
         print(" 27. Final Release Integrity & Handoff Center (5-stage)")
+        print(" 28. Safe Artwork Import & Guided Production (5-stage)")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -18989,6 +18997,7 @@ def factory_main_menu():
         elif c=="25": v72_creation_quality_menu()
         elif c=="26": v77_artwork_handoff_menu()
         elif c=="27": v82_release_integrity_menu()
+        elif c=="28": v87_safe_artwork_production_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -20932,6 +20941,311 @@ def v82_release_integrity_menu():
         print("No project selected.")
         return {"status": "CANCELLED"}
     return v82_run_release_integrity_center(project)
+
+
+
+# ============================================================
+# v83-v87 — SAFE ARTWORK IMPORT & GUIDED PRODUCTION
+# Protects existing INPUT art, imports only after explicit confirmation,
+# previews assembly consequences, and never auto-builds/publishes.
+# ============================================================
+
+def v83_backup_assembly_input(project, input_dir=None):
+    """Snapshot existing INPUT image files and verify their hashes before replacement."""
+    project = Path(project)
+    input_dir = Path(input_dir) if input_dir else project / "INPUT"
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "input_directory": str(input_dir),
+        "status": "NO_BACKUP_NEEDED", "files": [], "errors": [],
+        "read_only": False, "deletion_authorized": False,
+    }
+    if not project.is_dir():
+        report["status"] = "BLOCKED"
+        report["errors"].append("Project directory does not exist.")
+    elif not input_dir.is_dir():
+        report["status"] = "NO_BACKUP_NEEDED"
+    else:
+        images = sorted((path for path in input_dir.iterdir()
+                         if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS),
+                        key=lambda path: path.name.casefold())
+        if images:
+            backup_root = project / "_FACTORY_BACKUPS"
+            backup_root.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            target = backup_root / f"ASSEMBLY_INPUT_{stamp}"
+            suffix = 2
+            while target.exists():
+                target = backup_root / f"ASSEMBLY_INPUT_{stamp}_{suffix:02d}"
+                suffix += 1
+            target.mkdir(parents=True, exist_ok=False)
+            report["backup_directory"] = str(target)
+            import shutil
+            for source in images:
+                try:
+                    before = file_hash(source)
+                    destination = target / source.name
+                    shutil.copy2(source, destination)
+                    after = file_hash(destination)
+                    if before != after:
+                        raise IOError("SHA-256 mismatch after backup copy")
+                    report["files"].append({"source": str(source), "backup": str(destination),
+                                            "sha256": before, "size_bytes": source.stat().st_size})
+                except Exception as error:
+                    report["errors"].append(f"{source.name}: backup verification failed ({type(error).__name__}: {error})")
+            if report["errors"]:
+                report["status"] = "BLOCKED"
+                report["deletion_authorized"] = False
+            else:
+                report["status"] = "BACKUP_VERIFIED"
+                report["deletion_authorized"] = True
+        else:
+            report["status"] = "NO_BACKUP_NEEDED"
+            report["deletion_authorized"] = True
+    if project.is_dir():
+        target_report = project / "REPORTS" / "ASSEMBLY_INPUT_BACKUP.json"
+        save_json(target_report, report)
+        report["report_path"] = str(target_report)
+    return report
+
+
+def v84_import_previewed_artwork(project, preview=None, confirm=False):
+    """Copy previewed generated art into SOURCE only after confirmation and hash revalidation."""
+    project = Path(project)
+    result = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "BLOCKED", "copied_files": [],
+        "errors": [], "copied": False,
+    }
+    if not project.is_dir():
+        result["errors"].append("Project directory does not exist.")
+        return result
+    if not confirm:
+        result["status"] = "CONFIRMATION_REQUIRED"
+        result["errors"].append("No files were copied because explicit confirmation was not provided.")
+        return result
+    if not isinstance(preview, dict):
+        try:
+            preview = load_json(project / "REPORTS" / "ARTWORK_INTAKE_PREVIEW.json")
+        except Exception as error:
+            result["errors"].append(f"Artwork intake preview is unavailable: {type(error).__name__}: {error}")
+            return result
+    if preview.get("status") != "READY_FOR_EXPLICIT_IMPORT":
+        result["errors"].append("Import is allowed only from a READY_FOR_EXPLICIT_IMPORT preview.")
+        return result
+    source_root = Path(str(preview.get("source_folder") or "")).resolve()
+    matches = preview.get("matches", [])
+    if not source_root.is_dir() or not isinstance(matches, list) or not matches:
+        result["errors"].append("Preview source folder or match list is invalid.")
+        return result
+    destination_root = project / ARTWORK_QUEUE_DIRNAME / ARTWORK_SOURCE_DIRNAME
+    destination_root.mkdir(parents=True, exist_ok=True)
+    plan = []
+    used_ids = set()
+    for row in matches:
+        if not isinstance(row, dict):
+            result["errors"].append("Preview contains a malformed match.")
+            continue
+        image_id = str(row.get("image_id", "")).strip()
+        raw_source = str(row.get("source_file", "")).strip()
+        if not image_id or not re.fullmatch(r"[A-Za-z0-9_-]+", image_id) or image_id in used_ids:
+            result["errors"].append(f"Preview has a missing, unsafe, or duplicate image ID: {image_id!r}.")
+            continue
+        used_ids.add(image_id)
+        source = Path(raw_source).resolve()
+        if not source.is_relative_to(source_root) or not source.is_file() or source.is_symlink():
+            result["errors"].append(f"{image_id}: source file is missing or outside the preview folder.")
+            continue
+        try:
+            actual_hash = file_hash(source)
+        except OSError as error:
+            result["errors"].append(f"{image_id}: source file cannot be hashed: {error}")
+            continue
+        if actual_hash != row.get("sha256"):
+            result["errors"].append(f"{image_id}: source file changed after preview; rerun intake preview.")
+            continue
+        suffix = source.suffix.lower()
+        destination = destination_root / f"{image_id}{suffix}"
+        if destination.exists() or any(destination_root.glob(f"{image_id}.*")):
+            result["errors"].append(f"{image_id}: destination already exists; nothing will be overwritten.")
+            continue
+        plan.append({"image_id": image_id, "source": source, "destination": destination, "sha256": actual_hash})
+    if result["errors"] or len(plan) != len(matches):
+        result["status"] = "BLOCKED"
+        result["errors"].append("Preflight failed; no artwork files were copied.")
+    else:
+        import shutil
+        copied = []
+        try:
+            for item in plan:
+                shutil.copy2(item["source"], item["destination"])
+                if file_hash(item["destination"]) != item["sha256"]:
+                    raise IOError(f"Copied hash mismatch for {item['image_id']}")
+                copied.append(item)
+            result["copied_files"] = [
+                {"image_id": item["image_id"], "source": str(item["source"]),
+                 "destination": str(item["destination"]), "sha256": item["sha256"]}
+                for item in copied
+            ]
+            result["status"] = "IMPORTED"
+            result["copied"] = True
+        except Exception as error:
+            for item in copied:
+                try:
+                    if item["destination"].is_file() and file_hash(item["destination"]) == item["sha256"]:
+                        item["destination"].unlink()
+                except OSError:
+                    pass
+            result["status"] = "BLOCKED"
+            result["errors"].append(f"Copy failed and newly copied files were rolled back: {type(error).__name__}: {error}")
+    result["preview_source_folder"] = str(source_root)
+    if project.is_dir():
+        save_json(project / "REPORTS" / "ARTWORK_INTAKE_IMPORT.json", result)
+    return result
+
+
+def v85_assembly_input_preview(project):
+    """Show the approved artwork that will enter INPUT and existing files that will be backed up."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "BLOCKED",
+        "approved_artwork": [], "existing_input_images": [],
+        "errors": [], "warnings": [], "read_only": True,
+    }
+    if not project.is_dir():
+        report["errors"].append("Project directory does not exist.")
+    else:
+        gate = v76_assembly_readiness_gate(project)
+        report["assembly_gate_status"] = gate.get("status")
+        if gate.get("status") != "READY_FOR_ASSEMBLY":
+            report["errors"].append("Assembly readiness gate is not READY_FOR_ASSEMBLY.")
+            report["errors"].extend(str(item) for item in gate.get("errors", []))
+            report["warnings"].extend(str(item) for item in gate.get("warnings", []))
+        try:
+            queue = load_json(project / ARTWORK_QUEUE_FILENAME)
+            jobs = queue.get("jobs", []) if isinstance(queue, dict) else []
+            for job in jobs if isinstance(jobs, list) else []:
+                if isinstance(job, dict) and job.get("status") == "PASS" and job.get("approved_file"):
+                    report["approved_artwork"].append({"image_id": job.get("image_id"), "path": str(job["approved_file"])})
+        except Exception as error:
+            report["errors"].append(f"Artwork queue could not be read: {type(error).__name__}: {error}")
+        input_dir = project / "INPUT"
+        if input_dir.is_dir():
+            report["existing_input_images"] = [
+                {"path": str(path), "size_bytes": path.stat().st_size}
+                for path in sorted(input_dir.iterdir(), key=lambda item: item.name.casefold())
+                if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+            ]
+        if report["existing_input_images"]:
+            report["warnings"].append(
+                "Existing INPUT images will be replaced by the approved set; v83 creates and verifies a backup before replacement."
+            )
+        report["status"] = "BLOCKED" if report["errors"] else ("NEEDS_REVIEW" if report["warnings"] else "READY")
+    if project.is_dir():
+        save_json(project / "REPORTS" / "ASSEMBLY_INPUT_PREVIEW.json", report)
+    return report
+
+
+def v86_production_action_plan(project, intake=None, qa=None, assembly=None, input_preview=None):
+    """Prioritize import, QA, and assembly tasks without starting a build."""
+    project = Path(project)
+    inputs = [
+        ("Artwork intake", intake if isinstance(intake, dict) else {}),
+        ("Artwork QA", qa if isinstance(qa, dict) else {}),
+        ("Assembly gate", assembly if isinstance(assembly, dict) else {}),
+        ("Assembly input", input_preview if isinstance(input_preview, dict) else {}),
+    ]
+    tasks = []
+    for area, report in inputs:
+        status = str(report.get("status", "NEEDS_REVIEW"))
+        errors = report.get("errors", []) if isinstance(report.get("errors", []), list) else []
+        warnings = report.get("warnings", []) if isinstance(report.get("warnings", []), list) else []
+        if status in {"BLOCKED", "FAIL"}:
+            tasks.append({"priority": "P0", "area": area, "action": "Resolve blocked production stage",
+                          "reason": "; ".join(str(value) for value in errors) or f"Stage status is {status}."})
+        for warning in warnings:
+            tasks.append({"priority": "P1", "area": area, "action": "Review production warning", "reason": str(warning)})
+        if status in {"NEEDS_REVIEW", "CONFIRMATION_REQUIRED"}:
+            tasks.append({"priority": "P1", "area": area, "action": "Complete required review or confirmation",
+                          "reason": f"Stage status is {status}."})
+    if not tasks:
+        tasks.append({"priority": "P2", "area": "Production", "action": "Review assembly preview, then start build manually",
+                      "reason": "Preflight passed; this report does not start assembly or publishing."})
+    rank = {"P0": 0, "P1": 1, "P2": 2}
+    tasks.sort(key=lambda item: (rank[item["priority"]], item["area"], item["action"]))
+    result = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "task_count": len(tasks),
+        "priority_counts": {key: sum(1 for task in tasks if task["priority"] == key) for key in ("P0", "P1", "P2")},
+        "tasks": tasks, "read_only": True,
+    }
+    if project.is_dir():
+        save_json(project / "REPORTS" / "PRODUCTION_ACTION_PLAN.json", result)
+    return result
+
+
+def v87_guided_artwork_production_workflow(project, preview=None, confirm_import=False):
+    """Import only after explicit confirmation, run QA, and show assembly gates without building."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "errors": ["Project directory does not exist."]}
+    intake = v84_import_previewed_artwork(project, preview, confirm=confirm_import) if confirm_import else (
+        preview if isinstance(preview, dict) else {"status": "CONFIRMATION_REQUIRED", "errors": ["Artwork import was not confirmed."], "copied": False}
+    )
+    qa = {"status": "SKIPPED", "summary": {}}
+    if isinstance(intake, dict) and intake.get("status") == "IMPORTED":
+        try:
+            queue = cb13_scan_artwork_qa(project)
+            summary = queue.get("summary", {}) if isinstance(queue, dict) else {}
+            qa = {"status": "PASS" if summary.get("failed", 0) == 0 and summary.get("review", 0) == 0 and summary.get("waiting", 0) == 0 else "NEEDS_REVIEW",
+                  "summary": summary, "report_path": str(project / ARTWORK_QA_FILENAME)}
+        except Exception as error:
+            qa = {"status": "BLOCKED", "errors": [f"Artwork QA failed: {type(error).__name__}: {error}"]}
+    assembly = v76_assembly_readiness_gate(project)
+    input_preview = v85_assembly_input_preview(project)
+    plan = v86_production_action_plan(project, intake, qa, assembly, input_preview)
+    statuses = [intake.get("status"), qa.get("status"), assembly.get("status"), input_preview.get("status")]
+    overall = "BLOCKED" if "BLOCKED" in statuses else ("NEEDS_REVIEW" if any(status in {"NEEDS_REVIEW", "CONFIRMATION_REQUIRED", "SKIPPED"} for status in statuses) else "READY_FOR_MANUAL_ASSEMBLY")
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "status": overall,
+        "intake_status": intake.get("status"), "qa_status": qa.get("status"),
+        "assembly_gate_status": assembly.get("status"), "input_preview_status": input_preview.get("status"),
+        "action_count": plan.get("task_count", 0),
+        "reports": {
+            "intake_import": str(project / "REPORTS" / "ARTWORK_INTAKE_IMPORT.json"),
+            "artwork_qa": str(project / ARTWORK_QA_FILENAME),
+            "assembly_readiness": str(project / "REPORTS" / "ASSEMBLY_READINESS.json"),
+            "assembly_input_preview": str(project / "REPORTS" / "ASSEMBLY_INPUT_PREVIEW.json"),
+            "action_plan": str(project / "REPORTS" / "PRODUCTION_ACTION_PLAN.json"),
+        },
+        "source_artwork_copied": bool(intake.get("copied", False)),
+        "assembly_started": False, "published": False, "uploaded": False,
+        "note": "Import requires explicit confirmation. QA is run only after a successful import. Assembly and publishing remain separate manual actions.",
+    }
+    save_json(project / "REPORTS" / "GUIDED_PRODUCTION_SUMMARY.json", report)
+    return report
+
+
+def v87_safe_artwork_production_menu():
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return {"status": "CANCELLED"}
+    raw = input("Folder containing generated artwork: ").strip().strip('"')
+    if not raw:
+        print("No folder selected.")
+        return {"status": "CANCELLED"}
+    preview = v75_artwork_intake_preview(project, raw)
+    print(f"Intake preview status: {preview.get('status')}")
+    print(f"Matched: {len(preview.get('matches', []))} | Missing IDs: {len(preview.get('missing_ids', []))} | Ambiguous: {len(preview.get('ambiguous_ids', []))}")
+    confirm = False
+    if preview.get("status") == "READY_FOR_EXPLICIT_IMPORT":
+        confirm = input("Copy these files into ARTWORK_QUEUE/SOURCE and run QA? [y/N]: ").strip().lower() in {"y", "yes"}
+    return v87_guided_artwork_production_workflow(project, preview, confirm_import=confirm)
 
 
 
