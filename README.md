@@ -1,6 +1,6 @@
 # ColoringBookFactory
 
-**Current factory version: 61.0**
+**Current factory version: 62.0**
 
 ColoringBookFactory is a Windows-oriented Python application for producing coloring books, organizing world/series lore, preparing marketplace listing drafts, and checking production packages before release.
 
@@ -18,7 +18,7 @@ From the repository root in PowerShell:
 python -X utf8 .\factory.py
 ```
 
-The main menu includes book creation/import, production, publishing, marketing, worlds and series, lore intake, release diagnostics, canon tools, listing generation, upload-readiness reporting, and reliability/migration tools. State and queue loaders now validate their JSON structure before use; malformed data produces an explicit warning and an in-memory safe fallback without rewriting the persisted file.
+The main menu includes book creation/import, production, publishing, marketing, worlds and series, lore intake, release diagnostics, canon tools, listing generation, automatic post-import listing preparation, upload-readiness reporting, and reliability/migration tools. State and queue loaders now validate their JSON structure before use; malformed data produces an explicit warning and an in-memory safe fallback without rewriting the persisted file.
 
 ## Core workflows
 
