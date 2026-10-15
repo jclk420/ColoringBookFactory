@@ -1,3 +1,9 @@
+### v61.0 — Consolidated Platform Upload Readiness Board
+- Combine enabled platform package-manifest checks with existing listing readiness into one read-only decision report.
+- Report the exact platform upload folder, manifest path, listing folder, blockers, and manual-review warnings.
+- Never treat missing manifests or missing listing drafts as ready; never claim upload/publication.
+- Add main-menu option 23 and save `REPORTS/UPLOAD_READINESS.json` without rebuilding packages or changing artwork/listings.
+
 # Coloring Book Factory — Upgrade Roadmap
 
 ### v60.0 — Non-Destructive Listing Draft Generation
