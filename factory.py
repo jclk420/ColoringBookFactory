@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "62.0"
+FACTORY_VERSION = "67.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18951,6 +18951,7 @@ def factory_main_menu():
         print(" 21. Platform Listing Builder")
         print(" 22. Reliability & Migration Toolkit")
         print(" 23. Platform Upload Readiness Board")
+        print(" 24. One-Click Publishing Run (5-stage release pack)")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -18981,6 +18982,7 @@ def factory_main_menu():
         elif c=="21": v22_platform_listing_menu()
         elif c=="22": v23_reliability_toolkit_menu()
         elif c=="23": v61_upload_readiness_menu()
+        elif c=="24": v67_publishing_run_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -19598,6 +19600,273 @@ def v62_post_import_publishing_setup(project, package_results=None):
     print(f"Status: {report['status']}")
     print("Existing listing drafts were preserved. Nothing was uploaded or published.")
     return report
+
+
+# ============================================================
+# v63-v67 — FIVE-STAGE PUBLISHING WORKFLOW BUNDLE
+# Audits provenance, preserves upload decisions, creates an action
+# plan and file map, then orchestrates the local release preparation.
+# No upload, publication, canon mutation, or source-PDF rewrite.
+# ============================================================
+
+def v63_source_pdf_integrity_audit(project):
+    """Read-only check of the original imported PDF's recorded SHA-256."""
+    project = Path(project)
+    result = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "NOT_TRACKED",
+        "source_pdf": None, "expected_sha256": None, "actual_sha256": None,
+        "message": "This project has no recorded imported source PDF digest.",
+        "read_only": True,
+    }
+    settings_path = project / "project.json"
+    if not project.is_dir():
+        result.update(status="BLOCKED", message="Project directory does not exist.")
+    elif not settings_path.is_file():
+        result.update(status="NOT_TRACKED", message="project.json is missing; source provenance cannot be checked.")
+    else:
+        try:
+            settings = load_json(settings_path)
+            if not isinstance(settings, dict):
+                raise ValueError("project.json root is not an object")
+            source = settings.get("source_pdf")
+            expected = settings.get("source_pdf_sha256")
+            result["source_pdf"] = str(source) if source else None
+            result["expected_sha256"] = str(expected) if expected else None
+            if not source or not expected:
+                result.update(status="NOT_TRACKED", message="No source_pdf and source_pdf_sha256 pair is recorded.")
+            else:
+                source_path = Path(str(source))
+                if not source_path.is_file():
+                    result.update(status="SOURCE_MISSING", message="The recorded source PDF is no longer at its original path; the imported MASTER was not changed.")
+                else:
+                    actual = file_hash(source_path)
+                    result["actual_sha256"] = actual
+                    if actual.lower() == str(expected).lower():
+                        result.update(status="VERIFIED", message="The original source PDF matches the recorded SHA-256.")
+                    else:
+                        result.update(status="SOURCE_CHANGED", message="The source PDF digest differs from the import record; review provenance before relying on it.")
+        except Exception as error:
+            result.update(status="CHECK_ERROR", message=f"Could not verify source provenance: {type(error).__name__}: {error}")
+    target = project / "REPORTS" / "SOURCE_PDF_INTEGRITY.json"
+    if project.is_dir():
+        save_json(target, result)
+        result["report_path"] = str(target)
+    return result
+
+
+def v64_platform_upload_checklist(project, readiness=None):
+    """Create per-platform manual upload steps while preserving user-entered statuses."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "platforms": [], "errors": ["Project directory does not exist."]}
+    readiness = readiness if isinstance(readiness, dict) else {}
+    old_path = project / "REPORTS" / "PLATFORM_UPLOAD_CHECKLIST.json"
+    old_rows = {}
+    if old_path.is_file():
+        try:
+            old = load_json(old_path)
+            rows = old.get("platforms", []) if isinstance(old, dict) else []
+            if isinstance(rows, list):
+                old_rows = {str(row.get("platform")): row for row in rows
+                            if isinstance(row, dict) and row.get("platform")}
+        except Exception:
+            old_rows = {}
+    allowed = {"NOT_UPLOADED", "UPLOADED_NEEDS_VERIFY", "UPLOADED_VERIFIED", "PUBLISHED_VERIFIED"}
+    rows = []
+    for item in readiness.get("platforms", []) if isinstance(readiness.get("platforms", []), list) else []:
+        if not isinstance(item, dict) or not item.get("platform"):
+            continue
+        name = str(item["platform"])
+        prior = old_rows.get(name, {})
+        status = str(prior.get("manual_status", "NOT_UPLOADED"))
+        if status not in allowed:
+            status = "NOT_UPLOADED"
+        rows.append({
+            "platform": name,
+            "readiness_status": str(item.get("status", "NEEDS_REVIEW")),
+            "package_folder": item.get("package_folder", ""),
+            "listing_folder": item.get("listing_folder", ""),
+            "manual_status": status,
+            "last_verified_at": prior.get("last_verified_at"),
+            "account_product_url": prior.get("account_product_url", ""),
+            "steps": [
+                "Resolve all BLOCKED items and review warnings in UPLOAD_READINESS.json.",
+                "Open the package folder and listing folder shown here.",
+                "Upload the package files and enter marketplace fields manually.",
+                "Only after checking the live marketplace page, update manual_status and optionally record the product URL."
+            ],
+            "uploaded": status in {"UPLOADED_NEEDS_VERIFY", "UPLOADED_VERIFIED", "PUBLISHED_VERIFIED"},
+            "published": status == "PUBLISHED_VERIFIED",
+        })
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "platforms": rows,
+        "manual_status_values": sorted(allowed),
+        "status_preserved_for_matching_platforms": True,
+        "uploaded": any(row["uploaded"] for row in rows),
+        "published": any(row["published"] for row in rows),
+        "note": "This is a local checklist. Status values are user-maintained and are not proof unless verified against the live marketplace.",
+    }
+    save_json(old_path, report)
+    return report
+
+
+def v65_release_action_plan(project, readiness=None, source_audit=None):
+    """Translate readiness and provenance findings into a prioritized task list."""
+    project = Path(project)
+    readiness = readiness if isinstance(readiness, dict) else {}
+    source_audit = source_audit if isinstance(source_audit, dict) else {}
+    tasks = []
+    def add(priority, platform, action, reason, path=None):
+        row = {"priority": priority, "platform": platform, "action": action, "reason": reason}
+        if path:
+            row["path"] = str(path)
+        tasks.append(row)
+    if readiness.get("overall_status") == "BLOCKED":
+        add("P0", "All platforms", "Resolve release blockers", "The consolidated readiness board reports BLOCKED.", project / "REPORTS" / "UPLOAD_READINESS.json")
+    for row in readiness.get("platforms", []) if isinstance(readiness.get("platforms", []), list) else []:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("platform", "Unknown platform"))
+        for blocker in row.get("blockers", []) if isinstance(row.get("blockers", []), list) else []:
+            add("P0", name, "Resolve blocker", str(blocker), row.get("package_folder"))
+        for warning in row.get("warnings", []) if isinstance(row.get("warnings", []), list) else []:
+            add("P1", name, "Review warning", str(warning), row.get("listing_folder"))
+        if row.get("status") == "READY_TO_UPLOAD":
+            add("P2", name, "Perform manual marketplace upload", "Local checks passed; marketplace upload and acceptance are not automated.", row.get("package_folder"))
+    source_status = source_audit.get("status")
+    if source_status in {"SOURCE_CHANGED", "SOURCE_MISSING", "CHECK_ERROR"}:
+        add("P1", "Source provenance", "Review source PDF provenance", source_audit.get("message", source_status), source_audit.get("report_path"))
+    elif source_status == "NOT_TRACKED":
+        add("P2", "Source provenance", "Record or confirm source provenance if needed", source_audit.get("message", source_status), source_audit.get("report_path"))
+    if not tasks:
+        add("P2", "All platforms", "Review the release reports", "No automated blockers were found, but the live listing and final marketplace requirements still need human review.", project / "REPORTS")
+    order = {"P0": 0, "P1": 1, "P2": 2}
+    tasks.sort(key=lambda row: (order.get(row["priority"], 9), str(row.get("platform", "")).casefold(), row["action"]))
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "task_count": len(tasks),
+        "priority_counts": {key: sum(1 for task in tasks if task["priority"] == key) for key in ("P0", "P1", "P2")},
+        "tasks": tasks, "read_only": True,
+        "note": "A task plan is guidance, not proof of upload, approval, or publication.",
+    }
+    if project.is_dir():
+        save_json(project / "REPORTS" / "RELEASE_ACTION_PLAN.json", report)
+    return report
+
+
+def v66_release_delivery_map(project, readiness=None):
+    """Inventory the exact package/listing locations and key files for a release."""
+    project = Path(project)
+    readiness = readiness if isinstance(readiness, dict) else {}
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "platforms": [], "errors": ["Project directory does not exist."]}
+    platforms = []
+    for row in readiness.get("platforms", []) if isinstance(readiness.get("platforms", []), list) else []:
+        if not isinstance(row, dict):
+            continue
+        package = Path(row["package_folder"]) if row.get("package_folder") else None
+        listing = Path(row["listing_folder"]) if row.get("listing_folder") else None
+        def inventory(root):
+            found = []
+            if root and root.is_dir():
+                for file_path in sorted(root.rglob("*"), key=lambda item: str(item).casefold()):
+                    if file_path.is_file():
+                        try:
+                            found.append({"path": str(file_path), "relative_path": str(file_path.relative_to(project)),
+                                          "size_bytes": file_path.stat().st_size})
+                        except (OSError, ValueError):
+                            continue
+                    if len(found) >= 500:
+                        break
+            return found
+        platforms.append({
+            "platform": row.get("platform", "Unknown"),
+            "readiness_status": row.get("status", "NEEDS_REVIEW"),
+            "package_folder": str(package) if package else None,
+            "package_exists": bool(package and package.is_dir()),
+            "package_files": inventory(package),
+            "listing_folder": str(listing) if listing else None,
+            "listing_exists": bool(listing and listing.is_dir()),
+            "listing_files": inventory(listing),
+        })
+    masters = []
+    for folder_name in ("MASTER", "FINAL", "PDF"):
+        folder = project / folder_name
+        if folder.is_dir():
+            masters.extend(str(path) for path in sorted(folder.glob("*.pdf")))
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "master_pdf_candidates": masters,
+        "platform_count": len(platforms), "platforms": platforms,
+        "read_only": True,
+        "note": "Inventory only. File presence does not imply marketplace upload or acceptance.",
+    }
+    save_json(project / "REPORTS" / "RELEASE_DELIVERY_MAP.json", report)
+    return report
+
+
+def v67_run_publishing_workflow(project):
+    """Run five connected local publishing checks without rebuilding the MASTER or overwriting drafts."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "errors": ["Project directory does not exist."]}
+    listing = v22_build_all_platform_listings(project, overwrite_existing=False)
+    if not isinstance(listing, dict):
+        listing = {"status": "NEEDS_REVIEW", "error": "Listing builder did not return a report."}
+    readiness = v61_upload_readiness_board(project)
+    if not isinstance(readiness, dict):
+        readiness = {"overall_status": "NEEDS_REVIEW", "platforms": []}
+    source = v63_source_pdf_integrity_audit(project)
+    checklist = v64_platform_upload_checklist(project, readiness)
+    plan = v65_release_action_plan(project, readiness, source)
+    delivery = v66_release_delivery_map(project, readiness)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project),
+        "status": readiness.get("overall_status", "NEEDS_REVIEW"),
+        "listing_status": listing.get("status", "GENERATED"),
+        "source_pdf_status": source.get("status", "NOT_TRACKED"),
+        "action_count": plan.get("task_count", 0),
+        "platform_count": len(readiness.get("platforms", [])) if isinstance(readiness.get("platforms", []), list) else 0,
+        "reports": {
+            "listing_readiness": str(project / MARKETING_DIR_NAME / "LISTINGS" / "LISTING_READINESS.json"),
+            "upload_readiness": str(project / "REPORTS" / "UPLOAD_READINESS.json"),
+            "source_pdf_integrity": str(project / "REPORTS" / "SOURCE_PDF_INTEGRITY.json"),
+            "upload_checklist": str(project / "REPORTS" / "PLATFORM_UPLOAD_CHECKLIST.json"),
+            "action_plan": str(project / "REPORTS" / "RELEASE_ACTION_PLAN.json"),
+            "delivery_map": str(project / "REPORTS" / "RELEASE_DELIVERY_MAP.json"),
+        },
+        "existing_listing_drafts_overwritten": False,
+        "master_rebuilt": False,
+        "uploaded": checklist.get("uploaded", False),
+        "published": checklist.get("published", False),
+        "note": "Local preparation only. Manual checklist statuses are carried forward; verify them against the marketplace. Nothing is uploaded by this workflow.",
+    }
+    save_json(project / "REPORTS" / "PUBLISHING_RUN_SUMMARY.json", report)
+    print("\\nONE-CLICK PUBLISHING RUN")
+    print(f"Project: {project}")
+    print(f"Readiness: {report['status']} | Source PDF: {report['source_pdf_status']} | Action items: {report['action_count']}")
+    print("Reports:")
+    for label, path in report["reports"].items():
+        print(f"  {label}: {path}")
+    print("MASTER and artwork were not rebuilt; existing listing drafts were preserved.")
+    print("This workflow does not upload or publish products.")
+    return report
+
+
+def v67_publishing_run_menu():
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return {"status": "CANCELLED"}
+    return v67_run_publishing_workflow(project)
+
 
 
 def main():
