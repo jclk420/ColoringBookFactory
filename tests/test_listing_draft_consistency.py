@@ -34,6 +34,22 @@ def load_audit():
     return namespace["v59_listing_draft_consistency_audit"]
 
 
+
+def load_write_policy():
+    source = FACTORY_PATH.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(FACTORY_PATH))
+    nodes = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "v60_listing_draft_write_policy"
+    ]
+    if len(nodes) != 1:
+        raise AssertionError("Expected exactly one v60 listing write-policy function")
+    namespace = {"Path": Path}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(FACTORY_PATH), "exec"), namespace)
+    return namespace["v60_listing_draft_write_policy"]
+
+
 def write_listing(root, platform="KDP", title="Test Book"):
     folder = root / platform
     folder.mkdir(parents=True, exist_ok=True)
@@ -58,6 +74,7 @@ class ListingDraftConsistencyTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.audit = load_audit()
+        self.write_policy = load_write_policy()
 
     def test_matching_json_and_text_pass_without_mutation(self):
         folder = write_listing(self.root)
@@ -117,6 +134,54 @@ class ListingDraftConsistencyTests(unittest.TestCase):
         self.assertIn("UNREADABLE_JSON", codes)
         self.assertIn("MISSING_TEXT", codes)
         self.assertEqual(bad_json.read_bytes(), before)
+
+    def test_existing_listing_pair_is_preserved_by_default(self):
+        folder = write_listing(self.root)
+        json_path = folder / "LISTING.json"
+        text_path = folder / "LISTING.txt"
+        before_json = json_path.read_bytes()
+        before_text = text_path.read_bytes()
+
+        policy = self.write_policy(json_path, text_path)
+
+        self.assertFalse(policy["write"])
+        self.assertEqual(policy["reason"], "preserve_existing")
+        self.assertEqual(json_path.read_bytes(), before_json)
+        self.assertEqual(text_path.read_bytes(), before_text)
+
+    def test_partial_listing_pair_is_preserved_for_audit(self):
+        folder = self.root / "KDP"
+        folder.mkdir()
+        json_path = folder / "LISTING.json"
+        text_path = folder / "LISTING.txt"
+        json_path.write_text("{malformed but user-owned}", encoding="utf-8")
+        before_json = json_path.read_bytes()
+
+        policy = self.write_policy(json_path, text_path)
+
+        self.assertFalse(policy["write"])
+        self.assertTrue(policy["existing_json"])
+        self.assertFalse(policy["existing_text"])
+        self.assertEqual(json_path.read_bytes(), before_json)
+        self.assertFalse(text_path.exists())
+
+    def test_explicit_overwrite_is_required_to_replace_existing_drafts(self):
+        folder = write_listing(self.root)
+        policy = self.write_policy(
+            folder / "LISTING.json", folder / "LISTING.txt", overwrite_existing=True
+        )
+
+        self.assertTrue(policy["write"])
+        self.assertEqual(policy["reason"], "explicit_overwrite")
+
+    def test_new_listing_paths_can_be_created_without_overwrite(self):
+        folder = self.root / "NewPlatform"
+        policy = self.write_policy(
+            folder / "LISTING.json", folder / "LISTING.txt"
+        )
+
+        self.assertTrue(policy["write"])
+        self.assertEqual(policy["reason"], "new_drafts")
 
 
 if __name__ == "__main__":

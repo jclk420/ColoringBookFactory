@@ -1,6 +1,6 @@
 # ColoringBookFactory
 
-**Current factory version: 58.0**
+**Current factory version: 60.0**
 
 ColoringBookFactory is a Windows-oriented Python application for producing coloring books, organizing world/series lore, preparing marketplace listing drafts, and checking production packages before release.
 

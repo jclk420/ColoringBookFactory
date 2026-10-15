@@ -1,5 +1,13 @@
 # Changelog
 
+## v60.0 — Non-Destructive Listing Draft Generation
+
+- Preserves existing platform listing JSON/text files by default instead of silently overwriting user edits on reruns.
+- Requires an explicit typed `YES` confirmation in the interactive listing builder before replacing existing drafts.
+- Preserves partial or malformed existing pairs for the read-only consistency audit to report; it does not silently repair them.
+- Records per-platform draft preservation/write-policy status in the readiness report.
+- Adds regression tests for existing pairs, partial pairs, explicit overwrite, and first-time draft creation.
+
 ## v59.0 — Listing Draft Consistency Audit
 
 - Audits generated platform listing JSON and paste-ready text as a pair without modifying either artifact.
