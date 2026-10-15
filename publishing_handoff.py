@@ -19,6 +19,14 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _case_collisions(paths: list[str]) -> list[list[str]]:
+    """Return case-insensitive duplicate path groups, independent of host filesystem rules."""
+    grouped: dict[str, list[str]] = {}
+    for path in paths:
+        grouped.setdefault(path.casefold(), []).append(path)
+    return [variants for variants in grouped.values() if len(variants) > 1]
+
+
 def build_handoff_manifest(project: str | Path, platform_folders: tuple[str, ...] = PLATFORM_ROOTS) -> dict[str, Any]:
     """Inventory package files and flag zero-byte files, case collisions, and unreadable paths."""
     root = Path(project).expanduser().resolve()
@@ -48,10 +56,16 @@ def build_handoff_manifest(project: str | Path, platform_folders: tuple[str, ...
             report["platforms"][folder_name] = row
             continue
         files = sorted(path for path in folder.rglob("*") if path.is_file())
-        by_casefold: dict[str, list[str]] = {}
+        relative_paths = [path.relative_to(folder).as_posix() for path in files]
+        collisions = _case_collisions(relative_paths)
+        for variants in collisions:
+            row["case_collisions"].append(variants)
+            report["summary"]["case_collisions"] += 1
+            report["actions"].append({"priority": "P1", "platform": folder_name,
+                                      "action": "Case-insensitive filename collision; may behave differently across systems.",
+                                      "paths": variants})
         for path in files:
             relative = path.relative_to(folder).as_posix()
-            by_casefold.setdefault(relative.casefold(), []).append(relative)
             try:
                 size = path.stat().st_size
                 entry = {"path": relative, "size_bytes": size, "sha256": _sha256(path)}
@@ -69,13 +83,6 @@ def build_handoff_manifest(project: str | Path, platform_folders: tuple[str, ...
                 report["summary"]["read_errors"] += 1
                 report["actions"].append({"priority": "P0", "platform": folder_name,
                                           "action": "Could not read package file: " + message, "path": str(path)})
-        for variants in by_casefold.values():
-            if len(variants) > 1:
-                row["case_collisions"].append(variants)
-                report["summary"]["case_collisions"] += 1
-                report["actions"].append({"priority": "P1", "platform": folder_name,
-                                          "action": "Case-insensitive filename collision; may behave differently across systems.",
-                                          "paths": variants})
         report["platforms"][folder_name] = row
     report["actions"].sort(key=lambda item: (item.get("priority", "P9"), item.get("platform", ""), item.get("action", "")))
     return report
