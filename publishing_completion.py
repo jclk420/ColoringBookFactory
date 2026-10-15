@@ -8,11 +8,11 @@ from typing import Any
 VERSION = "1.0"
 DEFAULT_PLATFORMS = {
     "KDP": {"folder": "KDP", "required_any": [["*interior*.pdf"], ["*cover*.pdf"]],
-            "listing_any": [["*metadata*.json"], ["*checklist*"]],
+            "listing_any": [["*.json"], ["*.txt"]],
             "notes": "Print package; verify trim, bleed, cover template, and KDP preflight."},
     "Gumroad": {"folder": "GUMROAD", "required_any": [["*.pdf"], ["*cover*.png", "*cover*.jpg", "*thumbnail*.png"],
                 ["*description*.txt", "*description*.md", "*metadata*.json"]],
-                "listing_any": [["*listing*.json", "*metadata*.json"], ["*description*.txt", "*description*.md"]],
+                "listing_any": [["*.json"], ["*.txt"]],
                 "notes": "Digital delivery; manually confirm previews, price, and product copy."},
     "Payhip": {"folder": "PAYHIP", "required_any": [["*.pdf"], ["*cover*.png", "*cover*.jpg", "*thumbnail*.png"]],
                "listing_any": [["*listing*.json", "*metadata*.json"], ["*description*.txt", "*description*.md"]],
