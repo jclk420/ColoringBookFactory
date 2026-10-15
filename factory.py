@@ -20730,7 +20730,11 @@ def v80_export_release_handoff_bundle(project, readiness=None, drift=None, fresh
     if not project.is_dir():
         return {"status": "BLOCKED", "errors": ["Project directory does not exist."], "exported": False}
     audits = [readiness or {}, drift or {}, freshness or {}, upload_state or {}]
-    if any(isinstance(audit, dict) and audit.get("status") in {"BLOCKED", "NEEDS_REVIEW", "REVIEW"} for audit in audits):
+    readiness_status = (readiness or {}).get("overall_status", (readiness or {}).get("status"))
+    if readiness_status != "READY_TO_UPLOAD" or any(
+        isinstance(audit, dict) and audit.get("status") in {"BLOCKED", "NEEDS_REVIEW", "REVIEW"}
+        for audit in (drift or {}, freshness or {}, upload_state or {})
+    ):
         return {"status": "WITHHELD", "exported": False,
                 "errors": ["Release handoff ZIP was withheld because one or more release audits need review."]}
     project_root = project.resolve()
@@ -20836,6 +20840,8 @@ def v81_upload_state_audit(project, readiness=None):
         except Exception as error:
             rows = []
             report["warnings"].append(f"Upload checklist unavailable: {type(error).__name__}: {error}")
+        if not rows:
+            report["warnings"].append("Upload checklist has no platform rows to verify.")
         ready_by_name = {
             str(row.get("platform")): row for row in readiness.get("platforms", [])
             if isinstance(row, dict) and row.get("platform")
@@ -20882,8 +20888,15 @@ def v82_run_release_integrity_center(project):
     drift = v78_listing_metadata_drift_audit(project)
     freshness = v79_package_freshness_audit(project)
     upload_state = v81_upload_state_audit(project, readiness)
-    blocked = any(isinstance(item, dict) and item.get("status") == "BLOCKED" for item in (readiness, drift, freshness, upload_state))
-    needs_review = any(isinstance(item, dict) and item.get("status") in {"NEEDS_REVIEW", "REVIEW"} for item in (readiness, drift, freshness, upload_state))
+    readiness_status = readiness.get("overall_status", readiness.get("status")) if isinstance(readiness, dict) else "BLOCKED"
+    blocked = readiness_status == "BLOCKED" or any(
+        isinstance(item, dict) and item.get("status") == "BLOCKED"
+        for item in (drift, freshness, upload_state)
+    )
+    needs_review = readiness_status != "READY_TO_UPLOAD" or any(
+        isinstance(item, dict) and item.get("status") in {"NEEDS_REVIEW", "REVIEW"}
+        for item in (drift, freshness, upload_state)
+    )
     export = v80_export_release_handoff_bundle(project, readiness, drift, freshness, upload_state) if not blocked and not needs_review else {
         "status": "WITHHELD", "exported": False,
         "errors": ["Release handoff ZIP withheld until all integrity and upload-state reviews pass."],
