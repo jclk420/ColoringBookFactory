@@ -19768,8 +19768,21 @@ def v66_release_delivery_map(project, readiness=None):
     for row in readiness.get("platforms", []) if isinstance(readiness.get("platforms", []), list) else []:
         if not isinstance(row, dict):
             continue
-        package = Path(row["package_folder"]) if row.get("package_folder") else None
-        listing = Path(row["listing_folder"]) if row.get("listing_folder") else None
+        project_root = project.resolve()
+        def safe_root(value):
+            if not value:
+                return None
+            try:
+                candidate = Path(value).resolve()
+                if candidate != project_root and candidate.is_relative_to(project_root):
+                    return candidate
+            except (OSError, RuntimeError, ValueError):
+                return None
+            return None
+        # Never inventory a path outside the selected project, even if a
+        # malformed readiness report contains an absolute or traversal path.
+        package = safe_root(row.get("package_folder"))
+        listing = safe_root(row.get("listing_folder"))
         def inventory(root):
             found = []
             if root and root.is_dir():
