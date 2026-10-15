@@ -1,3 +1,10 @@
+## v61.0 — Consolidated Platform Upload Readiness Board
+
+- Adds one read-only board that combines platform package-manifest verification with the current listing readiness report.
+- Writes `REPORTS/UPLOAD_READINESS.json` with per-platform status, exact package/listing folder paths, blockers, and review warnings.
+- Distinguishes `READY_TO_UPLOAD`, `NEEDS_REVIEW`, and `BLOCKED`; it never claims that a product was uploaded or published.
+- Adds main-menu option 23 and preserves production files, artwork, listing drafts, and publishing state.
+
 # Changelog
 
 ## v60.0 — Non-Destructive Listing Draft Generation
