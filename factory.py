@@ -19585,7 +19585,7 @@ def v61_upload_readiness_board(project=None):
     }
     target = project / "REPORTS" / "UPLOAD_READINESS.json"
     save_json(target, report)
-    print("\\n" + "=" * 72)
+    print("\n" + "=" * 72)
     print(f"UPLOAD READINESS BOARD v{FACTORY_VERSION} — {project.name}")
     print("=" * 72)
     for row in results:
@@ -19644,7 +19644,7 @@ def v62_post_import_publishing_setup(project, package_results=None):
         "note": "Local preparation only. Review listing fields and upload each platform package manually.",
     }
     save_json(project / "REPORTS" / "POST_IMPORT_PUBLISHING_PREP.json", report)
-    print("\\nPOST-IMPORT PUBLISHING PREPARATION")
+    print("\nPOST-IMPORT PUBLISHING PREPARATION")
     print(f"Listings: {report['listing_report']}")
     print(f"Readiness: {report['readiness_report']}")
     print(f"Status: {report['status']}")
@@ -19912,7 +19912,7 @@ def v67_run_publishing_workflow(project):
         "note": "Local preparation only. Manual checklist statuses are carried forward; verify them against the marketplace. Nothing is uploaded by this workflow.",
     }
     save_json(project / "REPORTS" / "PUBLISHING_RUN_SUMMARY.json", report)
-    print("\\nONE-CLICK PUBLISHING RUN")
+    print("\nONE-CLICK PUBLISHING RUN")
     print(f"Project: {project}")
     print(f"Readiness: {report['status']} | Source PDF: {report['source_pdf_status']} | Action items: {report['action_count']}")
     print("Reports:")
@@ -20251,7 +20251,7 @@ def v72_run_creation_quality_workflow(project):
         "note": "Structural and technical checks only. The factory does not claim to generate artwork or judge artistic quality automatically.",
     }
     save_json(project / "REPORTS" / "CREATION_QUALITY_SUMMARY.json", report)
-    print("\\nCREATION & ARTWORK QUALITY CENTER")
+    print("\nCREATION & ARTWORK QUALITY CENTER")
     print(f"Project: {project}")
     print(f"Overall: {overall} | Creation: {readiness.get('status')} | Artwork: {artwork.get('status')} | Prompt handoff: {prompts.get('status')}")
     print(f"Action items: {report['action_count']}")
@@ -21957,7 +21957,7 @@ def v112_publishing_handoff_menu():
         return {"status": "BLOCKED", "errors": [str(exc)]}
 
     summary = report.get("summary", {})
-    print("\\nPublishing Handoff Inventory")
+    print("\nPublishing Handoff Inventory")
     print(f"  Files fingerprinted: {summary.get('files', 0)}")
     print(f"  Total bytes: {summary.get('bytes', 0)}")
     print(f"  Empty files (P0): {summary.get('zero_byte_files', 0)}")
@@ -21965,7 +21965,7 @@ def v112_publishing_handoff_menu():
     print(f"  Read errors (P0): {summary.get('read_errors', 0)}")
     actions = report.get("actions", [])
     if actions:
-        print("\\nACTION REQUIRED")
+        print("\nACTION REQUIRED")
         for action in actions:
             priority = action.get("priority", "P?")
             platform = action.get("platform", "")
@@ -21977,7 +21977,7 @@ def v112_publishing_handoff_menu():
                 print(f"       Paths: {', '.join(action['paths'])}")
     else:
         print("No missing folders, empty files, filename collisions, or read errors were detected.")
-    print(f"\\nInventory report: {report_path}")
+    print(f"\nInventory report: {report_path}")
     print("Read-only inventory. It does not alter packages or upload/publish anything.")
     return report
 
