@@ -394,3 +394,12 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Offline release ZIP with SHA-256 manifest, no-clobber naming, and package/listing/report inventory.
 - Manual upload-state validation for status and product URL consistency.
 - One-click release integrity center with strict export gating and main-menu option 27; no marketplace upload or publication.
+
+
+### v83.0–v87.0 — Safe Artwork Import & Guided Production
+
+- Verified backup of existing INPUT artwork before any assembly replacement; abort on backup/removal/staging failure.
+- Explicit generated-art import from a passing preview, source hash revalidation, no-clobber destinations, and rollback of new copies on failure.
+- Assembly INPUT preview with current and proposed artwork inventory.
+- Prioritized production action plan and guided import → QA → assembly-gate workflow.
+- Main-menu option 28; no automatic build, upload, or publication.
