@@ -1,3 +1,9 @@
+### v62.0 — Automatic Post-Import Publishing Preparation
+- Chain non-destructive listing generation and consolidated readiness reporting after finished-PDF intake and platform package creation.
+- Preserve existing listing drafts by default.
+- Produce a single report with links to per-platform listing drafts and the upload-readiness board.
+- Manual review and upload remain explicit; the factory never claims to publish automatically.
+
 ### v61.0 — Consolidated Platform Upload Readiness Board
 - Combine enabled platform package-manifest checks with existing listing readiness into one read-only decision report.
 - Report the exact platform upload folder, manifest path, listing folder, blockers, and manual-review warnings.
