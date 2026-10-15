@@ -29,7 +29,7 @@ class PublishingHandoffMenuIntegrationTests(unittest.TestCase):
         source = ast.get_source_segment(SOURCE, function)
         self.assertIn('ACTION REQUIRED', source)
         self.assertIn('Read-only inventory', source)
-        self.assertIn('uploaded', source.lower())
+        self.assertIn('upload', source.lower())
 
     def test_existing_completion_center_remains_available(self):
         self.assertIn('elif c=="31": v102_publishing_completion_menu()', SOURCE)
