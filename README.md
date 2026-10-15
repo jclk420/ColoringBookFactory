@@ -1,6 +1,6 @@
 # ColoringBookFactory
 
-**Current factory version: 72.0**
+**Current factory version: 77.0**
 
 ColoringBookFactory is a Windows-oriented Python application for producing coloring books, organizing world/series lore, preparing marketplace listing drafts, and checking production packages before release.
 
@@ -18,7 +18,7 @@ From the repository root in PowerShell:
 python -X utf8 .\factory.py
 ```
 
-The main menu includes book creation/import, production, publishing, marketing, worlds and series, lore intake, release diagnostics, canon tools, listing generation, automatic post-import listing preparation, upload-readiness reporting, a one-click five-stage publishing run, source-PDF provenance auditing, a preserved manual upload checklist, prioritized release action plans, delivery-folder inventory, a five-stage creation/artwork quality center, and reliability/migration tools. State and queue loaders now validate their JSON structure before use; malformed data produces an explicit warning and an in-memory safe fallback without rewriting the persisted file.
+The main menu includes book creation/import, production, publishing, marketing, worlds and series, lore intake, release diagnostics, canon tools, listing generation, automatic post-import listing preparation, upload-readiness reporting, a one-click five-stage publishing run, source-PDF provenance auditing, a preserved manual upload checklist, prioritized release action plans, delivery-folder inventory, a five-stage creation/artwork quality center, a prompt-generation ZIP handoff, generated-art intake preview, lore continuity audit, and assembly readiness gate. State and queue loaders now validate their JSON structure before use; malformed data produces an explicit warning and an in-memory safe fallback without rewriting the persisted file.
 
 ## Core workflows
 
@@ -72,3 +72,8 @@ Choose **24. One-Click Publishing Run**. It generates listing drafts without ove
 ### 5. Check creation and artwork quality
 
 Choose **25. Creation & Artwork Quality Center** to audit the blueprint/prompt/queue counts, inspect artwork file readability and duplicate bytes, compare exported prompt text against the current prompt manifest, and create a prioritized creation action plan. The reports are written under `REPORTS`. This is a technical/structural audit: it does not alter prompts or artwork, change canon, or claim to judge artistic quality automatically.
+
+
+### 6. Prepare artwork generation and assembly
+
+Choose **26. Artwork Generation Handoff & Assembly Gate**. The factory checks prompt-to-world/location/series IDs, packages existing prompt text into a collision-safe ZIP for use in an external image-generation tool, previews how generated files map to stable image IDs, and verifies every artwork job before assembly. The external-art preview does not copy files; use the separate artwork import/QA workflow to bring assets into the project. Assembly readiness is not the same as a completed build.
