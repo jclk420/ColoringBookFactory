@@ -19789,7 +19789,7 @@ def v66_release_delivery_map(project, readiness=None):
                 for file_path in sorted(root.rglob("*"), key=lambda item: str(item).casefold()):
                     if file_path.is_file():
                         try:
-                            found.append({"path": str(file_path), "relative_path": str(file_path.relative_to(project)),
+                            found.append({"path": str(file_path), "relative_path": str(file_path.relative_to(project_root)),
                                           "size_bytes": file_path.stat().st_size})
                         except (OSError, ValueError):
                             continue
