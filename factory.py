@@ -20421,6 +20421,10 @@ def v75_artwork_intake_preview(project, source_folder):
                 report["ambiguous_ids"].append({"image_id": image_id, "files": [path.name for path in matches]})
                 continue
             path = matches[0]
+            if path in consumed:
+                report["ambiguous_ids"].append({"image_id": image_id, "files": [path.name],
+                                                "reason": "One source file matched more than one image ID."})
+                continue
             consumed.add(path)
             errors, warnings, metadata = cb13_validate_artwork_file(path)
             report["matches"].append({
@@ -20463,11 +20467,15 @@ def v76_assembly_readiness_gate(project):
             jobs = []
             report["errors"].append(f"Artwork queue unavailable: {type(error).__name__}: {error}")
         seen_hashes = {}
+        seen_ids = set()
         for job in jobs:
             if not isinstance(job, dict):
                 report["errors"].append("Artwork queue contains a malformed job record.")
                 continue
             image_id = str(job.get("image_id", "")).strip()
+            if not image_id or image_id in seen_ids:
+                report["errors"].append(f"Artwork queue has a missing or duplicate image ID: {image_id!r}.")
+            seen_ids.add(image_id)
             status = str(job.get("status", "UNKNOWN"))
             approved_raw = str(job.get("approved_file", "")).strip()
             item = {"image_id": image_id, "queue_status": status, "approved_file": approved_raw, "status": "BLOCKED"}
@@ -20528,8 +20536,9 @@ def v77_run_artwork_handoff_workflow(project, source_folder=None):
     if source_folder and isinstance(intake, dict):
         intake["status"] = intake.get("status", "NEEDS_REVIEW")
     assembly = v76_assembly_readiness_gate(project)
-    statuses = [continuity.get("status"), handoff.get("status"), intake.get("status"), assembly.get("status")]
-    overall = "BLOCKED" if "BLOCKED" in statuses else ("NEEDS_REVIEW" if "NEEDS_REVIEW" in statuses or "NEEDS_REVIEW" == export.get("status") else "READY")
+    statuses = [continuity.get("status"), handoff.get("status"), export.get("status"),
+                intake.get("status"), assembly.get("status")]
+    overall = "BLOCKED" if "BLOCKED" in statuses else ("NEEDS_REVIEW" if "NEEDS_REVIEW" in statuses else "READY")
     report = {
         "schema_version": 1, "factory_version": FACTORY_VERSION,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
