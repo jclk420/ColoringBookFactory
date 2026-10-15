@@ -59,7 +59,10 @@ class PublishingCompletionTests(unittest.TestCase):
             })
             row = report["platforms"]["Sample"]
             self.assertEqual(row["status"], "NEEDS_REVIEW")
-            # Windows runners may expose the temp root through a DOS 8.3 alias (RUNNER~1)\n            # while the module resolves it through the long name (runneradmin). Assert the\n            # stable project-relative suffix rather than comparing OS-specific temp prefixes.\n            self.assertTrue(row["package_folder"].replace("\\\\", "/").casefold().endswith("/platforms/sample"))
+            # Windows runners may expose the temp root through a DOS 8.3 alias (RUNNER~1)
+            # while the module resolves it through the long name (runneradmin). Assert the
+            # stable project-relative suffix rather than comparing OS-specific temp prefixes.
+            self.assertTrue(row["package_folder"].replace("\\", "/").casefold().endswith("/platforms/sample"))
             self.assertFalse(row["upload_confirmed"])
             self.assertFalse(report["uploaded_or_published"])
 
