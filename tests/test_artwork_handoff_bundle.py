@@ -41,7 +41,7 @@ class ArtworkHandoffBundleTests(unittest.TestCase):
         self.project.mkdir()
         self.ns, self.source = load_helpers()
         self.ns.update({
-            "FACTORY_VERSION": "77.0",
+            "FACTORY_VERSION": "82.0",
             "BOOK_BLUEPRINT_FILENAME": "BOOK_BLUEPRINT.json",
             "PROMPT_MANIFEST_FILENAME": "PROMPT_MANIFEST.json",
             "ARTWORK_QUEUE_FILENAME": "ARTWORK_QUEUE.json",
@@ -187,7 +187,7 @@ class ArtworkHandoffBundleTests(unittest.TestCase):
         self.assertFalse(result["published"])
 
     def test_version_and_menu_wiring(self):
-        self.assertIn('FACTORY_VERSION = "77.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "82.0"', self.source)
         self.assertIn('26. Artwork Generation Handoff & Assembly Gate', self.source)
         self.assertIn('elif c=="26": v77_artwork_handoff_menu()', self.source)
         tree = ast.parse(self.source)

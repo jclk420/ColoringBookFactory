@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 77.0.
+# Current version: 82.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "77.0"
+FACTORY_VERSION = "82.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18954,6 +18954,7 @@ def factory_main_menu():
         print(" 24. One-Click Publishing Run (5-stage release pack)")
         print(" 25. Creation & Artwork Quality Center (5-stage audit)")
         print(" 26. Artwork Generation Handoff & Assembly Gate (5-stage)")
+        print(" 27. Final Release Integrity & Handoff Center (5-stage)")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -18987,6 +18988,7 @@ def factory_main_menu():
         elif c=="24": v67_publishing_run_menu()
         elif c=="25": v72_creation_quality_menu()
         elif c=="26": v77_artwork_handoff_menu()
+        elif c=="27": v82_release_integrity_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -20575,6 +20577,361 @@ def v77_artwork_handoff_menu():
         return {"status": "CANCELLED"}
     raw = input("Optional folder containing generated artwork (blank to skip intake preview): ").strip().strip('"')
     return v77_run_artwork_handoff_workflow(project, raw or None)
+
+
+
+# ============================================================
+# v78-v82 — FINAL RELEASE INTEGRITY & HANDOFF BUNDLE
+# Audits listing drift, package freshness, and manual upload state;
+# creates a release handoff ZIP only when all required gates pass.
+# ============================================================
+
+def v78_listing_metadata_drift_audit(project):
+    """Compare existing platform listing drafts against current project metadata."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "BLOCKED",
+        "platforms": [], "errors": [], "warnings": [], "read_only": True,
+    }
+    if not project.is_dir():
+        report["errors"].append("Project directory does not exist.")
+    else:
+        settings_path = project / "project.json"
+        try:
+            settings = load_json(settings_path)
+            if not isinstance(settings, dict):
+                raise ValueError("project.json root is not an object")
+        except Exception as error:
+            settings = {}
+            report["errors"].append(f"Project metadata could not be read: {type(error).__name__}: {error}")
+        expected = {
+            "title": str(settings.get("title") or project.name).strip(),
+            "author": str(settings.get("author") or "").strip(),
+            "subtitle": str(settings.get("subtitle") or settings.get("cover_subtitle") or "").strip(),
+            "keywords": [str(value).strip().casefold() for value in settings.get("keywords", [])
+                         if str(value).strip()] if isinstance(settings.get("keywords", []), list) else [],
+        }
+        root = project / MARKETING_DIR_NAME / "LISTINGS"
+        if not root.is_dir():
+            report["warnings"].append("Listing drafts folder is missing.")
+        else:
+            for folder in sorted((path for path in root.iterdir() if path.is_dir()), key=lambda path: path.name.casefold()):
+                listing_path = folder / "LISTING.json"
+                if not listing_path.is_file():
+                    continue
+                try:
+                    listing = load_json(listing_path)
+                    if not isinstance(listing, dict):
+                        raise ValueError("listing root is not an object")
+                    fields = listing.get("fields", {})
+                    if not isinstance(fields, dict):
+                        fields = {}
+                    platform = str(listing.get("platform") or folder.name)
+                    issues = []
+                    title_value = next((fields[key] for key in ("book_title", "product_name", "product_title", "name", "title")
+                                        if fields.get(key) not in (None, "")), listing.get("title", ""))
+                    author_value = fields.get("author", listing.get("author", ""))
+                    subtitle_value = fields.get("subtitle", "")
+                    if expected["title"] and str(title_value).strip() and str(title_value).strip() != expected["title"]:
+                        issues.append({"severity": "ERROR", "field": "title", "expected": expected["title"], "actual": str(title_value).strip()})
+                    if expected["author"] and str(author_value).strip() and str(author_value).strip() != expected["author"]:
+                        issues.append({"severity": "ERROR", "field": "author", "expected": expected["author"], "actual": str(author_value).strip()})
+                    if expected["subtitle"] and str(subtitle_value).strip() and str(subtitle_value).strip() != expected["subtitle"]:
+                        issues.append({"severity": "WARNING", "field": "subtitle", "expected": expected["subtitle"], "actual": str(subtitle_value).strip()})
+                    keywords = fields.get("keywords", fields.get("tags", fields.get("tags_or_keywords", [])))
+                    if isinstance(keywords, str):
+                        keywords = [item.strip() for item in re.split(r"[,;]", keywords) if item.strip()]
+                    actual_keywords = [str(value).strip().casefold() for value in keywords if str(value).strip()] if isinstance(keywords, list) else []
+                    if expected["keywords"] and actual_keywords and actual_keywords != expected["keywords"]:
+                        issues.append({"severity": "WARNING", "field": "keywords", "expected": expected["keywords"], "actual": actual_keywords})
+                    row = {"platform": platform, "listing_file": str(listing_path), "status": "BLOCKED" if any(i["severity"] == "ERROR" for i in issues) else ("NEEDS_REVIEW" if issues else "PASS"), "issues": issues}
+                    report["platforms"].append(row)
+                    for issue in issues:
+                        message = f"{platform} listing {issue['field']} differs from project metadata."
+                        if issue["severity"] == "ERROR":
+                            report["errors"].append(message)
+                        else:
+                            report["warnings"].append(message)
+                except Exception as error:
+                    report["warnings"].append(f"{listing_path.name} in {folder.name} could not be audited: {type(error).__name__}: {error}")
+        report["expected_metadata"] = expected
+        report["status"] = "BLOCKED" if report["errors"] else ("NEEDS_REVIEW" if report["warnings"] else "PASS")
+    if project.is_dir():
+        save_json(project / "REPORTS" / "LISTING_METADATA_DRIFT.json", report)
+    return report
+
+
+def v79_package_freshness_audit(project):
+    """Verify enabled package manifests and compare conventional interior PDFs to the current MASTER."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "BLOCKED",
+        "master_pdf": None, "master_sha256": None, "platforms": [],
+        "errors": [], "warnings": [], "read_only": True,
+    }
+    if not project.is_dir():
+        report["errors"].append("Project directory does not exist.")
+    else:
+        try:
+            master = find_master_pdf(project)
+            if master and Path(master).is_file():
+                report["master_pdf"] = str(master)
+                report["master_sha256"] = file_hash(master)
+            else:
+                report["errors"].append("Current MASTER PDF could not be found.")
+        except Exception as error:
+            report["errors"].append(f"MASTER lookup failed: {type(error).__name__}: {error}")
+        profiles = load_platform_profiles()
+        for name, profile in profiles.items():
+            if not isinstance(profile, dict) or not profile.get("enabled", False):
+                continue
+            output_dir = str(profile.get("output_dir", str(name).upper()))
+            root = project / PLATFORM_DIRNAME / output_dir
+            verification = v23_verify_package_root(root)
+            pdfs = sorted((path for path in root.glob("*.pdf") if path.is_file()), key=lambda path: path.name.casefold()) if root.is_dir() else []
+            comparable = [path for path in pdfs if path.stem.casefold() in {"interior", "book", "master"}]
+            pdf_results = []
+            for path in pdfs:
+                try:
+                    pdf_results.append({"name": path.name, "sha256": file_hash(path), "size_bytes": path.stat().st_size,
+                                        "matches_master": bool(report["master_sha256"] and file_hash(path) == report["master_sha256"])})
+                except OSError as error:
+                    report["warnings"].append(f"{name}: cannot hash {path.name}: {error}")
+            freshness = "VERIFIED_MATCH" if any(row["matches_master"] for row in pdf_results) else (
+                "POSSIBLY_STALE" if comparable and report["master_sha256"] else "NOT_COMPARABLE"
+            )
+            platform_row = {
+                "platform": name, "package_folder": str(root),
+                "manifest_status": verification.get("status", "BLOCKED"),
+                "manifest_errors": verification.get("errors", []),
+                "manifest_warnings": verification.get("warnings", []),
+                "pdf_files": pdf_results, "master_comparison": freshness,
+            }
+            if verification.get("status") == "BLOCKED":
+                report["errors"].extend(f"{name}: {item}" for item in verification.get("errors", []))
+            elif verification.get("status") == "REVIEW":
+                report["warnings"].extend(f"{name}: {item}" for item in verification.get("warnings", []))
+            if freshness == "POSSIBLY_STALE":
+                report["warnings"].append(f"{name}: conventional interior PDF does not match the current MASTER digest.")
+            elif freshness == "NOT_COMPARABLE":
+                report["warnings"].append(f"{name}: package freshness could not be compared directly to the MASTER PDF.")
+            report["platforms"].append(platform_row)
+        report["status"] = "BLOCKED" if report["errors"] else ("NEEDS_REVIEW" if report["warnings"] else "PASS")
+    if project.is_dir():
+        save_json(project / "REPORTS" / "PACKAGE_FRESHNESS.json", report)
+    return report
+
+
+def v80_export_release_handoff_bundle(project, readiness=None, drift=None, freshness=None, upload_state=None):
+    """Export a no-clobber ZIP of platform packages, listing drafts, and release reports."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "errors": ["Project directory does not exist."], "exported": False}
+    audits = [readiness or {}, drift or {}, freshness or {}, upload_state or {}]
+    readiness_status = (readiness or {}).get("overall_status", (readiness or {}).get("status"))
+    if readiness_status != "READY_TO_UPLOAD" or any(
+        isinstance(audit, dict) and audit.get("status") in {"BLOCKED", "NEEDS_REVIEW", "REVIEW"}
+        for audit in (drift or {}, freshness or {}, upload_state or {})
+    ):
+        return {"status": "WITHHELD", "exported": False,
+                "errors": ["Release handoff ZIP was withheld because one or more release audits need review."]}
+    project_root = project.resolve()
+    candidates = []
+    for audit in audits:
+        if not isinstance(audit, dict):
+            continue
+        for row in audit.get("platforms", []) if isinstance(audit.get("platforms", []), list) else []:
+            if not isinstance(row, dict):
+                continue
+            for key in ("package_folder", "listing_folder", "listing_file"):
+                value = row.get(key)
+                if not value:
+                    continue
+                try:
+                    path = Path(value).resolve()
+                    if path.is_relative_to(project_root) and path.exists():
+                        candidates.append(path)
+                except (OSError, RuntimeError, ValueError):
+                    continue
+    for relative in (
+        Path("REPORTS/UPLOAD_READINESS.json"),
+        Path("REPORTS/LISTING_METADATA_DRIFT.json"),
+        Path("REPORTS/PACKAGE_FRESHNESS.json"),
+        Path("REPORTS/UPLOAD_STATE_AUDIT.json"),
+        Path(MARKETING_DIR_NAME) / "LISTINGS" / "LISTING_READINESS.json",
+        Path("REPORTS") / "PLATFORM_UPLOAD_CHECKLIST.json",
+    ):
+        path = project / relative
+        if path.is_file():
+            candidates.append(path.resolve())
+    files = {}
+    for candidate in candidates:
+        if candidate.is_file():
+            try:
+                relative = candidate.relative_to(project_root).as_posix()
+                files[relative] = candidate
+            except ValueError:
+                continue
+        elif candidate.is_dir():
+            for item in sorted(candidate.rglob("*"), key=lambda path: str(path).casefold()):
+                if item.is_file():
+                    try:
+                        relative = item.resolve().relative_to(project_root).as_posix()
+                        files[relative] = item.resolve()
+                    except (OSError, ValueError):
+                        continue
+    if not files:
+        return {"status": "BLOCKED", "exported": False, "errors": ["No release package/listing files were found to export."]}
+    export_dir = project / "DELIVERY"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target = export_dir / f"RELEASE_HANDOFF_{stamp}.zip"
+    suffix = 2
+    while target.exists():
+        target = export_dir / f"RELEASE_HANDOFF_{stamp}_{suffix:02d}.zip"
+        suffix += 1
+    manifest = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "created_at": datetime.now().isoformat(timespec="seconds"),
+        "files": [{"path": name, "sha256": file_hash(path), "size_bytes": path.stat().st_size}
+                  for name, path in sorted(files.items())],
+        "uploaded": False, "published": False,
+        "note": "Offline release handoff only; no marketplace upload or publication was performed.",
+    }
+    try:
+        with zipfile.ZipFile(target, "x", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, path in sorted(files.items()):
+                archive.write(path, arcname=f"RELEASE/{name}")
+            archive.writestr("RELEASE_HANDOFF_MANIFEST.json", json.dumps(manifest, indent=2, ensure_ascii=False))
+    except Exception as error:
+        try:
+            target.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return {"status": "BLOCKED", "exported": False, "errors": [f"Release ZIP creation failed: {type(error).__name__}: {error}"]}
+    result = {"status": "EXPORTED", "exported": True, "path": str(target),
+              "sha256": file_hash(target), "size_bytes": target.stat().st_size,
+              "file_count": len(files), "uploaded": False, "published": False, "manifest": manifest}
+    save_json(project / "REPORTS" / "RELEASE_HANDOFF_EXPORT.json", result)
+    return result
+
+
+def v81_upload_state_audit(project, readiness=None):
+    """Check manual upload checklist statuses for missing URLs and readiness conflicts."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "NEEDS_REVIEW",
+        "platforms": [], "errors": [], "warnings": [],
+        "uploaded": False, "published": False, "read_only": True,
+    }
+    if not project.is_dir():
+        report["status"] = "BLOCKED"
+        report["errors"].append("Project directory does not exist.")
+    else:
+        path = project / "REPORTS" / "PLATFORM_UPLOAD_CHECKLIST.json"
+        try:
+            data = load_json(path)
+            rows = data.get("platforms", []) if isinstance(data, dict) else []
+            if not isinstance(rows, list):
+                raise ValueError("checklist platforms must be a list")
+        except Exception as error:
+            rows = []
+            report["warnings"].append(f"Upload checklist unavailable: {type(error).__name__}: {error}")
+        if not rows:
+            report["warnings"].append("Upload checklist has no platform rows to verify.")
+        ready_by_name = {
+            str(row.get("platform")): row for row in readiness.get("platforms", [])
+            if isinstance(row, dict) and row.get("platform")
+        } if isinstance(readiness, dict) and isinstance(readiness.get("platforms", []), list) else {}
+        allowed = {"NOT_UPLOADED", "UPLOADED_NEEDS_VERIFY", "UPLOADED_VERIFIED", "PUBLISHED_VERIFIED"}
+        for row in rows:
+            if not isinstance(row, dict):
+                report["errors"].append("Upload checklist contains a malformed platform record.")
+                continue
+            name = str(row.get("platform", "Unknown"))
+            status = str(row.get("manual_status", "NOT_UPLOADED"))
+            url = str(row.get("account_product_url", "") or "").strip()
+            issues = []
+            if status not in allowed:
+                issues.append({"severity": "ERROR", "message": f"Unknown manual upload status: {status}"})
+                report["errors"].append(f"{name}: unknown manual upload status.")
+            if status in {"UPLOADED_VERIFIED", "PUBLISHED_VERIFIED"} and not url:
+                issues.append({"severity": "WARNING", "message": "Verified status has no recorded product URL."})
+                report["warnings"].append(f"{name}: verified status has no recorded product URL.")
+            if status == "NOT_UPLOADED" and url:
+                issues.append({"severity": "WARNING", "message": "Product URL is present while status is NOT_UPLOADED."})
+                report["warnings"].append(f"{name}: product URL conflicts with NOT_UPLOADED status.")
+            current = ready_by_name.get(name, {})
+            if status in {"UPLOADED_VERIFIED", "PUBLISHED_VERIFIED"} and current.get("status") == "BLOCKED":
+                issues.append({"severity": "WARNING", "message": "Current package readiness is blocked despite a verified upload status."})
+                report["warnings"].append(f"{name}: current package is blocked after the recorded upload.")
+            report["platforms"].append({"platform": name, "manual_status": status, "account_product_url": url,
+                                         "readiness_status": current.get("status", row.get("readiness_status", "UNKNOWN")),
+                                         "issues": issues})
+        report["uploaded"] = any(row.get("manual_status") in {"UPLOADED_NEEDS_VERIFY", "UPLOADED_VERIFIED", "PUBLISHED_VERIFIED"} for row in rows if isinstance(row, dict))
+        report["published"] = any(row.get("manual_status") == "PUBLISHED_VERIFIED" for row in rows if isinstance(row, dict))
+        report["status"] = "BLOCKED" if report["errors"] else ("NEEDS_REVIEW" if report["warnings"] else "PASS")
+    if project.is_dir():
+        save_json(project / "REPORTS" / "UPLOAD_STATE_AUDIT.json", report)
+    return report
+
+
+def v82_run_release_integrity_center(project):
+    """Run five release integrity stages and export a ZIP only when all release gates pass."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "errors": ["Project directory does not exist."]}
+    readiness = v61_upload_readiness_board(project)
+    drift = v78_listing_metadata_drift_audit(project)
+    freshness = v79_package_freshness_audit(project)
+    upload_state = v81_upload_state_audit(project, readiness)
+    readiness_status = readiness.get("overall_status", readiness.get("status")) if isinstance(readiness, dict) else "BLOCKED"
+    blocked = readiness_status == "BLOCKED" or any(
+        isinstance(item, dict) and item.get("status") == "BLOCKED"
+        for item in (drift, freshness, upload_state)
+    )
+    needs_review = readiness_status != "READY_TO_UPLOAD" or any(
+        isinstance(item, dict) and item.get("status") in {"NEEDS_REVIEW", "REVIEW"}
+        for item in (drift, freshness, upload_state)
+    )
+    export = v80_export_release_handoff_bundle(project, readiness, drift, freshness, upload_state) if not blocked and not needs_review else {
+        "status": "WITHHELD", "exported": False,
+        "errors": ["Release handoff ZIP withheld until all integrity and upload-state reviews pass."],
+    }
+    overall = "BLOCKED" if blocked else ("NEEDS_REVIEW" if needs_review or not export.get("exported") else "READY_FOR_HANDOFF")
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "status": overall,
+        "listing_metadata_drift": drift.get("status"),
+        "package_freshness": freshness.get("status"),
+        "upload_state": upload_state.get("status"),
+        "readiness": readiness.get("overall_status"),
+        "handoff_exported": export.get("exported", False),
+        "handoff_zip": export.get("path"),
+        "reports": {
+            "readiness": str(project / "REPORTS" / "UPLOAD_READINESS.json"),
+            "listing_drift": str(project / "REPORTS" / "LISTING_METADATA_DRIFT.json"),
+            "package_freshness": str(project / "REPORTS" / "PACKAGE_FRESHNESS.json"),
+            "upload_state": str(project / "REPORTS" / "UPLOAD_STATE_AUDIT.json"),
+        },
+        "uploaded": upload_state.get("uploaded", False),
+        "published": upload_state.get("published", False),
+        "note": "The handoff ZIP is a local/offline bundle, not an upload. Existing listing drafts and packages are not modified.",
+    }
+    save_json(project / "REPORTS" / "RELEASE_INTEGRITY_SUMMARY.json", report)
+    return report
+
+
+def v82_release_integrity_menu():
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return {"status": "CANCELLED"}
+    return v82_run_release_integrity_center(project)
 
 
 

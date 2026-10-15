@@ -1,3 +1,12 @@
+## v78.0–v82.0 — Final Release Integrity & Handoff Bundle
+
+- **v78 — Listing metadata drift audit:** compares saved platform listing titles, authors, subtitles, and keywords with current project settings without rewriting drafts.
+- **v79 — Package freshness audit:** verifies platform package manifests and hashes; compares conventional interior PDFs to the current MASTER when directly comparable.
+- **v80 — Release handoff ZIP:** exports package folders, listing drafts, and release reports with SHA-256 inventory using no-clobber naming; refuses export when readiness is not READY_TO_UPLOAD or audits need review.
+- **v81 — Upload-state audit:** validates manually recorded upload/published statuses and product URLs and flags conflicts with current package readiness.
+- **v82 — Final Release Integrity & Handoff Center:** runs readiness, metadata drift, package freshness, upload-state audit, and gated offline ZIP export under main-menu option 27.
+- Adds regression tests for metadata drift, stale package PDFs, gated/no-clobber export, upload-state inconsistencies, and release-center withholding.
+
 ## v73.0–v77.0 — Artwork Generation Handoff & Assembly Gate
 
 - **v73 — Prompt lore continuity audit:** compares each prompt's World, location, and Series IDs against the saved blueprint; flags conflicts without changing canon.

@@ -1,6 +1,6 @@
 # ColoringBookFactory
 
-**Current factory version: 77.0**
+**Current factory version: 82.0**
 
 ColoringBookFactory is a Windows-oriented Python application for producing coloring books, organizing world/series lore, preparing marketplace listing drafts, and checking production packages before release.
 
@@ -18,7 +18,7 @@ From the repository root in PowerShell:
 python -X utf8 .\factory.py
 ```
 
-The main menu includes book creation/import, production, publishing, marketing, worlds and series, lore intake, release diagnostics, canon tools, listing generation, automatic post-import listing preparation, upload-readiness reporting, a one-click five-stage publishing run, source-PDF provenance auditing, a preserved manual upload checklist, prioritized release action plans, delivery-folder inventory, a five-stage creation/artwork quality center, a prompt-generation ZIP handoff, generated-art intake preview, lore continuity audit, and assembly readiness gate. State and queue loaders now validate their JSON structure before use; malformed data produces an explicit warning and an in-memory safe fallback without rewriting the persisted file.
+The main menu includes book creation/import, production, publishing, marketing, worlds and series, lore intake, release diagnostics, canon tools, listing generation, automatic post-import listing preparation, upload-readiness reporting, a one-click five-stage publishing run, source-PDF provenance auditing, a preserved manual upload checklist, prioritized release action plans, delivery-folder inventory, a five-stage creation/artwork quality center, a prompt-generation ZIP handoff, generated-art intake preview, lore continuity audit, assembly readiness gate, listing-metadata drift audit, package-freshness verification, persistent upload-state validation, and gated release-handoff ZIP export. State and queue loaders now validate their JSON structure before use; malformed data produces an explicit warning and an in-memory safe fallback without rewriting the persisted file.
 
 ## Core workflows
 
@@ -77,3 +77,8 @@ Choose **25. Creation & Artwork Quality Center** to audit the blueprint/prompt/q
 ### 6. Prepare artwork generation and assembly
 
 Choose **26. Artwork Generation Handoff & Assembly Gate**. The factory checks prompt-to-world/location/series IDs, packages existing prompt text into a collision-safe ZIP for use in an external image-generation tool, previews how generated files map to stable image IDs, and verifies every artwork job before assembly. The external-art preview does not copy files; use the separate artwork import/QA workflow to bring assets into the project. Assembly readiness is not the same as a completed build.
+
+
+### 7. Validate the final release handoff
+
+Choose **27. Final Release Integrity & Handoff Center** to compare existing listing drafts against current project metadata, verify package manifests and recognizable interior-PDF freshness, review manual upload states, and export an offline handoff ZIP only when the gates pass. The ZIP contains local package/listing files and a SHA-256 inventory; it does not upload or publish anything.
