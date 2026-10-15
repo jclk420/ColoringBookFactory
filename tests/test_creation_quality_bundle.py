@@ -40,7 +40,7 @@ class CreationQualityBundleTests(unittest.TestCase):
         self.project.mkdir()
         self.ns, self.source = load_helpers()
         self.ns.update({
-            "FACTORY_VERSION": "82.0",
+            "FACTORY_VERSION": "87.0",
             "BOOK_BLUEPRINT_FILENAME": "BOOK_BLUEPRINT.json",
             "PROMPT_MANIFEST_FILENAME": "PROMPT_MANIFEST.json",
             "ARTWORK_QUEUE_FILENAME": "ARTWORK_QUEUE.json",
@@ -169,7 +169,7 @@ class CreationQualityBundleTests(unittest.TestCase):
         self.assertTrue((self.project / "REPORTS" / "CREATION_QUALITY_SUMMARY.json").is_file())
 
     def test_version_menu_wiring_and_unique_definitions(self):
-        self.assertIn('FACTORY_VERSION = "82.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "87.0"', self.source)
         self.assertIn('25. Creation & Artwork Quality Center', self.source)
         self.assertIn('elif c=="25": v72_creation_quality_menu()', self.source)
         tree = ast.parse(self.source)
