@@ -19971,9 +19971,11 @@ def v68_creation_readiness_audit(project):
                 report["errors"].append("Artwork queue contains jobs absent from the prompt manifest: " + ", ".join(unknown_jobs))
             if "prompt_manifest" in data and len(jobs) != len(prompts):
                 report["warnings"].append(f"Artwork queue has {len(jobs)} job(s) for {len(prompts)} prompt(s).")
-        if blueprint.get("world", {}).get("attached") and not str(blueprint.get("world", {}).get("world_id", "")).strip():
+        world_data = blueprint.get("world", {}) if isinstance(blueprint.get("world", {}), dict) else {}
+        series_data = blueprint.get("series", {}) if isinstance(blueprint.get("series", {}), dict) else {}
+        if world_data.get("attached") and not str(world_data.get("world_id", "")).strip():
             report["warnings"].append("Blueprint says a World is attached but has no stable world_id.")
-        if blueprint.get("series", {}).get("attached") and not str(blueprint.get("series", {}).get("series_id", "")).strip():
+        if series_data.get("attached") and not str(series_data.get("series_id", "")).strip():
             report["warnings"].append("Blueprint says a Series is attached but has no stable series_id.")
         report["prompt_count"] = len(prompts) if isinstance(prompts, list) else 0
         report["queue_job_count"] = len(jobs) if isinstance(jobs, list) else 0
@@ -20036,7 +20038,8 @@ def v69_artwork_integrity_audit(project):
             report["directories"][folder_name] = {"path": str(folder), "file_count": len(records), "files": records}
         report["duplicate_hashes"] = [
             {"sha256": digest, "files": paths}
-            for digest, paths in sorted(hashes.items()) if len(paths) > 1
+            for digest, paths in sorted(hashes.items())
+            if len(paths) > 1 and len({Path(item).stem.casefold() for item in paths}) > 1
         ]
         for duplicate in report["duplicate_hashes"]:
             report["warnings"].append("Identical artwork bytes appear in multiple files: " + ", ".join(duplicate["files"]))
@@ -20048,8 +20051,17 @@ def v69_artwork_integrity_audit(project):
                 status = str(job.get("status", "UNKNOWN"))
                 statuses[status] = statuses.get(status, 0) + 1
                 approved = str(job.get("approved_file", "")).strip()
-                if status == "PASS" and approved and not Path(approved).is_file():
-                    report["warnings"].append(f"Queue job {job.get('image_id', '?')} points to a missing approved file.")
+                if status == "PASS" and approved:
+                    try:
+                        approved_path = Path(approved).resolve()
+                        inside_project = approved_path.is_relative_to(project.resolve())
+                    except (OSError, RuntimeError, ValueError):
+                        inside_project = False
+                        approved_path = Path(approved)
+                    if not inside_project:
+                        report["warnings"].append(f"Queue job {job.get('image_id', '?')} points outside the project.")
+                    elif not approved_path.is_file():
+                        report["warnings"].append(f"Queue job {job.get('image_id', '?')} points to a missing approved file.")
         report["queue_summary"] = {"jobs": len(jobs), "statuses": statuses}
         report["status"] = "BLOCKED" if report["errors"] else ("NEEDS_REVIEW" if report["warnings"] else "READY")
     if project.is_dir():
@@ -20091,6 +20103,9 @@ def v70_prompt_handoff_audit(project):
             report["malformed_records"].append(str(record))
             continue
         image_id = str(record["image_id"]).strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", image_id):
+            report["malformed_records"].append(image_id)
+            continue
         path = prompt_dir / f"{image_id}.txt"
         if not path.is_file():
             report["missing_prompt_files"].append({"image_id": image_id, "expected_path": str(path)})
@@ -20102,8 +20117,8 @@ def v70_prompt_handoff_audit(project):
             continue
         prompt = str(record.get("prompt", "")).strip()
         negative = str(record.get("negative_prompt", "")).strip()
-        if (not prompt or f"PROMPT:\\n{prompt}" not in text
-                or f"NEGATIVE PROMPT:\\n{negative}" not in text):
+        if (not prompt or f"PROMPT:{chr(10)}{prompt}" not in text
+                or f"NEGATIVE PROMPT:{chr(10)}{negative}" not in text):
             report["stale_prompt_files"].append({"image_id": image_id, "path": str(path), "reason": "Exported text does not match the current manifest prompt fields."})
     errors = report.get("errors", [])
     report["status"] = "BLOCKED" if errors else ("NEEDS_REVIEW" if report["missing_prompt_files"] or report["stale_prompt_files"] or report["malformed_records"] else "READY")
