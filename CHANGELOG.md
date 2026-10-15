@@ -1,3 +1,12 @@
+## v73.0–v77.0 — Artwork Generation Handoff & Assembly Gate
+
+- **v73 — Prompt lore continuity audit:** compares each prompt's World, location, and Series IDs against the saved blueprint; flags conflicts without changing canon.
+- **v74 — Prompt generation batch export:** creates a collision-safe ZIP containing exported prompt text and a SHA-256 handoff manifest; does not generate artwork or upload the ZIP.
+- **v75 — Generated-art intake preview:** maps external image files to stable queue IDs, checks technical readability, flags ambiguous/missing/unmatched assets, and copies nothing.
+- **v76 — Assembly readiness gate:** blocks assembly unless every queue job is PASS and its approved file exists inside the project and passes technical validation.
+- **v77 — One-click artwork handoff workflow:** combines continuity, prompt export, external-art preview, and assembly readiness under main-menu option 26.
+- Adds regression tests for continuity conflicts, ZIP contents/no-clobber behavior, stable-ID mapping, duplicate file matching, assembly gating, and no-mutation guarantees.
+
 ## v68.0–v72.0 — Creation & Artwork Quality Bundle
 
 - **v68 — Creation readiness audit:** checks required blueprint, prompt manifest, and artwork queue files; validates image counts, stable IDs, non-empty prompts, and world/series identity markers.

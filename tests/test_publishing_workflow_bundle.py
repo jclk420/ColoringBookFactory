@@ -49,7 +49,7 @@ class PublishingWorkflowBundleTests(unittest.TestCase):
             self.saved[str(path)] = data
 
         self.ns.update({
-            "FACTORY_VERSION": "72.0",
+            "FACTORY_VERSION": "77.0",
             "MARKETING_DIR_NAME": "MARKETING",
             "load_json": load_json,
             "save_json": save_json,
@@ -156,7 +156,7 @@ class PublishingWorkflowBundleTests(unittest.TestCase):
         self.assertTrue((self.project / "REPORTS" / "PUBLISHING_RUN_SUMMARY.json").is_file())
 
     def test_menu_wiring_version_and_helper_uniqueness(self):
-        self.assertIn('FACTORY_VERSION = "72.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "77.0"', self.source)
         self.assertIn('24. One-Click Publishing Run', self.source)
         self.assertIn('elif c=="24": v67_publishing_run_menu()', self.source)
         for name in NAMES:
