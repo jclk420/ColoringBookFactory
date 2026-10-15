@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "107.0"
+FACTORY_VERSION = "112.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18993,6 +18993,7 @@ def factory_main_menu():
         print(" 29. Release Evidence History & Change Tracker (5-stage)")
         print(" 30. Recovery & Build History Center (verified restore)")
         print(" 31. Publishing Completion Center (PDF + exact upload checklist)")
+        print(" 32. Publishing Handoff Inventory (hashes + missing/empty-file warnings)")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -19031,6 +19032,7 @@ def factory_main_menu():
         elif c=="29": v92_release_evidence_menu()
         elif c=="30": v97_recovery_center_menu()
         elif c=="31": v102_publishing_completion_menu()
+        elif c=="32": v112_publishing_handoff_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -21936,6 +21938,47 @@ def v102_publishing_completion_menu():
             print(f"    MISSING: {issue}")
     print(f"Report: {report_path}")
     print("Read-only audit. Nothing was uploaded or published.")
+    return report
+
+
+def v112_publishing_handoff_menu():
+    """Create a read-only SHA-256 inventory for platform packages in the active project."""
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return {"status": "CANCELLED"}
+    try:
+        from publishing_handoff import build_handoff_manifest, write_handoff_manifest_no_clobber
+        report = build_handoff_manifest(project)
+        report_path = write_handoff_manifest_no_clobber(project, report)
+        report["report_path"] = str(report_path)
+    except (ImportError, OSError, ValueError) as exc:
+        print(f"Publishing handoff inventory could not finish: {exc}")
+        return {"status": "BLOCKED", "errors": [str(exc)]}
+
+    summary = report.get("summary", {})
+    print("\\nPublishing Handoff Inventory")
+    print(f"  Files fingerprinted: {summary.get('files', 0)}")
+    print(f"  Total bytes: {summary.get('bytes', 0)}")
+    print(f"  Empty files (P0): {summary.get('zero_byte_files', 0)}")
+    print(f"  Filename collisions (P1): {summary.get('case_collisions', 0)}")
+    print(f"  Read errors (P0): {summary.get('read_errors', 0)}")
+    actions = report.get("actions", [])
+    if actions:
+        print("\\nACTION REQUIRED")
+        for action in actions:
+            priority = action.get("priority", "P?")
+            platform = action.get("platform", "")
+            detail = action.get("action", "Review this item.")
+            print(f"  [{priority}] {platform + ': ' if platform else ''}{detail}")
+            if action.get("path"):
+                print(f"       {action['path']}")
+            if action.get("paths"):
+                print(f"       Paths: {', '.join(action['paths'])}")
+    else:
+        print("No missing folders, empty files, filename collisions, or read errors were detected.")
+    print(f"\\nInventory report: {report_path}")
+    print("Read-only inventory. It does not alter packages or upload/publish anything.")
     return report
 
 
