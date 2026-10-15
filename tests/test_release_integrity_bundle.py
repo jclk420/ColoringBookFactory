@@ -41,7 +41,7 @@ class ReleaseIntegrityBundleTests(unittest.TestCase):
         self.project.mkdir()
         self.ns, self.source = load_helpers()
         self.ns.update({
-            "FACTORY_VERSION": "82.0",
+            "FACTORY_VERSION": "87.0",
             "MARKETING_DIR_NAME": "MARKETING",
             "PLATFORM_DIRNAME": "PLATFORMS",
             "file_hash": lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest(),
@@ -152,7 +152,7 @@ class ReleaseIntegrityBundleTests(unittest.TestCase):
         self.assertFalse(result["handoff_exported"])
 
     def test_version_and_menu_wiring(self):
-        self.assertIn('FACTORY_VERSION = "82.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "87.0"', self.source)
         self.assertIn('27. Final Release Integrity & Handoff Center', self.source)
         self.assertIn('elif c=="27": v82_release_integrity_menu()', self.source)
         tree = ast.parse(self.source)
