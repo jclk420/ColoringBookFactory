@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 60.0.
+# Current version: 61.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "60.0"
+FACTORY_VERSION = "61.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18943,6 +18943,7 @@ def factory_main_menu():
         print(" 20. Canon Registry & Continuity Tools")
         print(" 21. Platform Listing Builder")
         print(" 22. Reliability & Migration Toolkit")
+        print(" 23. Platform Upload Readiness Board")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -18972,6 +18973,7 @@ def factory_main_menu():
         elif c=="20": v21_canon_tools_menu()
         elif c=="21": v22_platform_listing_menu()
         elif c=="22": v23_reliability_toolkit_menu()
+        elif c=="23": v61_upload_readiness_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -19409,6 +19411,147 @@ def v23_reliability_toolkit_menu():
                 print(json.dumps(result, indent=2, ensure_ascii=False))
             else:
                 print("No migration applied.")
+
+
+
+# ============================================================
+# v61.0 — CONSOLIDATED PLATFORM UPLOAD READINESS BOARD
+# Combines package integrity and listing-draft status without
+# rebuilding, rewriting, or claiming that anything was uploaded.
+# ============================================================
+
+def v61_upload_readiness_board(project=None):
+    """Build a single, read-only decision report for platform upload preparation."""
+    project = Path(project) if project else (v12_active_project() or choose_project())
+    if not project:
+        return {"status": "CANCELLED", "platforms": []}
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "platforms": [],
+                "errors": ["Selected project directory does not exist."]}
+
+    profiles = load_platform_profiles()
+    enabled = [(name, profile) for name, profile in profiles.items()
+               if isinstance(profile, dict) and profile.get("enabled", False)]
+    package_report = v23_package_manifest_verify(project)
+    listing_path = project / MARKETING_DIR_NAME / "LISTINGS" / "LISTING_READINESS.json"
+    listing_report = {}
+    listing_error = ""
+    if listing_path.is_file():
+        try:
+            loaded = load_json(listing_path)
+            if isinstance(loaded, dict):
+                listing_report = loaded
+            else:
+                listing_error = "Listing readiness report root is not a JSON object."
+        except Exception as error:
+            listing_error = f"Listing readiness report could not be read: {type(error).__name__}: {error}"
+    else:
+        listing_error = "Platform listing drafts have not been generated yet."
+
+    package_platforms = package_report.get("platforms", {}) if isinstance(package_report, dict) else {}
+    listing_platforms = listing_report.get("platforms", []) if isinstance(listing_report, dict) else []
+    listing_by_name = {
+        str(row.get("platform")): row for row in listing_platforms
+        if isinstance(row, dict) and row.get("platform")
+    } if isinstance(listing_platforms, list) else {}
+    consistency = listing_report.get("draft_consistency_audit", {})
+    consistency = consistency if isinstance(consistency, dict) else {}
+    consistency_errors = int(consistency.get("error_count", 0) or 0)
+    results = []
+    for name, profile in enabled:
+        package = package_platforms.get(name, {})
+        package = package if isinstance(package, dict) else {}
+        listing = listing_by_name.get(name, {})
+        listing = listing if isinstance(listing, dict) else {}
+        package_status = str(package.get("status", "MISSING"))
+        listing_status = str(listing.get("status", "MISSING"))
+        blockers = []
+        warnings = []
+        if package_status == "BLOCKED":
+            blockers.extend(str(item) for item in package.get("errors", []))
+        elif package_status == "MISSING":
+            blockers.append("Platform package or its manifest has not been generated.")
+        if listing_error:
+            warnings.append(listing_error)
+        elif listing_status in {"BLOCKED_MISSING_MASTER", "BLOCKED"}:
+            blockers.append("Listing draft is blocked; inspect LISTING_READINESS.json.")
+        elif listing_status in {"MISSING", "PRESERVED_EXISTING_DRAFTS"}:
+            warnings.append("Listing draft status needs review; confirm its current contents.")
+        if consistency_errors:
+            blockers.append(f"Listing consistency audit reports {consistency_errors} error(s).")
+        if not profile.get("enabled", False):
+            warnings.append("Platform profile is disabled.")
+        if blockers:
+            status = "BLOCKED"
+        elif package_status != "READY" or listing_status != "READY_FOR_REVIEW" or listing_error:
+            status = "NEEDS_REVIEW"
+        else:
+            status = "READY_TO_UPLOAD"
+        output_dir = profile.get("output_dir", str(name).upper())
+        package_root = project / PLATFORM_DIRNAME / output_dir
+        results.append({
+            "platform": name,
+            "status": status,
+            "package_status": package_status,
+            "package_folder": str(package_root),
+            "package_manifest": str(package_root / "PACKAGE_MANIFEST.json"),
+            "listing_status": listing_status,
+            "listing_folder": str(project / MARKETING_DIR_NAME / "LISTINGS" / _platform_sanitized_filename(name, 40)),
+            "blockers": blockers,
+            "warnings": warnings,
+            "uploaded": False,
+            "published": False,
+        })
+
+    blocked = sum(1 for row in results if row["status"] == "BLOCKED")
+    needs_review = sum(1 for row in results if row["status"] == "NEEDS_REVIEW")
+    ready = sum(1 for row in results if row["status"] == "READY_TO_UPLOAD")
+    overall = "BLOCKED" if blocked else ("NEEDS_REVIEW" if needs_review else ("READY_TO_UPLOAD" if ready else "NO_ENABLED_PLATFORMS"))
+    report = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project),
+        "overall_status": overall,
+        "summary": {"enabled_platforms": len(results), "ready_to_upload": ready,
+                    "needs_review": needs_review, "blocked": blocked},
+        "platforms": results,
+        "package_manifest_report": str(project / "REPORTS" / "PACKAGE_MANIFEST_VERIFICATION.json"),
+        "listing_readiness_report": str(listing_path),
+        "uploaded": False,
+        "published": False,
+        "read_only": True,
+        "note": "READY_TO_UPLOAD means local package and listing checks passed. It does not mean uploaded, approved, or published.",
+    }
+    target = project / "REPORTS" / "UPLOAD_READINESS.json"
+    save_json(target, report)
+    print("\\n" + "=" * 72)
+    print(f"UPLOAD READINESS BOARD v{FACTORY_VERSION} — {project.name}")
+    print("=" * 72)
+    for row in results:
+        print(f"[{row['status']}] {row['platform']} — package {row['package_status']} / listing {row['listing_status']}")
+        for message in row["blockers"]:
+            print(f"  BLOCKER: {message}")
+        for message in row["warnings"]:
+            print(f"  REVIEW: {message}")
+        print(f"  Upload folder: {row['package_folder']}")
+    print(f"Overall: {overall} | ready={ready}, review={needs_review}, blocked={blocked}")
+    print(f"Report: {target}")
+    print("No package, artwork, listing draft, or publishing state was changed by this board.")
+    return report
+
+
+def v61_upload_readiness_menu():
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return
+    report = v61_upload_readiness_board(project)
+    if report.get("status") == "CANCELLED":
+        print("Readiness check cancelled.")
+    return report
+
 
 def main():
     factory_main_menu()
