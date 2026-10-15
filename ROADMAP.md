@@ -385,3 +385,12 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - External generated-art intake preview with stable-ID matching, technical QA, missing/ambiguous/unmatched findings, and no copying.
 - Assembly readiness gate requiring every planned artwork job to pass QA with a project-local approved file.
 - One-click artwork handoff summary and main-menu option 26; no automatic canon change, artwork import, assembly, upload, or publication.
+
+
+### v78.0–v82.0 — Final Release Integrity & Handoff Bundle (upgrade branch)
+
+- Listing metadata drift check against current project settings.
+- Package manifest and recognizable interior-PDF freshness verification against the current MASTER digest.
+- Offline release ZIP with SHA-256 manifest, no-clobber naming, and package/listing/report inventory.
+- Manual upload-state validation for status and product URL consistency.
+- One-click release integrity center with strict export gating and main-menu option 27; no marketplace upload or publication.
