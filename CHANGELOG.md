@@ -1,3 +1,12 @@
+## v88.0–v92.0 — Release Evidence History & Change Tracker
+
+- **v88 — Release evidence snapshot:** records SHA-256 and size for the current MASTER, enabled platform package files, listing drafts, and core project metadata in a no-clobber timestamped history record.
+- **v89 — Release-to-release comparison:** identifies added, changed, and removed files and changes in MASTER digest or readiness state against the previous snapshot.
+- **v90 — Snapshot integrity audit:** verifies tracked files still match their captured hashes and rejects paths outside the selected project.
+- **v91 — Release history trend:** summarizes recent readiness states, snapshot counts, and MASTER hashes.
+- **v92 — One-click Release Evidence History & Change Tracker:** runs readiness, snapshot, comparison, integrity verification, and trend summary under main-menu option 29.
+- Adds regression tests for evidence capture, changed-file detection, unsafe paths, readiness trends, and workflow orchestration.
+
 ## v83.0–v87.0 — Safe Artwork Import & Guided Production
 
 - **v83 — Verified assembly INPUT backup:** before replacing existing INPUT images, creates a timestamped backup and verifies SHA-256 for every copy. Assembly stops if backup, removal, or staging fails; existing input images are never silently discarded.
