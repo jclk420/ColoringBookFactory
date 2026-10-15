@@ -376,3 +376,12 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Prompt handoff audit for missing or stale exported prompt text; rejects unsafe image IDs and never rewrites exports.
 - Prioritized P0/P1/P2 creation action plan and a one-click summary.
 - Main-menu option 25; no automatic canon changes, prompt regeneration, artwork movement, or artistic-quality claims.
+
+
+### v73.0–v77.0 — Artwork Generation Handoff & Assembly Gate (upgrade branch)
+
+- Prompt-to-canon continuity validation across World, location, and Series IDs.
+- Collision-safe prompt batch ZIP with file hashes and a handoff manifest; this exports prompts only and does not generate images.
+- External generated-art intake preview with stable-ID matching, technical QA, missing/ambiguous/unmatched findings, and no copying.
+- Assembly readiness gate requiring every planned artwork job to pass QA with a project-local approved file.
+- One-click artwork handoff summary and main-menu option 26; no automatic canon change, artwork import, assembly, upload, or publication.
