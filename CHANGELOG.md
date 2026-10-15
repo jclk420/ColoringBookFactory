@@ -1,3 +1,12 @@
+## v68.0–v72.0 — Creation & Artwork Quality Bundle
+
+- **v68 — Creation readiness audit:** checks required blueprint, prompt manifest, and artwork queue files; validates image counts, stable IDs, non-empty prompts, and world/series identity markers.
+- **v69 — Artwork integrity audit:** inventories SOURCE/APPROVED/REVIEW/FAILED assets, checks readability and technical QA, records SHA-256, detects same-content assets across distinct image IDs, and flags missing approved outputs.
+- **v70 — Prompt handoff audit:** compares each exported prompt text file to the current manifest, detects missing/stale exports and unsafe IDs, and never rewrites prompt files.
+- **v71 — Prioritized creation action plan:** converts creation, artwork, and prompt findings into P0/P1/P2 tasks.
+- **v72 — One-click Creation & Artwork Quality Center:** runs the audits and saves a combined summary under main-menu option 25.
+- Adds regression tests for structural mismatch, duplicate IDs/assets, prompt drift, unsafe IDs, action priority, and no-mutation behavior.
+
 ## v63.0–v67.0 — Five-Stage Publishing Workflow Bundle
 
 - **v63 — Source PDF provenance audit:** compares an imported PDF's recorded SHA-256 against the current source file without modifying either file; reports missing, changed, untracked, and verified states.
