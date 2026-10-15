@@ -115,8 +115,23 @@ class PublishingWorkflowBundleTests(unittest.TestCase):
         row = report["platforms"][0]
         self.assertTrue(row["package_exists"])
         self.assertTrue(row["listing_exists"])
-        self.assertEqual(row["package_files"][0]["relative_path"], "PLATFORMS/KDP/book.pdf")
-        self.assertEqual(row["listing_files"][0]["relative_path"], "MARKETING/LISTINGS/KDP/LISTING.txt")
+        self.assertEqual(row["package_files"][0]["relative_path"].replace("\\\\", "/"), "PLATFORMS/KDP/book.pdf")
+        self.assertEqual(row["listing_files"][0]["relative_path"].replace("\\\\", "/"), "MARKETING/LISTINGS/KDP/LISTING.txt")
+
+    def test_delivery_map_refuses_to_inventory_paths_outside_project(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        secret = outside / "private.txt"
+        secret.write_text("not part of the project", encoding="utf-8")
+        report = self.ns["v66_release_delivery_map"](self.project, {"platforms": [{
+            "platform": "KDP", "status": "NEEDS_REVIEW",
+            "package_folder": str(outside), "listing_folder": str(outside)
+        }]})
+        row = report["platforms"][0]
+        self.assertFalse(row["package_exists"])
+        self.assertFalse(row["listing_exists"])
+        self.assertEqual(row["package_files"], [])
+        self.assertEqual(row["listing_files"], [])
 
     def test_one_click_orchestrator_preserves_drafts_and_does_not_rebuild_master(self):
         calls = []
