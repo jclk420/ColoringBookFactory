@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 61.0.
+# Current version: 62.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "61.0"
+FACTORY_VERSION = "62.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -7099,6 +7099,13 @@ def convert_existing_pdf_enhanced():
     health = project_health_scan(project)
     print_project_health(health)
     print(f"\nImported project: {project}")
+    # v62: finish local publishing preparation after intake.
+    # Existing listing drafts are preserved; no online upload or publication occurs.
+    try:
+        v62_post_import_publishing_setup(project, package_results=results)
+    except Exception as error:
+        print(f"\nPOST-IMPORT PUBLISHING PREP NEEDS REVIEW: {type(error).__name__}: {error}")
+        print("The imported MASTER and generated packages remain in place.")
     return project
 
 
@@ -19550,6 +19557,46 @@ def v61_upload_readiness_menu():
     report = v61_upload_readiness_board(project)
     if report.get("status") == "CANCELLED":
         print("Readiness check cancelled.")
+    return report
+
+
+
+
+# ============================================================
+# v62.0 — AUTOMATED POST-IMPORT LISTING + READINESS PREPARATION
+# Runs after a finished PDF is imported and packages are built.
+# Existing listing drafts are preserved; this never uploads or publishes.
+# ============================================================
+
+def v62_post_import_publishing_setup(project, package_results=None):
+    """Prepare listing drafts and one consolidated readiness report after PDF intake."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "errors": ["Imported project directory is missing."]}
+    package_results = package_results if isinstance(package_results, (list, dict)) else []
+    listing_report = v22_build_all_platform_listings(project, overwrite_existing=False)
+    if not isinstance(listing_report, dict):
+        listing_report = {"status": "NEEDS_REVIEW", "error": "Listing builder returned no report."}
+    readiness = v61_upload_readiness_board(project)
+    report = {
+        "schema_version": 1,
+        "factory_version": FACTORY_VERSION,
+        "project": str(project),
+        "status": readiness.get("overall_status", "NEEDS_REVIEW") if isinstance(readiness, dict) else "NEEDS_REVIEW",
+        "package_results_received": bool(package_results),
+        "listing_report": str(project / MARKETING_DIR_NAME / "LISTINGS" / "LISTING_READINESS.json"),
+        "readiness_report": str(project / "REPORTS" / "UPLOAD_READINESS.json"),
+        "existing_listing_drafts_overwritten": False,
+        "uploaded": False,
+        "published": False,
+        "note": "Local preparation only. Review listing fields and upload each platform package manually.",
+    }
+    save_json(project / "REPORTS" / "POST_IMPORT_PUBLISHING_PREP.json", report)
+    print("\\nPOST-IMPORT PUBLISHING PREPARATION")
+    print(f"Listings: {report['listing_report']}")
+    print(f"Readiness: {report['readiness_report']}")
+    print(f"Status: {report['status']}")
+    print("Existing listing drafts were preserved. Nothing was uploaded or published.")
     return report
 
 
