@@ -50,7 +50,7 @@ class PublishingCompletionTests(unittest.TestCase):
             make_pdf(master_dir / "Book_MASTER.pdf")
             platform_dir = project / "PLATFORMS" / "Sample"
             platform_dir.mkdir(parents=True)
-            (platform_dir / "interior.pdf").write_bytes(b"dummy")
+            make_pdf(platform_dir / "interior.pdf")
             listing = project / "MARKETING" / "LISTINGS"
             listing.mkdir(parents=True)
             (listing / "metadata.json").write_text("{}", encoding="utf-8")
@@ -65,6 +65,70 @@ class PublishingCompletionTests(unittest.TestCase):
             self.assertTrue(row["package_folder"].replace("\\", "/").casefold().endswith("/platforms/sample"))
             self.assertFalse(row["upload_confirmed"])
             self.assertFalse(report["uploaded_or_published"])
+
+
+    def test_default_profiles_do_not_borrow_another_platforms_listing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "Book"
+            master_dir = project / "MASTER"
+            master_dir.mkdir(parents=True)
+            make_pdf(master_dir / "Book_MASTER.pdf")
+            for folder in ("KDP", "GUMROAD", "PAYHIP", "DIGITAL"):
+                package = project / "PLATFORMS" / folder
+                package.mkdir(parents=True)
+                make_pdf(package / "interior.pdf")
+                (package / "cover.pdf").write_bytes(b"%PDF-1.4\\n" + b"x" * 100 + b"\\n%%EOF")
+            listing = project / "MARKETING" / "LISTINGS" / "KDP"
+            listing.mkdir(parents=True)
+            (listing / "LISTING.json").write_text('{"platform":"KDP"}', encoding="utf-8")
+            (listing / "LISTING.txt").write_text("KDP draft", encoding="utf-8")
+            report = build_completion_report(project)
+            self.assertEqual(report["platforms"]["KDP"]["status"], "NEEDS_REVIEW")
+            self.assertEqual(report["platforms"]["Gumroad"]["status"], "BLOCKED")
+            self.assertTrue(any("Platform-specific listing" in issue for issue in report["platforms"]["Gumroad"]["missing_requirements"]))
+
+    def test_complete_platform_can_reach_ready_to_upload_without_claiming_upload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "Book"
+            master_dir = project / "MASTER"
+            master_dir.mkdir(parents=True)
+            make_pdf(master_dir / "Book_MASTER.pdf")
+            package = project / "PLATFORMS" / "Sample"
+            package.mkdir(parents=True)
+            make_pdf(package / "interior.pdf")
+            listing = project / "MARKETING" / "LISTINGS" / "Sample"
+            listing.mkdir(parents=True)
+            (listing / "LISTING.json").write_text(json.dumps({
+                "platform": "Sample",
+                "fields": {"title": "Book", "author": "J.A.C.", "description": "A coloring book"}
+            }), encoding="utf-8")
+            (listing / "LISTING.txt").write_text("Title: Book", encoding="utf-8")
+            report = build_completion_report(project, profiles={
+                "Sample": {"folder": "Sample", "listing_folder": "Sample",
+                           "required_any": [["interior.pdf"]], "listing_any": [["*.json"], ["*.txt"]]}
+            })
+            self.assertEqual(report["platforms"]["Sample"]["status"], "READY_TO_UPLOAD")
+            self.assertEqual(report["overall_status"], "READY_TO_UPLOAD")
+            self.assertFalse(report["platforms"]["Sample"]["upload_confirmed"])
+            self.assertFalse(report["uploaded_or_published"])
+
+    def test_invalid_package_pdf_blocks_readiness(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "Book"
+            master_dir = project / "MASTER"
+            master_dir.mkdir(parents=True)
+            make_pdf(master_dir / "Book_MASTER.pdf")
+            package = project / "PLATFORMS" / "Sample"
+            package.mkdir(parents=True)
+            (package / "interior.pdf").write_bytes(b"not a pdf")
+            listing = project / "MARKETING" / "LISTINGS"
+            listing.mkdir(parents=True)
+            (listing / "draft.json").write_text("{}", encoding="utf-8")
+            report = build_completion_report(project, profiles={
+                "Sample": {"folder": "Sample", "required_any": [["interior.pdf"]], "listing_any": [["*.json"]]}
+            })
+            self.assertEqual(report["platforms"]["Sample"]["status"], "BLOCKED")
+            self.assertTrue(report["platforms"]["Sample"]["validation_errors"])
 
     def test_report_writer_never_overwrites_existing_reports(self):
         with tempfile.TemporaryDirectory() as temp:
