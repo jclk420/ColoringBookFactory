@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 67.0.
+# Current version: 72.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "67.0"
+FACTORY_VERSION = "72.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18952,6 +18952,7 @@ def factory_main_menu():
         print(" 22. Reliability & Migration Toolkit")
         print(" 23. Platform Upload Readiness Board")
         print(" 24. One-Click Publishing Run (5-stage release pack)")
+        print(" 25. Creation & Artwork Quality Center (5-stage audit)")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -18983,6 +18984,7 @@ def factory_main_menu():
         elif c=="22": v23_reliability_toolkit_menu()
         elif c=="23": v61_upload_readiness_menu()
         elif c=="24": v67_publishing_run_menu()
+        elif c=="25": v72_creation_quality_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -19879,6 +19881,344 @@ def v67_publishing_run_menu():
         print("No project selected.")
         return {"status": "CANCELLED"}
     return v67_run_publishing_workflow(project)
+
+
+
+# ============================================================
+# v68-v72 — FIVE-STAGE CREATION & ARTWORK QUALITY BUNDLE
+# Read-only audits for blueprint/prompt consistency, artwork bytes,
+# prompt handoff drift, and prioritized next steps. No canon writes.
+# ============================================================
+
+def v68_creation_readiness_audit(project):
+    """Check blueprint, prompt manifest, and artwork queue agreement without repairing them."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "BLOCKED",
+        "errors": [], "warnings": [], "checks": [],
+        "read_only": True,
+    }
+    if not project.is_dir():
+        report["errors"].append("Project directory does not exist.")
+    else:
+        paths = {
+            "blueprint": project / BOOK_BLUEPRINT_FILENAME,
+            "prompt_manifest": project / PROMPT_MANIFEST_FILENAME,
+            "artwork_queue": project / ARTWORK_QUEUE_FILENAME,
+        }
+        data = {}
+        for key, path in paths.items():
+            if not path.is_file():
+                report["errors"].append(f"Required creation file is missing: {path.name}")
+                continue
+            try:
+                loaded = load_json(path)
+                if not isinstance(loaded, dict):
+                    raise ValueError("root must be a JSON object")
+                data[key] = loaded
+                report["checks"].append({"check": key, "status": "PASS", "path": str(path)})
+            except Exception as error:
+                report["errors"].append(f"{path.name} could not be read: {type(error).__name__}: {error}")
+        blueprint = data.get("blueprint", {})
+        manifest = data.get("prompt_manifest", {})
+        queue = data.get("artwork_queue", {})
+        prompts = manifest.get("images", [])
+        jobs = queue.get("jobs", [])
+        if "blueprint" in data:
+            title = str(blueprint.get("title", "")).strip()
+            if not title:
+                report["errors"].append("Blueprint title is missing.")
+            try:
+                expected = int(blueprint.get("image_count", 0))
+                if expected < 1:
+                    report["errors"].append("Blueprint image_count must be a positive integer.")
+            except (TypeError, ValueError):
+                expected = 0
+                report["errors"].append("Blueprint image_count must be a positive integer.")
+            report["expected_image_count"] = expected
+        else:
+            expected = 0
+        if "prompt_manifest" in data:
+            if not isinstance(prompts, list) or not prompts:
+                report["errors"].append("Prompt manifest must contain a non-empty images list.")
+                prompts = []
+            ids = [str(item.get("image_id", "")).strip() for item in prompts if isinstance(item, dict)]
+            if len(ids) != len(prompts):
+                report["errors"].append("Prompt manifest contains malformed image records.")
+            if any(not image_id for image_id in ids):
+                report["errors"].append("Prompt manifest contains an image record without image_id.")
+            if len(ids) != len(set(ids)):
+                report["errors"].append("Prompt manifest contains duplicate image_id values.")
+            missing_prompts = [str(item.get("image_id", "unknown")) for item in prompts
+                               if isinstance(item, dict) and not str(item.get("prompt", "")).strip()]
+            if missing_prompts:
+                report["errors"].append("Prompt text is empty for: " + ", ".join(missing_prompts))
+            if expected and len(prompts) != expected:
+                report["errors"].append(f"Blueprint expects {expected} images but prompt manifest contains {len(prompts)}.")
+        if "artwork_queue" in data:
+            if not isinstance(jobs, list):
+                report["errors"].append("Artwork queue jobs must be a list.")
+                jobs = []
+            job_ids = [str(item.get("image_id", "")).strip() for item in jobs if isinstance(item, dict)]
+            if len(job_ids) != len(jobs):
+                report["errors"].append("Artwork queue contains malformed job records.")
+            if len(job_ids) != len(set(job_ids)):
+                report["errors"].append("Artwork queue contains duplicate image_id values.")
+            prompt_ids = {str(item.get("image_id", "")).strip() for item in prompts if isinstance(item, dict)}
+            unknown_jobs = sorted(set(job_ids) - prompt_ids) if "prompt_manifest" in data else []
+            if unknown_jobs:
+                report["errors"].append("Artwork queue contains jobs absent from the prompt manifest: " + ", ".join(unknown_jobs))
+            if "prompt_manifest" in data and len(jobs) != len(prompts):
+                report["warnings"].append(f"Artwork queue has {len(jobs)} job(s) for {len(prompts)} prompt(s).")
+        world_data = blueprint.get("world", {}) if isinstance(blueprint.get("world", {}), dict) else {}
+        series_data = blueprint.get("series", {}) if isinstance(blueprint.get("series", {}), dict) else {}
+        if world_data.get("attached") and not str(world_data.get("world_id", "")).strip():
+            report["warnings"].append("Blueprint says a World is attached but has no stable world_id.")
+        if series_data.get("attached") and not str(series_data.get("series_id", "")).strip():
+            report["warnings"].append("Blueprint says a Series is attached but has no stable series_id.")
+        report["prompt_count"] = len(prompts) if isinstance(prompts, list) else 0
+        report["queue_job_count"] = len(jobs) if isinstance(jobs, list) else 0
+        report["world_id"] = str(blueprint.get("world", {}).get("world_id", "")) if isinstance(blueprint.get("world"), dict) else ""
+        report["series_id"] = str(blueprint.get("series", {}).get("series_id", "")) if isinstance(blueprint.get("series"), dict) else ""
+        report["status"] = "BLOCKED" if report["errors"] else ("NEEDS_REVIEW" if report["warnings"] else "READY")
+    if project.is_dir():
+        save_json(project / "REPORTS" / "CREATION_READINESS.json", report)
+    return report
+
+
+def v69_artwork_integrity_audit(project):
+    """Inventory artwork assets, hash duplicates, and check image readability without moving files."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "BLOCKED",
+        "errors": [], "warnings": [], "directories": {},
+        "duplicate_hashes": [], "queue_summary": {},
+        "read_only": True,
+    }
+    if not project.is_dir():
+        report["errors"].append("Project directory does not exist.")
+    else:
+        root = project / ARTWORK_QUEUE_DIRNAME
+        queue_path = project / ARTWORK_QUEUE_FILENAME
+        queue = {}
+        if queue_path.is_file():
+            try:
+                loaded = load_json(queue_path)
+                queue = loaded if isinstance(loaded, dict) else {}
+                if not isinstance(loaded, dict):
+                    report["errors"].append("Artwork queue root is not a JSON object.")
+            except Exception as error:
+                report["errors"].append(f"Artwork queue could not be read: {type(error).__name__}: {error}")
+        else:
+            report["warnings"].append("Artwork queue is missing; no queued image IDs can be reconciled.")
+        extensions = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
+        hashes = {}
+        for folder_name in (ARTWORK_SOURCE_DIRNAME, ARTWORK_APPROVED_DIRNAME, ARTWORK_REVIEW_DIRNAME, ARTWORK_FAILED_DIRNAME):
+            folder = root / folder_name
+            files = sorted((path for path in folder.iterdir() if path.is_file() and path.suffix.lower() in extensions),
+                           key=lambda path: path.name.casefold()) if folder.is_dir() else []
+            records = []
+            for path in files:
+                try:
+                    digest = file_hash(path)
+                    errors, warnings, metadata = cb13_validate_artwork_file(path)
+                    record = {"file": str(path), "name": path.name, "sha256": digest,
+                              "size_bytes": path.stat().st_size, "errors": list(errors),
+                              "warnings": list(warnings), "metadata": metadata}
+                    hashes.setdefault(digest, []).append(str(path))
+                    if errors:
+                        report["errors"].append(f"{path.name}: " + "; ".join(str(item) for item in errors))
+                    if warnings:
+                        report["warnings"].append(f"{path.name}: " + "; ".join(str(item) for item in warnings))
+                    records.append(record)
+                except Exception as error:
+                    report["errors"].append(f"{path.name}: integrity check failed ({type(error).__name__}: {error})")
+            report["directories"][folder_name] = {"path": str(folder), "file_count": len(records), "files": records}
+        report["duplicate_hashes"] = [
+            {"sha256": digest, "files": paths}
+            for digest, paths in sorted(hashes.items())
+            if len(paths) > 1 and len({Path(item).stem.casefold() for item in paths}) > 1
+        ]
+        for duplicate in report["duplicate_hashes"]:
+            report["warnings"].append("Identical artwork bytes appear in multiple files: " + ", ".join(duplicate["files"]))
+        jobs = queue.get("jobs", []) if isinstance(queue, dict) else []
+        jobs = jobs if isinstance(jobs, list) else []
+        statuses = {}
+        for job in jobs:
+            if isinstance(job, dict):
+                status = str(job.get("status", "UNKNOWN"))
+                statuses[status] = statuses.get(status, 0) + 1
+                approved = str(job.get("approved_file", "")).strip()
+                if status == "PASS" and approved:
+                    try:
+                        approved_path = Path(approved).resolve()
+                        inside_project = approved_path.is_relative_to(project.resolve())
+                    except (OSError, RuntimeError, ValueError):
+                        inside_project = False
+                        approved_path = Path(approved)
+                    if not inside_project:
+                        report["warnings"].append(f"Queue job {job.get('image_id', '?')} points outside the project.")
+                    elif not approved_path.is_file():
+                        report["warnings"].append(f"Queue job {job.get('image_id', '?')} points to a missing approved file.")
+        report["queue_summary"] = {"jobs": len(jobs), "statuses": statuses}
+        report["status"] = "BLOCKED" if report["errors"] else ("NEEDS_REVIEW" if report["warnings"] else "READY")
+    if project.is_dir():
+        save_json(project / "REPORTS" / "ARTWORK_INTEGRITY.json", report)
+    return report
+
+
+def v70_prompt_handoff_audit(project):
+    """Compare prompt manifest records with exported prompt text files without rewriting them."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "BLOCKED",
+        "missing_prompt_files": [], "stale_prompt_files": [],
+        "malformed_records": [], "read_only": True,
+    }
+    if not project.is_dir():
+        report["errors"] = ["Project directory does not exist."]
+        return report
+    manifest_path = project / PROMPT_MANIFEST_FILENAME
+    if not manifest_path.is_file():
+        report["errors"] = [f"Prompt manifest is missing: {manifest_path}"]
+        save_json(project / "REPORTS" / "PROMPT_HANDOFF_AUDIT.json", report)
+        return report
+    try:
+        manifest = load_json(manifest_path)
+        if not isinstance(manifest, dict):
+            raise ValueError("manifest root must be a JSON object")
+        records = manifest.get("images", [])
+        if not isinstance(records, list):
+            raise ValueError("manifest images must be a list")
+    except Exception as error:
+        report["errors"] = [f"Prompt manifest could not be read: {type(error).__name__}: {error}"]
+        save_json(project / "REPORTS" / "PROMPT_HANDOFF_AUDIT.json", report)
+        return report
+    prompt_dir = project / ARTWORK_QUEUE_DIRNAME / ARTWORK_PROMPTS_DIRNAME
+    for record in records:
+        if not isinstance(record, dict) or not str(record.get("image_id", "")).strip():
+            report["malformed_records"].append(str(record))
+            continue
+        image_id = str(record["image_id"]).strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", image_id):
+            report["malformed_records"].append(image_id)
+            continue
+        path = prompt_dir / f"{image_id}.txt"
+        if not path.is_file():
+            report["missing_prompt_files"].append({"image_id": image_id, "expected_path": str(path)})
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except Exception as error:
+            report["stale_prompt_files"].append({"image_id": image_id, "path": str(path), "reason": f"Unreadable: {type(error).__name__}: {error}"})
+            continue
+        prompt = str(record.get("prompt", "")).strip()
+        negative = str(record.get("negative_prompt", "")).strip()
+        if (not prompt or f"PROMPT:{chr(10)}{prompt}" not in text
+                or f"NEGATIVE PROMPT:{chr(10)}{negative}" not in text):
+            report["stale_prompt_files"].append({"image_id": image_id, "path": str(path), "reason": "Exported text does not match the current manifest prompt fields."})
+    errors = report.get("errors", [])
+    report["status"] = "BLOCKED" if errors else ("NEEDS_REVIEW" if report["missing_prompt_files"] or report["stale_prompt_files"] or report["malformed_records"] else "READY")
+    report["manifest_count"] = len(records)
+    report["missing_count"] = len(report["missing_prompt_files"])
+    report["stale_count"] = len(report["stale_prompt_files"])
+    save_json(project / "REPORTS" / "PROMPT_HANDOFF_AUDIT.json", report)
+    return report
+
+
+def v71_creation_action_plan(project, readiness=None, artwork=None, prompts=None):
+    """Create prioritized creation-pipeline tasks from the three review reports."""
+    project = Path(project)
+    reports = [
+        ("Creation readiness", readiness if isinstance(readiness, dict) else {}),
+        ("Artwork integrity", artwork if isinstance(artwork, dict) else {}),
+        ("Prompt handoff", prompts if isinstance(prompts, dict) else {}),
+    ]
+    tasks = []
+    for label, report in reports:
+        status = str(report.get("status", "NEEDS_REVIEW"))
+        if status == "BLOCKED":
+            tasks.append({"priority": "P0", "area": label, "action": "Resolve blocked checks",
+                          "reason": "; ".join(str(item) for item in report.get("errors", [])) or "Report is blocked."})
+        for error in report.get("errors", []) if isinstance(report.get("errors", []), list) else []:
+            task = {"priority": "P0", "area": label, "action": "Resolve error", "reason": str(error)}
+            if task not in tasks:
+                tasks.append(task)
+        for warning in report.get("warnings", []) if isinstance(report.get("warnings", []), list) else []:
+            tasks.append({"priority": "P1", "area": label, "action": "Review warning", "reason": str(warning)})
+        for field, title in (("missing_prompt_files", "Export missing prompt files"),
+                             ("stale_prompt_files", "Refresh stale prompt exports"),
+                             ("malformed_records", "Correct malformed prompt records")):
+            values = report.get(field, [])
+            if isinstance(values, list) and values:
+                tasks.append({"priority": "P1", "area": label, "action": title,
+                              "reason": f"{len(values)} item(s) require review."})
+    if not tasks:
+        tasks.append({"priority": "P2", "area": "Creation pipeline", "action": "Review visual quality and continue production",
+                      "reason": "Automated structural checks passed; artistic suitability still needs human review."})
+    priority_order = {"P0": 0, "P1": 1, "P2": 2}
+    tasks.sort(key=lambda row: (priority_order[row["priority"]], row["area"], row["action"], row["reason"]))
+    result = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "task_count": len(tasks),
+        "priority_counts": {key: sum(1 for task in tasks if task["priority"] == key) for key in ("P0", "P1", "P2")},
+        "tasks": tasks, "read_only": True,
+    }
+    if project.is_dir():
+        save_json(project / "REPORTS" / "CREATION_ACTION_PLAN.json", result)
+    return result
+
+
+def v72_run_creation_quality_workflow(project):
+    """Run five linked creation-quality checks; never edits canon, prompt files, or artwork assets."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "errors": ["Project directory does not exist."]}
+    readiness = v68_creation_readiness_audit(project)
+    artwork = v69_artwork_integrity_audit(project)
+    prompts = v70_prompt_handoff_audit(project)
+    plan = v71_creation_action_plan(project, readiness, artwork, prompts)
+    statuses = [readiness.get("status"), artwork.get("status"), prompts.get("status")]
+    overall = "BLOCKED" if "BLOCKED" in statuses else ("NEEDS_REVIEW" if "NEEDS_REVIEW" in statuses else "READY")
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "status": overall,
+        "creation_readiness": readiness.get("status"),
+        "artwork_integrity": artwork.get("status"),
+        "prompt_handoff": prompts.get("status"),
+        "action_count": plan.get("task_count", 0),
+        "reports": {
+            "creation_readiness": str(project / "REPORTS" / "CREATION_READINESS.json"),
+            "artwork_integrity": str(project / "REPORTS" / "ARTWORK_INTEGRITY.json"),
+            "prompt_handoff": str(project / "REPORTS" / "PROMPT_HANDOFF_AUDIT.json"),
+            "action_plan": str(project / "REPORTS" / "CREATION_ACTION_PLAN.json"),
+        },
+        "canon_modified": False, "prompt_files_modified": False,
+        "artwork_files_modified": False,
+        "note": "Structural and technical checks only. The factory does not claim to generate artwork or judge artistic quality automatically.",
+    }
+    save_json(project / "REPORTS" / "CREATION_QUALITY_SUMMARY.json", report)
+    print("\\nCREATION & ARTWORK QUALITY CENTER")
+    print(f"Project: {project}")
+    print(f"Overall: {overall} | Creation: {readiness.get('status')} | Artwork: {artwork.get('status')} | Prompt handoff: {prompts.get('status')}")
+    print(f"Action items: {report['action_count']}")
+    for label, path in report["reports"].items():
+        print(f"  {label}: {path}")
+    print("No canon, prompt files, or artwork assets were changed.")
+    return report
+
+
+def v72_creation_quality_menu():
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return {"status": "CANCELLED"}
+    return v72_run_creation_quality_workflow(project)
 
 
 

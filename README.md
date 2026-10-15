@@ -1,6 +1,6 @@
 # ColoringBookFactory
 
-**Current factory version: 67.0**
+**Current factory version: 72.0**
 
 ColoringBookFactory is a Windows-oriented Python application for producing coloring books, organizing world/series lore, preparing marketplace listing drafts, and checking production packages before release.
 
@@ -18,7 +18,7 @@ From the repository root in PowerShell:
 python -X utf8 .\factory.py
 ```
 
-The main menu includes book creation/import, production, publishing, marketing, worlds and series, lore intake, release diagnostics, canon tools, listing generation, automatic post-import listing preparation, upload-readiness reporting, a one-click five-stage publishing run, source-PDF provenance auditing, a preserved manual upload checklist, prioritized release action plans, delivery-folder inventory, and reliability/migration tools. State and queue loaders now validate their JSON structure before use; malformed data produces an explicit warning and an in-memory safe fallback without rewriting the persisted file.
+The main menu includes book creation/import, production, publishing, marketing, worlds and series, lore intake, release diagnostics, canon tools, listing generation, automatic post-import listing preparation, upload-readiness reporting, a one-click five-stage publishing run, source-PDF provenance auditing, a preserved manual upload checklist, prioritized release action plans, delivery-folder inventory, a five-stage creation/artwork quality center, and reliability/migration tools. State and queue loaders now validate their JSON structure before use; malformed data produces an explicit warning and an in-memory safe fallback without rewriting the persisted file.
 
 ## Core workflows
 
@@ -67,3 +67,8 @@ See [CHANGELOG.md](CHANGELOG.md) for the documented release history and [ROADMAP
 ### 4. Run the one-click publishing workflow
 
 Choose **24. One-Click Publishing Run**. It generates listing drafts without overwriting existing drafts, refreshes the upload-readiness board, checks the imported source PDF digest when one was recorded, preserves manual upload-checklist statuses, builds a prioritized task plan, and inventories exact package/listing paths. The summary is saved to `REPORTS\\PUBLISHING_RUN_SUMMARY.json`. This is local preparation: it does not rebuild the MASTER PDF, upload files, or publish a product.
+
+
+### 5. Check creation and artwork quality
+
+Choose **25. Creation & Artwork Quality Center** to audit the blueprint/prompt/queue counts, inspect artwork file readability and duplicate bytes, compare exported prompt text against the current prompt manifest, and create a prioritized creation action plan. The reports are written under `REPORTS`. This is a technical/structural audit: it does not alter prompts or artwork, change canon, or claim to judge artistic quality automatically.

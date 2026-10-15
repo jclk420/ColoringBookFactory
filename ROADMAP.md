@@ -367,3 +367,12 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Read-only package/listing delivery map listing exact files and candidate MASTER PDFs.
 - One-click publishing run combining listing generation, upload readiness, provenance, checklist, action plan, and delivery map.
 - Main-menu option 24; no MASTER rebuild, listing-draft overwrite, canon mutation, upload, or publication.
+
+
+### v68.0–v72.0 — Creation & Artwork Quality Bundle (upgrade branch)
+
+- Read-only creation readiness audit across blueprint, prompt manifest, and artwork queue.
+- Artwork integrity inventory with file hashes, technical image validation, cross-ID duplicate detection, and missing-approved-file warnings.
+- Prompt handoff audit for missing or stale exported prompt text; rejects unsafe image IDs and never rewrites exports.
+- Prioritized P0/P1/P2 creation action plan and a one-click summary.
+- Main-menu option 25; no automatic canon changes, prompt regeneration, artwork movement, or artistic-quality claims.
