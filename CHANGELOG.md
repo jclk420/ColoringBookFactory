@@ -1,3 +1,12 @@
+## v98.0–v102.0 — Publishing Completion Center
+
+- **v98 — Source PDF integrity gate:** checks the candidate MASTER PDF for a readable file, PDF header, end-of-file marker, and page-marker evidence; ambiguous or damaged sources produce actionable blockers/review warnings.
+- **v99 — Platform deliverables matrix:** checks enabled KDP, Gumroad, Payhip, and Digital PDF package folders against configurable expected-file groups.
+- **v100 — Exact missing-file diagnostics:** reports the precise expected folder, missing file groups, listing-draft gaps, and prioritized next actions.
+- **v101 — Safe reruns:** writes uniquely named timestamped reports using exclusive creation; never replaces existing reports or modifies artwork, packages, listings, or lore.
+- **v102 — Main-menu Publishing Completion Center:** adds menu option 31 and a clear READY/NEEDS REVIEW/BLOCKED-style review outcome (this helper deliberately does not certify marketplace acceptance or claim upload status).
+- Adds dependency-free regression tests and documentation. All uploads and publication remain manual.
+
 ## v88.0–v92.0 — Release Evidence History & Change Tracker
 
 - **v88 — Release evidence snapshot:** records SHA-256 and size for the current MASTER, enabled platform package files, listing drafts, and core project metadata in a no-clobber timestamped history record.
