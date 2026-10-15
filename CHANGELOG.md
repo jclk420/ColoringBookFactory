@@ -1,3 +1,14 @@
+## v63.0–v67.0 — Five-Stage Publishing Workflow Bundle
+
+- **v63 — Source PDF provenance audit:** compares an imported PDF's recorded SHA-256 against the current source file without modifying either file; reports missing, changed, untracked, and verified states.
+- **v64 — Manual platform upload checklist:** lists exact package/listing folders and upload steps; preserves matching platform statuses and product URLs between runs, defaults new platforms to NOT_UPLOADED, and never infers publication.
+- **v65 — Prioritized release action plan:** converts blockers, warnings, upload readiness, and source-provenance findings into P0/P1/P2 tasks with report paths.
+- **v66 — Release delivery map:** inventories exact package/listing folders and files and identifies candidate MASTER PDFs without copying or rebuilding artifacts.
+- **v67 — One-click publishing run:** connects listing generation, readiness checks, provenance audit, checklist, action plan, delivery map, and a summary report under main-menu option 24. Listing drafts are preserved; upload and publication remain manual.
+
+- Adds dependency-free regression coverage for digest verification, checklist persistence, task prioritization, path/file inventory, orchestration, versioning, and menu wiring.
+- Does not overwrite existing listing drafts, rebuild the MASTER PDF, mutate lore canon, or perform online uploads/publication.
+
 ## v62.0 — Automatic Post-Import Publishing Preparation
 
 - After finished-PDF intake builds platform packages, generate platform-specific listing drafts and a consolidated upload-readiness report.
