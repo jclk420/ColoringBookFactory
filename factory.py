@@ -13048,10 +13048,6 @@ def cb13_build_and_publish_project(project=None):
 
     settings_path = project / "project.json"
     settings = load_json(settings_path) if settings_path.exists() else {}
-    settings["assembly_mode"] = "auto"
-    settings["number_of_images"] = len(passed)
-    settings["creation_status"] = "ARTWORK_QA_PASS"
-    save_json(settings_path, settings)
 
     input_dir = project / "INPUT"
     input_dir.mkdir(parents=True, exist_ok=True)
@@ -13062,17 +13058,39 @@ def cb13_build_and_publish_project(project=None):
         print("BUILD BLOCKED: existing INPUT artwork could not be safely backed up.")
         print(f"Backup report: {input_backup.get('report_path', '')}")
         return None
-    # Replace the assembly INPUT with the immutable QA-approved set.
+    # Replace INPUT only after a verified backup exists. A failed removal or
+    # copy aborts assembly; the verified backup remains available for recovery.
     for old in input_dir.iterdir():
         if old.is_file() and old.suffix.lower() in IMAGE_EXTENSIONS:
             try:
                 old.unlink()
-            except Exception:
+            except Exception as error:
+                print(f"BUILD BLOCKED: could not clear {old.name}: {error}")
+                print(f"Verified backup: {input_backup.get('backup_directory', 'not needed')}")
+                return None
+    copied_destinations = []
+    try:
+        for number, job in enumerate(passed, start=1):
+            source = Path(job["approved_file"])
+            destination = input_dir / f"{number:03d}_{job.get('image_id', f'IMG-{number:03d}')}.png"
+            shutil.copy2(source, destination)
+            if file_hash(source) != file_hash(destination):
+                raise IOError(f"SHA-256 mismatch after copying {source.name} to INPUT.")
+            copied_destinations.append(destination)
+    except Exception as error:
+        for destination in copied_destinations:
+            try:
+                destination.unlink(missing_ok=True)
+            except OSError:
                 pass
-    for number, job in enumerate(passed, start=1):
-        source = Path(job["approved_file"])
-        destination = input_dir / f"{number:03d}_{job.get('image_id', f'IMG-{number:03d}')}.png"
-        shutil.copy2(source, destination)
+        print(f"BUILD BLOCKED: could not stage approved artwork: {type(error).__name__}: {error}")
+        print(f"Verified backup: {input_backup.get('backup_directory', 'not needed')}")
+        return None
+
+    settings["assembly_mode"] = "auto"
+    settings["number_of_images"] = len(passed)
+    settings["creation_status"] = "ARTWORK_QA_PASS"
+    save_json(settings_path, settings)
 
     print("\n" + "=" * 78)
     print("BOOK ASSEMBLY + PUBLISH")
@@ -20965,6 +20983,7 @@ def v83_backup_assembly_input(project, input_dir=None):
         report["errors"].append("Project directory does not exist.")
     elif not input_dir.is_dir():
         report["status"] = "NO_BACKUP_NEEDED"
+        report["deletion_authorized"] = True
     else:
         images = sorted((path for path in input_dir.iterdir()
                          if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS),
