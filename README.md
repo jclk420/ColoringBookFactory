@@ -1,6 +1,6 @@
 # ColoringBookFactory
 
-**Current factory version: 87.0**
+**Current factory version: 92.0**
 
 ColoringBookFactory is a Windows-oriented Python application for producing coloring books, organizing world/series lore, preparing marketplace listing drafts, and checking production packages before release.
 
@@ -18,7 +18,7 @@ From the repository root in PowerShell:
 python -X utf8 .\factory.py
 ```
 
-The main menu includes book creation/import, production, publishing, marketing, worlds and series, lore intake, release diagnostics, canon tools, listing generation, automatic post-import listing preparation, upload-readiness reporting, a one-click five-stage publishing run, source-PDF provenance auditing, a preserved manual upload checklist, prioritized release action plans, delivery-folder inventory, a five-stage creation/artwork quality center, a prompt-generation ZIP handoff, generated-art intake preview, lore continuity audit, assembly readiness gate, listing-metadata drift audit, package-freshness verification, persistent upload-state validation, gated release-handoff ZIP export, verified INPUT backups before assembly, confirmed generated-art import, and a guided production flow. State and queue loaders now validate their JSON structure before use; malformed data produces an explicit warning and an in-memory safe fallback without rewriting the persisted file.
+The main menu includes book creation/import, production, publishing, marketing, worlds and series, lore intake, release diagnostics, canon tools, listing generation, automatic post-import listing preparation, upload-readiness reporting, a one-click five-stage publishing run, source-PDF provenance auditing, a preserved manual upload checklist, prioritized release action plans, delivery-folder inventory, a five-stage creation/artwork quality center, a prompt-generation ZIP handoff, generated-art intake preview, lore continuity audit, assembly readiness gate, listing-metadata drift audit, package-freshness verification, persistent upload-state validation, gated release-handoff ZIP export, verified INPUT backups before assembly, confirmed generated-art import, a guided production flow, release evidence snapshots, file-level release comparisons, integrity rechecks, and readiness trend history. State and queue loaders now validate their JSON structure before use; malformed data produces an explicit warning and an in-memory safe fallback without rewriting the persisted file.
 
 ## Core workflows
 
@@ -87,3 +87,8 @@ Choose **27. Final Release Integrity & Handoff Center** to compare existing list
 ### 8. Safely import generated artwork and stage a build
 
 Choose **28. Safe Artwork Import & Guided Production**. The factory previews a generated-art folder, requires explicit confirmation before copying files into `ARTWORK_QUEUE/SOURCE`, rechecks hashes, refuses collisions, runs artwork QA after a successful import, and shows assembly readiness. Before assembly replaces images in `INPUT`, it creates and verifies a backup. A failed backup or staging operation blocks the build; this workflow does not automatically assemble or publish.
+
+
+### 9. Track release evidence over time
+
+Choose **29. Release Evidence History & Change Tracker** to save a no-clobber snapshot of the current MASTER, platform packages, listing drafts, and key project metadata. The factory hashes the tracked files, compares the new snapshot to the previous one, checks whether tracked files have changed since capture, and summarizes recent readiness states. Snapshots are local evidence—not proof that a product was uploaded or published.
