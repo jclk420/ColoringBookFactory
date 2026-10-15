@@ -10,7 +10,7 @@ TREE = ast.parse(SOURCE)
 
 class PublishingHandoffMenuIntegrationTests(unittest.TestCase):
     def test_factory_version_reflects_integrated_handoff(self):
-        self.assertIn('FACTORY_VERSION = "107.0"', SOURCE)
+        self.assertIn('FACTORY_VERSION = "113.0"', SOURCE)
 
     def test_main_menu_exposes_handoff_inventory(self):
         self.assertIn('print(" 32. Publishing Handoff Inventory', SOURCE)
