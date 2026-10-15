@@ -1,3 +1,10 @@
+## v113.0–v117.0 — Integrated Publishing Handoff Workflow
+
+- Adds main-menu option 32 for the SHA-256 publishing handoff inventory.
+- Prints file counts, byte totals, P0 empty/read-error findings, P1 filename collisions, and actionable paths.
+- Keeps option 31 as the platform-specific publishing completion checklist.
+- Adds integration regression tests and operator instructions.
+
 ## v103.0–v107.0 — Accurate Per-Platform Publishing Readiness
 
 - **v103 — Platform-specific listing matching:** each enabled platform checks its own listing folder instead of borrowing any JSON/text file from the shared listing tree.
