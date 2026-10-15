@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "112.0"
+FACTORY_VERSION = "107.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
