@@ -13046,6 +13046,15 @@ def cb13_build_and_publish_project(project=None):
         print("All planned artwork must pass before the factory assembles the book.")
         return None
 
+    assembly_gate = v76_assembly_readiness_gate(project)
+    if assembly_gate.get("status") != "READY_FOR_ASSEMBLY":
+        print("BUILD BLOCKED: the assembly readiness gate did not pass.")
+        for message in assembly_gate.get("errors", []):
+            print(f"  BLOCKER: {message}")
+        for message in assembly_gate.get("warnings", []):
+            print(f"  REVIEW: {message}")
+        return None
+
     settings_path = project / "project.json"
     settings = load_json(settings_path) if settings_path.exists() else {}
 
@@ -20990,15 +20999,24 @@ def v83_backup_assembly_input(project, input_dir=None):
                         key=lambda path: path.name.casefold())
         if images:
             backup_root = project / "_FACTORY_BACKUPS"
-            backup_root.mkdir(parents=True, exist_ok=True)
-            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            target = backup_root / f"ASSEMBLY_INPUT_{stamp}"
-            suffix = 2
-            while target.exists():
-                target = backup_root / f"ASSEMBLY_INPUT_{stamp}_{suffix:02d}"
-                suffix += 1
-            target.mkdir(parents=True, exist_ok=False)
-            report["backup_directory"] = str(target)
+            try:
+                backup_root.mkdir(parents=True, exist_ok=True)
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                target = backup_root / f"ASSEMBLY_INPUT_{stamp}"
+                suffix = 2
+                while target.exists():
+                    target = backup_root / f"ASSEMBLY_INPUT_{stamp}_{suffix:02d}"
+                    suffix += 1
+                target.mkdir(parents=True, exist_ok=False)
+                report["backup_directory"] = str(target)
+            except Exception as error:
+                report["status"] = "BLOCKED"
+                report["errors"].append(f"Could not create an assembly INPUT backup directory: {type(error).__name__}: {error}")
+                if project.is_dir():
+                    target_report = project / "REPORTS" / "ASSEMBLY_INPUT_BACKUP.json"
+                    save_json(target_report, report)
+                    report["report_path"] = str(target_report)
+                return report
             import shutil
             for source in images:
                 try:
@@ -21097,10 +21115,10 @@ def v84_import_previewed_artwork(project, preview=None, confirm=False):
         copied = []
         try:
             for item in plan:
+                copied.append(item)  # destination was verified absent during preflight
                 shutil.copy2(item["source"], item["destination"])
                 if file_hash(item["destination"]) != item["sha256"]:
                     raise IOError(f"Copied hash mismatch for {item['image_id']}")
-                copied.append(item)
             result["copied_files"] = [
                 {"image_id": item["image_id"], "source": str(item["source"]),
                  "destination": str(item["destination"]), "sha256": item["sha256"]}
@@ -21111,7 +21129,7 @@ def v84_import_previewed_artwork(project, preview=None, confirm=False):
         except Exception as error:
             for item in copied:
                 try:
-                    if item["destination"].is_file() and file_hash(item["destination"]) == item["sha256"]:
+                    if item["destination"].is_file():
                         item["destination"].unlink()
                 except OSError:
                     pass
