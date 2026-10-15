@@ -403,3 +403,12 @@ This roadmap separates shipped work from future candidates. Planned items are no
 - Assembly INPUT preview with current and proposed artwork inventory.
 - Prioritized production action plan and guided import → QA → assembly-gate workflow.
 - Main-menu option 28; no automatic build, upload, or publication.
+
+
+### v88.0–v92.0 — Release Evidence History & Change Tracker
+
+- Timestamped no-clobber evidence snapshots with SHA-256 for MASTER, packages, listing drafts, and core project metadata.
+- Release-to-release added/changed/removed file comparison.
+- Current-file integrity recheck against a selected historical snapshot; path traversal is rejected.
+- Recent readiness trend summary and one-click evidence center.
+- Main-menu option 29; evidence reports do not claim upload or publication.

@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 87.0.
+# Current version: 92.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "87.0"
+FACTORY_VERSION = "92.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18990,6 +18990,7 @@ def factory_main_menu():
         print(" 26. Artwork Generation Handoff & Assembly Gate (5-stage)")
         print(" 27. Final Release Integrity & Handoff Center (5-stage)")
         print(" 28. Safe Artwork Import & Guided Production (5-stage)")
+        print(" 29. Release Evidence History & Change Tracker (5-stage)")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -19025,6 +19026,7 @@ def factory_main_menu():
         elif c=="26": v77_artwork_handoff_menu()
         elif c=="27": v82_release_integrity_menu()
         elif c=="28": v87_safe_artwork_production_menu()
+        elif c=="29": v92_release_evidence_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -21283,6 +21285,263 @@ def v87_safe_artwork_production_menu():
     if preview.get("status") == "READY_FOR_EXPLICIT_IMPORT":
         confirm = input("Copy these files into ARTWORK_QUEUE/SOURCE and run QA? [y/N]: ").strip().lower() in {"y", "yes"}
     return v87_guided_artwork_production_workflow(project, preview, confirm_import=confirm)
+
+
+
+# ============================================================
+# v88-v92 — RELEASE EVIDENCE HISTORY & CHANGE TRACKER
+# Captures reproducible hashes, compares releases, verifies current
+# evidence against a snapshot, and summarizes readiness trends.
+# ============================================================
+
+def v88_capture_release_evidence(project, readiness=None):
+    """Capture a no-clobber evidence snapshot of current master, packages, and listing drafts."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "errors": ["Project directory does not exist."]}
+    readiness = readiness if isinstance(readiness, dict) else {}
+    tracked = {}
+    def add_file(path):
+        try:
+            path = Path(path).resolve()
+            if not path.is_file() or not path.is_relative_to(project.resolve()):
+                return
+            relative = path.relative_to(project.resolve()).as_posix()
+            tracked[relative] = {"path": relative, "size_bytes": path.stat().st_size, "sha256": file_hash(path)}
+        except (OSError, RuntimeError, ValueError):
+            return
+    for relative in ("project.json", BOOK_BLUEPRINT_FILENAME, PROMPT_MANIFEST_FILENAME, CREATION_MANIFEST_FILENAME):
+        candidate = project / relative
+        if candidate.is_file():
+            add_file(candidate)
+    for folder_name in ("MASTER", "FINAL", PLATFORM_DIRNAME):
+        folder = project / folder_name
+        if folder.is_dir():
+            for path in sorted(folder.rglob("*"), key=lambda item: str(item).casefold()):
+                if path.is_file() and (folder_name == PLATFORM_DIRNAME or path.suffix.lower() == ".pdf" or path.name == "PACKAGE_MANIFEST.json"):
+                    add_file(path)
+    listing_root = project / MARKETING_DIR_NAME / "LISTINGS"
+    if listing_root.is_dir():
+        for path in sorted(listing_root.rglob("*"), key=lambda item: str(item).casefold()):
+            if path.is_file():
+                add_file(path)
+    try:
+        master = find_master_pdf(project)
+        master_path = Path(master).resolve() if master else None
+        master_sha = file_hash(master_path) if master_path and master_path.is_file() and master_path.is_relative_to(project.resolve()) else None
+    except Exception:
+        master_path, master_sha = None, None
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    history_dir = project / "REPORTS" / "RELEASE_HISTORY"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    target = history_dir / f"release_{stamp}.json"
+    suffix = 2
+    while target.exists():
+        target = history_dir / f"release_{stamp}_{suffix:02d}.json"
+        suffix += 1
+    snapshot = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "captured_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "project_name": project.name,
+        "readiness_status": readiness.get("overall_status", readiness.get("status", "UNKNOWN")),
+        "master_pdf": str(master_path) if master_path else None,
+        "master_sha256": master_sha,
+        "file_count": len(tracked), "files": [tracked[key] for key in sorted(tracked)],
+        "uploaded": False, "published": False,
+        "note": "Evidence snapshot only. Hashes describe local files at capture time and do not prove upload or publication.",
+    }
+    save_json(target, snapshot)
+    return {"status": "CAPTURED", "snapshot_path": str(target), "snapshot": snapshot,
+            "file_count": len(tracked), "master_sha256": master_sha}
+
+
+def v89_compare_release_evidence(project, current_snapshot=None):
+    """Compare a new release snapshot with the preceding snapshot without modifying either."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "NEEDS_REVIEW",
+        "baseline_snapshot": None, "current_snapshot": None,
+        "added": [], "changed": [], "removed": [], "read_only": True,
+    }
+    if not project.is_dir():
+        report["status"] = "BLOCKED"
+        report["errors"] = ["Project directory does not exist."]
+        return report
+    history_dir = project / "REPORTS" / "RELEASE_HISTORY"
+    files = sorted(history_dir.glob("release_*.json"), key=lambda path: path.name, reverse=True) if history_dir.is_dir() else []
+    current_path = Path(current_snapshot) if current_snapshot else (files[0] if files else None)
+    if not current_path or not current_path.is_file():
+        report["errors"] = ["No release evidence snapshot exists."]
+        report["status"] = "BLOCKED"
+    else:
+        try:
+            current = load_json(current_path)
+            report["current_snapshot"] = str(current_path)
+            prior_paths = [path for path in files if path.resolve() != current_path.resolve()]
+            if not prior_paths:
+                report["status"] = "BASELINE_CREATED"
+                report["note"] = "No earlier release snapshot exists; this capture is the baseline."
+            else:
+                baseline_path = prior_paths[0]
+                baseline = load_json(baseline_path)
+                report["baseline_snapshot"] = str(baseline_path)
+                before = {str(row.get("path")): row for row in baseline.get("files", []) if isinstance(row, dict) and row.get("path")}
+                after = {str(row.get("path")): row for row in current.get("files", []) if isinstance(row, dict) and row.get("path")}
+                report["added"] = sorted(path for path in after if path not in before)
+                report["removed"] = sorted(path for path in before if path not in after)
+                report["changed"] = [
+                    {"path": path, "previous_sha256": before[path].get("sha256"), "current_sha256": after[path].get("sha256")}
+                    for path in sorted(set(before) & set(after))
+                    if before[path].get("sha256") != after[path].get("sha256")
+                ]
+                report["master_changed"] = baseline.get("master_sha256") != current.get("master_sha256")
+                report["readiness_changed"] = baseline.get("readiness_status") != current.get("readiness_status")
+                report["status"] = "DIFF_FOUND" if report["added"] or report["removed"] or report["changed"] or report["master_changed"] or report["readiness_changed"] else "NO_CHANGES"
+        except Exception as error:
+            report["status"] = "BLOCKED"
+            report["errors"] = [f"Release snapshot could not be compared: {type(error).__name__}: {error}"]
+    if project.is_dir():
+        save_json(project / "REPORTS" / "RELEASE_EVIDENCE_DIFF.json", report)
+    return report
+
+
+def v90_release_evidence_integrity_audit(project, snapshot_path=None):
+    """Check whether files tracked by a release snapshot still match their captured hashes."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "BLOCKED",
+        "verified": [], "changed": [], "missing": [], "errors": [], "read_only": True,
+    }
+    history_dir = project / "REPORTS" / "RELEASE_HISTORY"
+    if not project.is_dir():
+        report["errors"].append("Project directory does not exist.")
+    else:
+        if snapshot_path:
+            snapshot_file = Path(snapshot_path)
+        else:
+            history = sorted(history_dir.glob("release_*.json"), key=lambda path: path.name, reverse=True) if history_dir.is_dir() else []
+            snapshot_file = history[0] if history else None
+        if not snapshot_file or not snapshot_file.is_file():
+            report["errors"].append("No release evidence snapshot is available.")
+        else:
+            try:
+                snapshot = load_json(snapshot_file)
+                report["snapshot_path"] = str(snapshot_file)
+                root = project.resolve()
+                for row in snapshot.get("files", []) if isinstance(snapshot.get("files", []), list) else []:
+                    if not isinstance(row, dict) or not row.get("path"):
+                        report["errors"].append("Snapshot contains a malformed file record.")
+                        continue
+                    relative = Path(str(row["path"]))
+                    candidate = (project / relative).resolve()
+                    if not candidate.is_relative_to(root):
+                        report["errors"].append(f"Unsafe snapshot path rejected: {row['path']}")
+                        continue
+                    if not candidate.is_file():
+                        report["missing"].append(str(row["path"]))
+                        continue
+                    try:
+                        actual = file_hash(candidate)
+                    except OSError as error:
+                        report["errors"].append(f"Cannot hash {row['path']}: {error}")
+                        continue
+                    if actual == row.get("sha256"):
+                        report["verified"].append(str(row["path"]))
+                    else:
+                        report["changed"].append({"path": str(row["path"]), "expected_sha256": row.get("sha256"), "actual_sha256": actual})
+            except Exception as error:
+                report["errors"].append(f"Snapshot integrity audit failed: {type(error).__name__}: {error}")
+        report["status"] = "BLOCKED" if report["errors"] else ("NEEDS_REVIEW" if report["changed"] or report["missing"] else "PASS")
+    if project.is_dir():
+        save_json(project / "REPORTS" / "RELEASE_EVIDENCE_INTEGRITY.json", report)
+    return report
+
+
+def v91_release_history_trend(project, limit=10):
+    """Summarize recent release snapshot readiness states and file counts."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "NEEDS_REVIEW",
+        "snapshot_count": 0, "readiness_counts": {}, "snapshots": [],
+        "read_only": True,
+    }
+    if not project.is_dir():
+        report["status"] = "BLOCKED"
+        report["errors"] = ["Project directory does not exist."]
+    else:
+        history_dir = project / "REPORTS" / "RELEASE_HISTORY"
+        files = sorted(history_dir.glob("release_*.json"), key=lambda path: path.name, reverse=True)[:max(1, int(limit))] if history_dir.is_dir() else []
+        counts = {}
+        for path in files:
+            try:
+                snapshot = load_json(path)
+                status = str(snapshot.get("readiness_status", "UNKNOWN"))
+                counts[status] = counts.get(status, 0) + 1
+                report["snapshots"].append({
+                    "path": str(path), "captured_at": snapshot.get("captured_at"),
+                    "readiness_status": status, "file_count": snapshot.get("file_count", 0),
+                    "master_sha256": snapshot.get("master_sha256"),
+                })
+            except Exception as error:
+                report.setdefault("errors", []).append(f"{path.name}: {type(error).__name__}: {error}")
+        report["snapshot_count"] = len(report["snapshots"])
+        report["readiness_counts"] = counts
+        report["status"] = "BLOCKED" if report.get("errors") else ("PASS" if report["snapshots"] else "NEEDS_REVIEW")
+    if project.is_dir():
+        save_json(project / "REPORTS" / "RELEASE_HISTORY_TREND.json", report)
+    return report
+
+
+def v92_run_release_evidence_center(project):
+    """Capture a release evidence snapshot, compare it, verify hashes, and summarize history."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "errors": ["Project directory does not exist."]}
+    readiness = v61_upload_readiness_board(project)
+    snapshot = v88_capture_release_evidence(project, readiness)
+    if snapshot.get("status") != "CAPTURED":
+        return {"status": "BLOCKED", "project": str(project), "snapshot": snapshot}
+    diff = v89_compare_release_evidence(project, snapshot.get("snapshot_path"))
+    integrity = v90_release_evidence_integrity_audit(project, snapshot.get("snapshot_path"))
+    trend = v91_release_history_trend(project)
+    statuses = [diff.get("status"), integrity.get("status"), trend.get("status")]
+    overall = "BLOCKED" if "BLOCKED" in statuses else ("NEEDS_REVIEW" if "NEEDS_REVIEW" in statuses else "CAPTURED")
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "status": overall,
+        "readiness_status": readiness.get("overall_status"),
+        "snapshot_path": snapshot.get("snapshot_path"),
+        "snapshot_file_count": snapshot.get("file_count", 0),
+        "master_sha256": snapshot.get("master_sha256"),
+        "comparison_status": diff.get("status"),
+        "integrity_status": integrity.get("status"),
+        "history_trend_status": trend.get("status"),
+        "changed_file_count": len(diff.get("changed", [])),
+        "added_file_count": len(diff.get("added", [])),
+        "removed_file_count": len(diff.get("removed", [])),
+        "reports": {
+            "snapshot": snapshot.get("snapshot_path"),
+            "diff": str(project / "REPORTS" / "RELEASE_EVIDENCE_DIFF.json"),
+            "integrity": str(project / "REPORTS" / "RELEASE_EVIDENCE_INTEGRITY.json"),
+            "trend": str(project / "REPORTS" / "RELEASE_HISTORY_TREND.json"),
+        },
+        "uploaded": False, "published": False,
+        "note": "Release history records local evidence and changes; it does not prove marketplace upload or publication.",
+    }
+    save_json(project / "REPORTS" / "RELEASE_EVIDENCE_SUMMARY.json", report)
+    return report
+
+
+def v92_release_evidence_menu():
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return {"status": "CANCELLED"}
+    return v92_run_release_evidence_center(project)
 
 
 

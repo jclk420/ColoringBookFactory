@@ -40,7 +40,7 @@ class SafeArtworkProductionTests(unittest.TestCase):
         self.project.mkdir()
         self.ns, self.source = load_helpers()
         self.ns.update({
-            "FACTORY_VERSION": "87.0",
+            "FACTORY_VERSION": "92.0",
             "IMAGE_EXTENSIONS": {".png", ".jpg", ".jpeg", ".webp"},
             "ARTWORK_QUEUE_DIRNAME": "ARTWORK_QUEUE",
             "ARTWORK_SOURCE_DIRNAME": "SOURCE",
@@ -156,7 +156,7 @@ class SafeArtworkProductionTests(unittest.TestCase):
         self.assertIn('if input_backup.get("status") == "BLOCKED":', self.source)
 
     def test_version_and_menu_wiring(self):
-        self.assertIn('FACTORY_VERSION = "87.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "92.0"', self.source)
         self.assertIn('28. Safe Artwork Import & Guided Production', self.source)
         self.assertIn('elif c=="28": v87_safe_artwork_production_menu()', self.source)
         tree = ast.parse(self.source)
