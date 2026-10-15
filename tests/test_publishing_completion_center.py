@@ -130,6 +130,19 @@ class PublishingCompletionTests(unittest.TestCase):
             self.assertEqual(report["platforms"]["Sample"]["status"], "BLOCKED")
             self.assertTrue(report["platforms"]["Sample"]["validation_errors"])
 
+
+    def test_ambiguous_master_candidates_are_reported_without_selection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "Book"
+            master_dir = project / "MASTER"
+            master_dir.mkdir(parents=True)
+            make_pdf(master_dir / "Book_MASTER.pdf")
+            make_pdf(master_dir / "Alternate_MASTER.pdf")
+            report = build_completion_report(project, profiles={"Disabled": {"enabled": False}})
+            self.assertIsNone(report["source_pdf"])
+            self.assertEqual(len(report["source_pdf_candidates"]), 2)
+            self.assertTrue(any("Multiple master PDF candidates" in row["action"] for row in report["actions"]))
+
     def test_report_writer_never_overwrites_existing_reports(self):
         with tempfile.TemporaryDirectory() as temp:
             project = Path(temp) / "Book"
