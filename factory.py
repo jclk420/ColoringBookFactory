@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "72.0"
+FACTORY_VERSION = "77.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18953,6 +18953,7 @@ def factory_main_menu():
         print(" 23. Platform Upload Readiness Board")
         print(" 24. One-Click Publishing Run (5-stage release pack)")
         print(" 25. Creation & Artwork Quality Center (5-stage audit)")
+        print(" 26. Artwork Generation Handoff & Assembly Gate (5-stage)")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -18985,6 +18986,7 @@ def factory_main_menu():
         elif c=="23": v61_upload_readiness_menu()
         elif c=="24": v67_publishing_run_menu()
         elif c=="25": v72_creation_quality_menu()
+        elif c=="26": v77_artwork_handoff_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -20219,6 +20221,351 @@ def v72_creation_quality_menu():
         print("No project selected.")
         return {"status": "CANCELLED"}
     return v72_run_creation_quality_workflow(project)
+
+
+
+# ============================================================
+# v73-v77 — ARTWORK GENERATION HANDOFF & ASSEMBLY GATE
+# Verifies lore continuity, exports a safe prompt batch, previews
+# generated-art intake, and blocks assembly until all jobs pass QA.
+# ============================================================
+
+def v73_prompt_lore_continuity_audit(project):
+    """Compare prompt-level world/location/series IDs with the saved blueprint."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "BLOCKED",
+        "errors": [], "warnings": [], "checked_prompts": 0,
+        "read_only": True,
+    }
+    if not project.is_dir():
+        report["errors"].append("Project directory does not exist.")
+    else:
+        try:
+            blueprint = load_json(project / BOOK_BLUEPRINT_FILENAME)
+            manifest = load_json(project / PROMPT_MANIFEST_FILENAME)
+            if not isinstance(blueprint, dict) or not isinstance(manifest, dict):
+                raise ValueError("Blueprint and prompt manifest must be JSON objects.")
+            records = manifest.get("images", [])
+            if not isinstance(records, list) or not records:
+                raise ValueError("Prompt manifest must contain a non-empty images list.")
+        except Exception as error:
+            report["errors"].append(f"Creation context could not be loaded: {type(error).__name__}: {error}")
+            records = []
+            blueprint = {}
+            manifest = {}
+        world = blueprint.get("world", {}) if isinstance(blueprint.get("world"), dict) else {}
+        location = blueprint.get("primary_location", {}) if isinstance(blueprint.get("primary_location"), dict) else {}
+        series = blueprint.get("series", {}) if isinstance(blueprint.get("series"), dict) else {}
+        expected = {
+            "world_id": str(world.get("world_id", "") or ""),
+            "location_id": str(location.get("id", "") or ""),
+            "series_id": str(series.get("series_id", "") or ""),
+        }
+        report["expected_context"] = expected
+        seen = set()
+        for index, record in enumerate(records, 1):
+            if not isinstance(record, dict):
+                report["errors"].append(f"Prompt record {index} is not an object.")
+                continue
+            image_id = str(record.get("image_id", "")).strip()
+            if not image_id:
+                report["errors"].append(f"Prompt record {index} has no image_id.")
+                continue
+            if image_id in seen:
+                report["errors"].append(f"{image_id}: duplicate prompt record.")
+            seen.add(image_id)
+            for field, expected_value in expected.items():
+                actual = str(record.get(field, "") or "")
+                if expected_value and actual != expected_value:
+                    report["errors"].append(f"{image_id}: {field} differs from the blueprint context.")
+                elif expected_value and not actual:
+                    report["errors"].append(f"{image_id}: required {field} is missing.")
+                elif not expected_value and actual:
+                    report["warnings"].append(f"{image_id}: prompt has {field} but the blueprint does not.")
+            if world.get("attached") and not expected["world_id"]:
+                report["warnings"].append(f"{image_id}: attached World has no stable ID in the blueprint.")
+            if location.get("attached") and not expected["location_id"]:
+                report["warnings"].append(f"{image_id}: attached primary location has no stable ID in the blueprint.")
+            if series.get("attached") and not expected["series_id"]:
+                report["warnings"].append(f"{image_id}: attached Series has no stable ID in the blueprint.")
+            if not str(record.get("prompt", "")).strip():
+                report["errors"].append(f"{image_id}: prompt text is empty.")
+            if not str(record.get("negative_prompt", "")).strip():
+                report["errors"].append(f"{image_id}: negative prompt is empty.")
+        report["checked_prompts"] = len(records)
+        report["status"] = "BLOCKED" if report["errors"] else ("NEEDS_REVIEW" if report["warnings"] else "PASS")
+    if project.is_dir():
+        save_json(project / "REPORTS" / "PROMPT_LORE_CONTINUITY.json", report)
+    return report
+
+
+def v74_export_prompt_generation_batch(project, continuity=None, handoff=None):
+    """Package existing prompt text files and their manifest for external image generation."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "errors": ["Project directory does not exist."]}
+    continuity = continuity if isinstance(continuity, dict) else v73_prompt_lore_continuity_audit(project)
+    handoff = handoff if isinstance(handoff, dict) else v70_prompt_handoff_audit(project)
+    if continuity.get("status") != "PASS" or handoff.get("status") != "READY":
+        return {
+            "status": "NEEDS_REVIEW",
+            "errors": ["Prompt batch export was withheld until lore continuity and prompt handoff audits pass."],
+            "exported": False, "uploaded": False,
+        }
+    manifest_path = project / PROMPT_MANIFEST_FILENAME
+    prompt_dir = project / ARTWORK_QUEUE_DIRNAME / ARTWORK_PROMPTS_DIRNAME
+    try:
+        manifest = load_json(manifest_path)
+        records = manifest.get("images", [])
+        if not isinstance(records, list) or not records:
+            raise ValueError("Prompt manifest has no image records.")
+        prompt_files = []
+        for record in records:
+            image_id = str(record.get("image_id", "")).strip()
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", image_id):
+                raise ValueError(f"Unsafe image ID in prompt manifest: {image_id!r}")
+            path = prompt_dir / f"{image_id}.txt"
+            if not path.is_file():
+                raise FileNotFoundError(f"Prompt file is missing: {path}")
+            prompt_files.append(path)
+    except Exception as error:
+        return {"status": "BLOCKED", "errors": [f"Prompt batch export failed: {type(error).__name__}: {error}"],
+                "exported": False, "uploaded": False}
+    export_dir = project / ARTWORK_QUEUE_DIRNAME / "EXPORTS"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target = export_dir / f"PROMPT_BATCH_{stamp}.zip"
+    suffix = 2
+    while target.exists():
+        target = export_dir / f"PROMPT_BATCH_{stamp}_{suffix:02d}.zip"
+        suffix += 1
+    file_rows = [{"name": path.name, "sha256": file_hash(path), "size_bytes": path.stat().st_size}
+                 for path in prompt_files]
+    handoff_manifest = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "book_title": manifest.get("book_title", project.name),
+        "world_id": manifest.get("world_id", ""), "primary_location_id": manifest.get("primary_location_id", ""),
+        "prompt_manifest_sha256": file_hash(manifest_path), "prompt_files": file_rows,
+        "contains_artwork": False, "uploaded": False,
+        "note": "Prompt handoff only. Generate artwork in a compatible image tool, then use the intake preview and QA workflow.",
+    }
+    try:
+        with zipfile.ZipFile(target, "x", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in prompt_files:
+                archive.write(path, arcname=f"PROMPTS/{path.name}")
+            archive.writestr("PROMPT_HANDOFF_MANIFEST.json", json.dumps(handoff_manifest, indent=2, ensure_ascii=False))
+    except Exception as error:
+        try:
+            target.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return {"status": "BLOCKED", "errors": [f"Could not create prompt batch ZIP: {type(error).__name__}: {error}"],
+                "exported": False, "uploaded": False}
+    result = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "status": "EXPORTED_FOR_GENERATION", "exported": True, "uploaded": False,
+        "path": str(target), "prompt_count": len(prompt_files),
+        "sha256": file_hash(target), "size_bytes": target.stat().st_size,
+        "manifest": handoff_manifest,
+    }
+    save_json(project / "REPORTS" / "PROMPT_BATCH_EXPORT.json", result)
+    return result
+
+
+def v75_artwork_intake_preview(project, source_folder):
+    """Preview how an external artwork folder maps to stable queue IDs; copy nothing."""
+    project = Path(project)
+    source_folder = Path(source_folder) if source_folder else None
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "source_folder": str(source_folder) if source_folder else None,
+        "status": "NEEDS_REVIEW", "matches": [], "missing_ids": [],
+        "ambiguous_ids": [], "unmatched_files": [], "errors": [],
+        "copies_performed": False, "read_only": True,
+    }
+    if not project.is_dir():
+        report["status"] = "BLOCKED"
+        report["errors"].append("Project directory does not exist.")
+    elif not source_folder or not source_folder.is_dir():
+        report["errors"].append("Choose an existing folder containing generated artwork.")
+    else:
+        queue_path = project / ARTWORK_QUEUE_FILENAME
+        try:
+            queue = load_json(queue_path)
+            jobs = queue.get("jobs", []) if isinstance(queue, dict) else []
+            if not isinstance(jobs, list) or not jobs:
+                raise ValueError("Artwork queue has no jobs.")
+        except Exception as error:
+            jobs = []
+            report["errors"].append(f"Artwork queue could not be loaded: {type(error).__name__}: {error}")
+        extensions = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
+        candidates = sorted((path for path in source_folder.iterdir()
+                             if path.is_file() and not path.is_symlink() and path.suffix.lower() in extensions),
+                            key=lambda path: path.name.casefold())
+        consumed = set()
+        for job in jobs:
+            if not isinstance(job, dict):
+                report["errors"].append("Artwork queue contains a malformed job.")
+                continue
+            image_id = str(job.get("image_id", "")).strip()
+            if not image_id or not re.fullmatch(r"[A-Za-z0-9_-]+", image_id):
+                report["errors"].append(f"Artwork queue contains an unsafe or missing image ID: {image_id!r}")
+                continue
+            matches = [path for path in candidates if re.search(re.escape(image_id), path.stem, re.IGNORECASE)]
+            if not matches:
+                report["missing_ids"].append(image_id)
+                continue
+            if len(matches) > 1:
+                report["ambiguous_ids"].append({"image_id": image_id, "files": [path.name for path in matches]})
+                continue
+            path = matches[0]
+            consumed.add(path)
+            errors, warnings, metadata = cb13_validate_artwork_file(path)
+            report["matches"].append({
+                "image_id": image_id, "source_file": str(path),
+                "sha256": file_hash(path), "size_bytes": path.stat().st_size,
+                "qa_errors": list(errors), "qa_warnings": list(warnings), "metadata": metadata,
+                "copy_destination_preview": str(project / ARTWORK_QUEUE_DIRNAME / ARTWORK_SOURCE_DIRNAME / f"{image_id}{path.suffix.lower()}"),
+            })
+        report["unmatched_files"] = [path.name for path in candidates if path not in consumed]
+        if report["errors"] or report["ambiguous_ids"] or any(row["qa_errors"] for row in report["matches"]):
+            report["status"] = "BLOCKED"
+        elif report["missing_ids"] or report["unmatched_files"] or any(row["qa_warnings"] for row in report["matches"]):
+            report["status"] = "NEEDS_REVIEW"
+        else:
+            report["status"] = "READY_FOR_EXPLICIT_IMPORT"
+    if project.is_dir():
+        save_json(project / "REPORTS" / "ARTWORK_INTAKE_PREVIEW.json", report)
+    return report
+
+
+def v76_assembly_readiness_gate(project):
+    """Require every planned job to pass QA with a readable approved file inside the project."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "BLOCKED",
+        "errors": [], "warnings": [], "jobs": [], "read_only": True,
+        "assembly_started": False,
+    }
+    if not project.is_dir():
+        report["errors"].append("Project directory does not exist.")
+    else:
+        queue_path = project / ARTWORK_QUEUE_FILENAME
+        try:
+            queue = load_json(queue_path)
+            jobs = queue.get("jobs", []) if isinstance(queue, dict) else []
+            if not isinstance(jobs, list) or not jobs:
+                raise ValueError("Artwork queue contains no jobs.")
+        except Exception as error:
+            jobs = []
+            report["errors"].append(f"Artwork queue unavailable: {type(error).__name__}: {error}")
+        seen_hashes = {}
+        for job in jobs:
+            if not isinstance(job, dict):
+                report["errors"].append("Artwork queue contains a malformed job record.")
+                continue
+            image_id = str(job.get("image_id", "")).strip()
+            status = str(job.get("status", "UNKNOWN"))
+            approved_raw = str(job.get("approved_file", "")).strip()
+            item = {"image_id": image_id, "queue_status": status, "approved_file": approved_raw, "status": "BLOCKED"}
+            if status != "PASS":
+                report["errors"].append(f"{image_id or 'Unknown job'} has not passed artwork QA (status: {status}).")
+            if not approved_raw:
+                report["errors"].append(f"{image_id or 'Unknown job'} has no approved_file.")
+            else:
+                try:
+                    approved = Path(approved_raw).resolve()
+                    inside = approved.is_relative_to(project.resolve())
+                except (OSError, RuntimeError, ValueError):
+                    inside = False
+                    approved = Path(approved_raw)
+                if not inside:
+                    report["errors"].append(f"{image_id or 'Unknown job'} approved_file points outside the project.")
+                elif not approved.is_file():
+                    report["errors"].append(f"{image_id or 'Unknown job'} approved file is missing.")
+                else:
+                    errors, warnings, metadata = cb13_validate_artwork_file(approved)
+                    digest = file_hash(approved)
+                    prior = seen_hashes.setdefault(digest, [])
+                    prior.append(image_id)
+                    if errors:
+                        report["errors"].append(f"{image_id}: approved artwork failed technical validation: " + "; ".join(str(value) for value in errors))
+                    if warnings:
+                        report["warnings"].append(f"{image_id}: " + "; ".join(str(value) for value in warnings))
+                    if len(set(prior)) > 1:
+                        report["warnings"].append("Identical approved artwork is assigned to multiple image IDs: " + ", ".join(sorted(set(prior))))
+                    item.update({"status": "PASS" if not errors else "BLOCKED", "sha256": digest,
+                                 "size_bytes": approved.stat().st_size, "metadata": metadata,
+                                 "qa_errors": list(errors), "qa_warnings": list(warnings)})
+            report["jobs"].append(item)
+        if report["errors"]:
+            report["status"] = "BLOCKED"
+        elif report["warnings"]:
+            report["status"] = "NEEDS_REVIEW"
+        else:
+            report["status"] = "READY_FOR_ASSEMBLY"
+        report["job_count"] = len(jobs)
+    if project.is_dir():
+        save_json(project / "REPORTS" / "ASSEMBLY_READINESS.json", report)
+    return report
+
+
+def v77_run_artwork_handoff_workflow(project, source_folder=None):
+    """Run continuity, handoff export, external-art preview, and assembly gate reports."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "errors": ["Project directory does not exist."]}
+    continuity = v73_prompt_lore_continuity_audit(project)
+    handoff = v70_prompt_handoff_audit(project)
+    export = v74_export_prompt_generation_batch(project, continuity, handoff)
+    intake = v75_artwork_intake_preview(project, source_folder) if source_folder else {
+        "status": "NEEDS_REVIEW", "errors": ["External artwork folder was not supplied; intake preview was skipped."],
+        "copies_performed": False,
+    }
+    if source_folder and isinstance(intake, dict):
+        intake["status"] = intake.get("status", "NEEDS_REVIEW")
+    assembly = v76_assembly_readiness_gate(project)
+    statuses = [continuity.get("status"), handoff.get("status"), intake.get("status"), assembly.get("status")]
+    overall = "BLOCKED" if "BLOCKED" in statuses else ("NEEDS_REVIEW" if "NEEDS_REVIEW" in statuses or "NEEDS_REVIEW" == export.get("status") else "READY")
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "status": overall,
+        "continuity_status": continuity.get("status"),
+        "prompt_handoff_status": handoff.get("status"),
+        "prompt_export_status": export.get("status", "NOT_EXPORTED"),
+        "artwork_intake_status": intake.get("status"),
+        "assembly_status": assembly.get("status"),
+        "prompt_batch_zip": export.get("path"),
+        "action_count": len(continuity.get("errors", [])) + len(continuity.get("warnings", []))
+                        + len(handoff.get("missing_prompt_files", [])) + len(handoff.get("stale_prompt_files", []))
+                        + len(intake.get("errors", [])) + len(intake.get("missing_ids", []))
+                        + len(assembly.get("errors", [])) + len(assembly.get("warnings", [])),
+        "reports": {
+            "prompt_lore_continuity": str(project / "REPORTS" / "PROMPT_LORE_CONTINUITY.json"),
+            "prompt_handoff": str(project / "REPORTS" / "PROMPT_HANDOFF_AUDIT.json"),
+            "prompt_batch_export": str(project / "REPORTS" / "PROMPT_BATCH_EXPORT.json"),
+            "artwork_intake_preview": str(project / "REPORTS" / "ARTWORK_INTAKE_PREVIEW.json"),
+            "assembly_readiness": str(project / "REPORTS" / "ASSEMBLY_READINESS.json"),
+        },
+        "canon_modified": False, "source_artwork_copied": False,
+        "assembly_started": False, "uploaded": False, "published": False,
+        "note": "Prompt ZIP is a handoff to an external image tool, not generated artwork. Intake remains preview-only until a separate explicit import action.",
+    }
+    save_json(project / "REPORTS" / "ARTWORK_HANDOFF_SUMMARY.json", report)
+    return report
+
+
+def v77_artwork_handoff_menu():
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return {"status": "CANCELLED"}
+    raw = input("Optional folder containing generated artwork (blank to skip intake preview): ").strip().strip('"')
+    return v77_run_artwork_handoff_workflow(project, raw or None)
 
 
 
