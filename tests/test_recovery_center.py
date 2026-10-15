@@ -156,7 +156,7 @@ class RecoveryCenterTests(unittest.TestCase):
         self.assertFalse(result["assembly_started"])
 
     def test_version_menu_and_build_backup_gate(self):
-        self.assertIn('FACTORY_VERSION = "102.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "107.0"', self.source)
         self.assertIn('30. Recovery & Build History Center', self.source)
         self.assertIn('elif c=="30": v97_recovery_center_menu()', self.source)
         self.assertIn('assembly_gate = v76_assembly_readiness_gate(project)', self.source)

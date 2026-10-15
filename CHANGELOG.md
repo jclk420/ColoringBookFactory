@@ -1,3 +1,12 @@
+## v103.0–v107.0 — Accurate Per-Platform Publishing Readiness
+
+- **v103 — Platform-specific listing matching:** each enabled platform checks its own listing folder instead of borrowing any JSON/text file from the shared listing tree.
+- **v104 — Listing structure validation:** malformed JSON, invalid field shapes, and explicit platform mismatches become actionable blockers; blank title/author/description fields remain review items rather than being invented.
+- **v105 — Package PDF integrity checks:** every PDF discovered inside a platform package receives a lightweight header/EOF check; broken files block local readiness.
+- **v106 — Real local readiness state:** complete package and listing sets can reach READY_TO_UPLOAD; missing/invalid assets block, and warnings require review. This never claims marketplace acceptance or publication.
+- **v107 — Ambiguous source reporting:** reports all candidate master PDFs when selection is ambiguous, preventing a silent or arbitrary source choice.
+- Adds regression tests for platform isolation, invalid PDFs, ready-state reachability, and no-upload claims. All audits remain read-only except for reports.
+
 ## v98.0–v102.0 — Publishing Completion Center
 
 - **v98 — Source PDF integrity gate:** checks the candidate MASTER PDF for a readable file, PDF header, end-of-file marker, and page-marker evidence; ambiguous or damaged sources produce actionable blockers/review warnings.

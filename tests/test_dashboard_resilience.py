@@ -18,8 +18,8 @@ class DashboardResilienceTests(unittest.TestCase):
         cls.dashboard = ast.get_source_segment(cls.source, matches[0])
 
     def test_factory_version_is_consistent(self):
-        self.assertIn('FACTORY_VERSION = "102.0"', self.source)
-        self.assertIn("# Current version: 102.0.", self.source)
+        self.assertIn('FACTORY_VERSION = "107.0"', self.source)
+        self.assertIn("# Current version: 107.0.", self.source)
 
     def test_malformed_manifest_batches_are_reported_and_returned_safely(self):
         self.assertIn('manifest_batches_wrong_type', self.dashboard)

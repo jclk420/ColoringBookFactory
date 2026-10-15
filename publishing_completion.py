@@ -5,19 +5,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.0"
+VERSION = "2.0"
 DEFAULT_PLATFORMS = {
-    "KDP": {"folder": "KDP", "required_any": [["*interior*.pdf"], ["*cover*.pdf"]],
+    "KDP": {"folder": "KDP", "listing_folder": "KDP", "required_any": [["*interior*.pdf"], ["*cover*.pdf"]],
             "listing_any": [["*.json"], ["*.txt"]],
             "notes": "Print package; verify trim, bleed, cover template, and KDP preflight."},
-    "Gumroad": {"folder": "GUMROAD", "required_any": [["*.pdf"], ["*cover*.png", "*cover*.jpg", "*thumbnail*.png"],
+    "Gumroad": {"folder": "GUMROAD", "listing_folder": "Gumroad", "required_any": [["*.pdf"], ["*cover*.png", "*cover*.jpg", "*thumbnail*.png"],
                 ["*description*.txt", "*description*.md", "*metadata*.json"]],
                 "listing_any": [["*.json"], ["*.txt"]],
                 "notes": "Digital delivery; manually confirm previews, price, and product copy."},
-    "Payhip": {"folder": "PAYHIP", "required_any": [["*.pdf"], ["*cover*.png", "*cover*.jpg", "*thumbnail*.png"]],
+    "Payhip": {"folder": "PAYHIP", "listing_folder": "Payhip", "required_any": [["*.pdf"], ["*cover*.png", "*cover*.jpg", "*thumbnail*.png"]],
                "listing_any": [["*.json"], ["*.txt"]],
                "notes": "Digital delivery; confirm upload file and storefront details."},
-    "Digital PDF": {"folder": "DIGITAL", "required_any": [["*.pdf"], ["*cover*.png", "*cover*.jpg", "*thumbnail*.png"]],
+    "Digital PDF": {"folder": "DIGITAL", "listing_folder": "Digital_PDF", "required_any": [["*.pdf"], ["*cover*.png", "*cover*.jpg", "*thumbnail*.png"]],
                     "listing_any": [["*.json"], ["*.txt"]],
                     "notes": "Platform-neutral download package."},
 }
@@ -62,14 +62,20 @@ def _matches_any(folder: Path, patterns: list[str]) -> list[str]:
             matches.update(p for p in folder.rglob(pattern) if p.is_file())
     return sorted(p.relative_to(folder).as_posix() for p in matches)
 
-def _find_master(project: Path) -> Path | None:
+def _master_candidates(project: Path) -> list[Path]:
+    """Return unique master candidates, preferring files explicitly named MASTER."""
     candidates = []
     for directory in (project / "MASTER", project):
         if directory.is_dir():
             candidates.extend(p for p in directory.glob("*.pdf") if p.is_file())
-    preferred = [p for p in candidates if "master" in p.stem.casefold()]
-    unique = sorted(set(preferred or candidates))
-    return unique[0] if len(unique) == 1 else None
+    unique = sorted(set(candidates))
+    preferred = [p for p in unique if "master" in p.stem.casefold()]
+    return preferred or unique
+
+
+def _find_master(project: Path) -> Path | None:
+    candidates = _master_candidates(project)
+    return candidates[0] if len(candidates) == 1 else None
 
 def build_completion_report(project: str | Path, profiles: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return actionable readiness diagnostics; never rebuild or modify publishing assets."""
@@ -77,15 +83,18 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
     report = {"schema_version": 1, "tool_version": VERSION,
               "generated_utc": datetime.now(timezone.utc).isoformat(), "project": str(root),
               "read_only_audit": True, "uploaded_or_published": False, "source_pdf": None,
-              "overall_status": "BLOCKED",
+              "overall_status": "BLOCKED", "source_pdf_candidates": [],
               "summary": {"READY_TO_UPLOAD": 0, "NEEDS_REVIEW": 0, "BLOCKED": 0},
               "platforms": {}, "actions": []}
     if not root.is_dir():
         report["actions"].append({"priority": "P0", "action": "Select an existing project folder.", "path": str(root)})
         return report
+    candidates = _master_candidates(root)
+    report["source_pdf_candidates"] = [str(path) for path in candidates]
     master = _find_master(root)
     if master is None:
-        report["actions"].append({"priority": "P0", "action": "Place one unambiguous master PDF in MASTER, preferably with MASTER in its filename.", "path": str(root / "MASTER")})
+        reason = "No master PDF was found." if not candidates else "Multiple master PDF candidates were found; select one and move/rename the others so the intended source is unambiguous."
+        report["actions"].append({"priority": "P0", "action": reason + " Keep the selected source in MASTER and include MASTER in its filename.", "path": str(root / "MASTER"), "candidates": [str(path) for path in candidates]})
         source_status = "BLOCKED"
     else:
         check = validate_pdf(master)
@@ -107,19 +116,61 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
             for group in profile.get("required_any", []):
                 if not _matches_any(package_dir, group):
                     missing.append("Required package file missing; expected one of: " + " OR ".join(group))
-        listing_dir = root / "MARKETING" / "LISTINGS"
+        listing_root = root / "MARKETING" / "LISTINGS"
+        # Default profiles use platform-specific folders so one platform's drafts
+        # cannot accidentally satisfy another platform's listing requirements.
+        listing_dir = listing_root / str(profile.get("listing_folder", "")) if profile.get("listing_folder") else listing_root
         listing_files = sorted(p.relative_to(listing_dir).as_posix() for p in listing_dir.rglob("*") if p.is_file()) if listing_dir.is_dir() else []
         for group in profile.get("listing_any", []):
             if not _matches_any(listing_dir, group):
-                missing.append("Listing draft missing one of: " + " OR ".join(group))
-        status = "BLOCKED" if source_status == "BLOCKED" or missing else "NEEDS_REVIEW"
+                missing.append("Platform-specific listing draft missing one of: " + " OR ".join(group))
+        review_issues = []
+        validation_errors = []
+        for relative in _matches_any(listing_dir, ["*.json"]):
+            listing_path = listing_dir / relative
+            try:
+                payload = json.loads(listing_path.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    validation_errors.append(f"Listing JSON must contain an object: {relative}")
+                    continue
+                listed_platform = payload.get("platform")
+                if listed_platform and str(listed_platform).casefold() != str(name).casefold():
+                    validation_errors.append(f"Listing platform mismatch in {relative}: expected {name}, found {listed_platform}.")
+                fields = payload.get("fields", {})
+                if fields and not isinstance(fields, dict):
+                    validation_errors.append(f"Listing fields must be an object: {relative}")
+                elif isinstance(fields, dict):
+                    for required_field in ("title", "author", "description"):
+                        if not str(fields.get(required_field, "")).strip():
+                            review_issues.append(f"Listing field '{required_field}' is blank in {relative}.")
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                validation_errors.append(f"Listing JSON could not be read ({relative}): {type(exc).__name__}: {exc}")
+        pdf_checks = []
+        for relative in _matches_any(package_dir, ["*.pdf"]):
+            pdf_result = validate_pdf(package_dir / relative)
+            pdf_checks.append(pdf_result)
+            if pdf_result["errors"]:
+                validation_errors.extend(f"Invalid package PDF {relative}: {error}" for error in pdf_result["errors"])
+            review_issues.extend(f"Review package PDF {relative}: {warning}" for warning in pdf_result["warnings"])
+        if source_status == "NEEDS_REVIEW":
+            review_issues.append("Source PDF passed basic checks but needs manual review.")
+        if missing or validation_errors or source_status == "BLOCKED":
+            status = "BLOCKED"
+        elif review_issues:
+            status = "NEEDS_REVIEW"
+        else:
+            status = "READY_TO_UPLOAD"
         report["summary"][status] += 1
         report["platforms"][name] = {"status": status, "package_folder": str(package_dir),
             "package_files": package_files, "listing_folder": str(listing_dir), "listing_files": listing_files,
-            "missing_requirements": missing, "notes": profile.get("notes", ""),
-            "upload_confirmed": False, "next_step": "Resolve the listed requirements, review the files, then upload manually."}
-        for issue in missing:
+            "missing_requirements": missing, "validation_errors": validation_errors,
+            "review_issues": review_issues, "package_pdf_checks": pdf_checks,
+            "notes": profile.get("notes", ""),
+            "upload_confirmed": False, "next_step": "Resolve blockers, review marketplace-specific fields, then upload manually."}
+        for issue in missing + validation_errors:
             report["actions"].append({"priority": "P0", "platform": name, "action": issue, "path": str(package_dir)})
+        for issue in review_issues:
+            report["actions"].append({"priority": "P1", "platform": name, "action": issue, "path": str(listing_dir)})
     if report["summary"]["BLOCKED"]:
         report["overall_status"] = "BLOCKED"
     elif report["summary"]["NEEDS_REVIEW"]:
@@ -171,6 +222,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"- {name}: {row['status']}")
             for issue in row["missing_requirements"]:
                 print(f"    MISSING: {issue}")
+            for issue in row.get("validation_errors", []):
+                print(f"    ERROR: {issue}")
+            for issue in row.get("review_issues", []):
+                print(f"    REVIEW: {issue}")
         print(f"Report: {saved}")
         print("Local preflight only. Nothing was uploaded or published.")
     return 1 if report["overall_status"] == "BLOCKED" else 0

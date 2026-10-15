@@ -1,3 +1,10 @@
+### v103.0–v107.0 — Accurate Per-Platform Publishing Readiness
+- Match listing JSON/text only inside each platform's own listing folder to prevent cross-platform false positives.
+- Validate listing JSON structure and platform identity; report blank listing fields for human review without inventing values.
+- Inspect package PDFs for basic header/EOF integrity before reporting local readiness.
+- Make READY_TO_UPLOAD reachable only when the local package/listing checks pass, while keeping marketplace approval and actual upload manual.
+- List ambiguous source-PDF candidates instead of making a silent choice.
+
 ### v62.0 — Automatic Post-Import Publishing Preparation
 - Chain non-destructive listing generation and consolidated readiness reporting after finished-PDF intake and platform package creation.
 - Preserve existing listing drafts by default.

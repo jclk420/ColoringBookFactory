@@ -143,7 +143,7 @@ class ReleaseEvidenceHistoryTests(unittest.TestCase):
         self.assertFalse(result["published"])
 
     def test_version_and_menu_wiring(self):
-        self.assertIn('FACTORY_VERSION = "102.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "107.0"', self.source)
         self.assertIn('29. Release Evidence History & Change Tracker', self.source)
         self.assertIn('elif c=="29": v92_release_evidence_menu()', self.source)
         tree = ast.parse(self.source)

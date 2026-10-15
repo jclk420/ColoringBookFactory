@@ -7,7 +7,7 @@ SOURCE = (ROOT / "factory.py").read_text(encoding="utf-8")
 
 class PublishingCompletionMenuTests(unittest.TestCase):
     def test_version_and_menu_option_are_wired(self):
-        self.assertIn('FACTORY_VERSION = "102.0"', SOURCE)
+        self.assertIn('FACTORY_VERSION = "107.0"', SOURCE)
         self.assertIn('31. Publishing Completion Center', SOURCE)
         self.assertIn('elif c=="31": v102_publishing_completion_menu()', SOURCE)
 
