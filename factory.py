@@ -21695,6 +21695,7 @@ def v94_restore_assembly_input_backup(project, backup_dir, confirm=False):
         result["current_input_backup"] = current_backup
         save_json(project / "REPORTS" / "ASSEMBLY_INPUT_RESTORE.json", result)
         return result
+    import shutil
     existing = [path for path in input_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS]
     for path in existing:
         try:
@@ -21702,9 +21703,19 @@ def v94_restore_assembly_input_backup(project, backup_dir, confirm=False):
         except OSError as error:
             result["errors"].append(f"Could not clear current INPUT file {path.name}: {error}")
             result["current_input_backup"] = current_backup
+            if current_backup.get("status") == "BACKUP_VERIFIED":
+                for item in current_backup.get("files", []):
+                    try:
+                        source = Path(item["backup"])
+                        destination = input_dir / Path(item["source"]).name
+                        if source.is_file() and not destination.exists():
+                            shutil.copy2(source, destination)
+                            if file_hash(destination) != item["sha256"]:
+                                raise IOError(f"Rollback hash mismatch: {destination.name}")
+                    except Exception as rollback_error:
+                        result["errors"].append(f"Current INPUT rollback failed: {type(rollback_error).__name__}: {rollback_error}")
             save_json(project / "REPORTS" / "ASSEMBLY_INPUT_RESTORE.json", result)
             return result
-    import shutil
     copied = []
     try:
         for item in plan:
