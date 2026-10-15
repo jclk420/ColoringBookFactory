@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 97.0.
+# Current version: 102.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "97.0"
+FACTORY_VERSION = "102.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18992,6 +18992,7 @@ def factory_main_menu():
         print(" 28. Safe Artwork Import & Guided Production (5-stage)")
         print(" 29. Release Evidence History & Change Tracker (5-stage)")
         print(" 30. Recovery & Build History Center (verified restore)")
+        print(" 31. Publishing Completion Center (PDF + exact upload checklist)")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -19029,6 +19030,7 @@ def factory_main_menu():
         elif c=="28": v87_safe_artwork_production_menu()
         elif c=="29": v92_release_evidence_menu()
         elif c=="30": v97_recovery_center_menu()
+        elif c=="31": v102_publishing_completion_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -21911,6 +21913,30 @@ def v97_recovery_center_menu():
         return {"status": "CANCELLED"}
     return v94_restore_assembly_input_backup(project, backups[selected - 1]["directory"], confirm=True)
 
+
+
+def v102_publishing_completion_menu():
+    """Run the separate read-only publishing completion audit for the active project."""
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return {"status": "CANCELLED"}
+    try:
+        from publishing_completion import build_completion_report, write_report_no_clobber
+        report = build_completion_report(project)
+        report_path = write_report_no_clobber(project, report)
+        report["report_path"] = str(report_path)
+    except (ImportError, OSError, ValueError) as exc:
+        print(f"Publishing completion audit could not finish: {exc}")
+        return {"status": "BLOCKED", "errors": [str(exc)]}
+    print(f"Publishing Completion Center: {report['overall_status']}")
+    for platform, row in report.get("platforms", {}).items():
+        print(f"  {platform}: {row['status']}")
+        for issue in row.get("missing_requirements", []):
+            print(f"    MISSING: {issue}")
+    print(f"Report: {report_path}")
+    print("Read-only audit. Nothing was uploaded or published.")
+    return report
 
 
 def main():
