@@ -59,7 +59,7 @@ class PublishingCompletionTests(unittest.TestCase):
             })
             row = report["platforms"]["Sample"]
             self.assertEqual(row["status"], "NEEDS_REVIEW")
-            self.assertIn(str(platform_dir), row["package_folder"])
+            self.assertEqual(str(platform_dir).casefold(), row["package_folder"].casefold())
             self.assertFalse(row["upload_confirmed"])
             self.assertFalse(report["uploaded_or_published"])
 
