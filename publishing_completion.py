@@ -15,10 +15,10 @@ DEFAULT_PLATFORMS = {
                 "listing_any": [["*.json"], ["*.txt"]],
                 "notes": "Digital delivery; manually confirm previews, price, and product copy."},
     "Payhip": {"folder": "PAYHIP", "required_any": [["*.pdf"], ["*cover*.png", "*cover*.jpg", "*thumbnail*.png"]],
-               "listing_any": [["*listing*.json", "*metadata*.json"], ["*description*.txt", "*description*.md"]],
+               "listing_any": [["*.json"], ["*.txt"]],
                "notes": "Digital delivery; confirm upload file and storefront details."},
     "Digital PDF": {"folder": "DIGITAL", "required_any": [["*.pdf"], ["*cover*.png", "*cover*.jpg", "*thumbnail*.png"]],
-                    "listing_any": [["*metadata*.json", "*listing*.json"]],
+                    "listing_any": [["*.json"], ["*.txt"]],
                     "notes": "Platform-neutral download package."},
 }
 
