@@ -169,7 +169,7 @@ class CreationQualityBundleTests(unittest.TestCase):
         self.assertTrue((self.project / "REPORTS" / "CREATION_QUALITY_SUMMARY.json").is_file())
 
     def test_version_menu_wiring_and_unique_definitions(self):
-        self.assertIn('FACTORY_VERSION = "102.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "107.0"', self.source)
         self.assertIn('25. Creation & Artwork Quality Center', self.source)
         self.assertIn('elif c=="25": v72_creation_quality_menu()', self.source)
         tree = ast.parse(self.source)
