@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from publishing_handoff import build_handoff_manifest, write_handoff_manifest_no_clobber
+from publishing_handoff import _case_collisions, build_handoff_manifest, write_handoff_manifest_no_clobber
 
 
 class PublishingHandoffTests(unittest.TestCase):
@@ -35,15 +35,10 @@ class PublishingHandoffTests(unittest.TestCase):
             self.assertTrue(any(action["action"] == "Package file is empty." for action in report["actions"]))
 
     def test_case_insensitive_filename_collisions_are_reported(self):
-        with tempfile.TemporaryDirectory() as temp:
-            project = Path(temp) / "Book"
-            package = project / "PLATFORMS" / "KDP"
-            package.mkdir(parents=True)
-            (package / "Cover.png").write_bytes(b"a")
-            (package / "cover.PNG").write_bytes(b"b")
-            report = build_handoff_manifest(project, ("KDP",))
-            self.assertEqual(report["summary"]["case_collisions"], 1)
-            self.assertEqual(len(report["platforms"]["KDP"]["case_collisions"]), 1)
+        # Test the pure path-grouping logic so this passes on Windows (case-insensitive)
+        # and Linux/macOS (usually case-sensitive) without filesystem-dependent fixtures.
+        collisions = _case_collisions(["Cover.png", "cover.PNG", "interior.pdf"])
+        self.assertEqual(collisions, [["Cover.png", "cover.PNG"]])
 
     def test_missing_platform_folder_is_reported_without_crashing(self):
         with tempfile.TemporaryDirectory() as temp:
