@@ -1,3 +1,12 @@
+## v83.0–v87.0 — Safe Artwork Import & Guided Production
+
+- **v83 — Verified assembly INPUT backup:** before replacing existing INPUT images, creates a timestamped backup and verifies SHA-256 for every copy. Assembly stops if backup, removal, or staging fails; existing input images are never silently discarded.
+- **v84 — Confirmed artwork import:** imports only from a READY_FOR_EXPLICIT_IMPORT preview after explicit confirmation, rechecks source hashes, refuses existing destination IDs, and rolls back newly copied files on copy failure.
+- **v85 — Assembly INPUT preview:** lists approved art and current INPUT images and warns when replacement/backup will occur.
+- **v86 — Production action plan:** prioritizes intake, QA, assembly gate, and INPUT replacement tasks.
+- **v87 — Guided artwork production:** previews, optionally imports after confirmation, runs QA, and reports assembly readiness without starting assembly or publishing; main-menu option 28.
+- Adds regression tests for verified backup, explicit confirmation, no-clobber import, stale preview detection, assembly preview, and safe build integration.
+
 ## v78.0–v82.0 — Final Release Integrity & Handoff Bundle
 
 - **v78 — Listing metadata drift audit:** compares saved platform listing titles, authors, subtitles, and keywords with current project settings without rewriting drafts.
