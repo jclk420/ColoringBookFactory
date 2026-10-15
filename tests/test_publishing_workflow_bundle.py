@@ -115,7 +115,7 @@ class PublishingWorkflowBundleTests(unittest.TestCase):
         row = report["platforms"][0]
         self.assertTrue(row["package_exists"])
         self.assertTrue(row["listing_exists"])
-        self.assertEqual(row["package_files"][0]["relative_path"].replace("\\\\", "/"), "PLATFORMS/KDP/book.pdf")
+        self.assertEqual(row["package_files"][0]["relative_path"].replace(chr(92), "/"), "PLATFORMS/KDP/book.pdf")
         self.assertEqual(row["listing_files"][0]["relative_path"].replace("\\\\", "/"), "MARKETING/LISTINGS/KDP/LISTING.txt")
 
     def test_delivery_map_refuses_to_inventory_paths_outside_project(self):
