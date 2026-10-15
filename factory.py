@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 92.0.
+# Current version: 97.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "92.0"
+FACTORY_VERSION = "97.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18991,6 +18991,7 @@ def factory_main_menu():
         print(" 27. Final Release Integrity & Handoff Center (5-stage)")
         print(" 28. Safe Artwork Import & Guided Production (5-stage)")
         print(" 29. Release Evidence History & Change Tracker (5-stage)")
+        print(" 30. Recovery & Build History Center (verified restore)")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -19027,6 +19028,7 @@ def factory_main_menu():
         elif c=="27": v82_release_integrity_menu()
         elif c=="28": v87_safe_artwork_production_menu()
         elif c=="29": v92_release_evidence_menu()
+        elif c=="30": v97_recovery_center_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -21036,8 +21038,24 @@ def v83_backup_assembly_input(project, input_dir=None):
                 report["status"] = "BLOCKED"
                 report["deletion_authorized"] = False
             else:
-                report["status"] = "BACKUP_VERIFIED"
-                report["deletion_authorized"] = True
+                try:
+                    backup_manifest = {
+                        "schema_version": 1, "factory_version": FACTORY_VERSION,
+                        "created_at": datetime.now().isoformat(timespec="seconds"),
+                        "project": str(project), "backup_directory": str(target),
+                        "files": [{"name": Path(item["backup"]).name, "sha256": item["sha256"],
+                                   "size_bytes": item["size_bytes"]} for item in report["files"]],
+                        "verified": True,
+                        "note": "Per-backup manifest; restore only after verifying every file hash.",
+                    }
+                    save_json(target / "BACKUP_MANIFEST.json", backup_manifest)
+                    report["backup_manifest"] = str(target / "BACKUP_MANIFEST.json")
+                    report["status"] = "BACKUP_VERIFIED"
+                    report["deletion_authorized"] = True
+                except Exception as error:
+                    report["status"] = "BLOCKED"
+                    report["deletion_authorized"] = False
+                    report["errors"].append(f"Could not write backup manifest: {type(error).__name__}: {error}")
         else:
             report["status"] = "NO_BACKUP_NEEDED"
             report["deletion_authorized"] = True
@@ -21542,6 +21560,356 @@ def v92_release_evidence_menu():
         print("No project selected.")
         return {"status": "CANCELLED"}
     return v92_run_release_evidence_center(project)
+
+
+
+# ============================================================
+# v93-v97 — RECOVERY & BUILD HISTORY CENTER
+# Every backup is independently verifiable; restores require explicit
+# confirmation and preserve current INPUT before replacement.
+# ============================================================
+
+def v93_recovery_inventory(project):
+    """Inventory assembly backups and build snapshots, verifying backup manifests and file hashes."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "NEEDS_REVIEW",
+        "assembly_backups": [], "build_snapshots": [], "errors": [],
+        "read_only": True,
+    }
+    if not project.is_dir():
+        report["status"] = "BLOCKED"
+        report["errors"].append("Project directory does not exist.")
+    else:
+        backup_root = project / "_FACTORY_BACKUPS"
+        if backup_root.is_dir():
+            for folder in sorted((path for path in backup_root.iterdir() if path.is_dir() and path.name.startswith("ASSEMBLY_INPUT_")),
+                                 key=lambda path: path.name, reverse=True):
+                manifest_path = folder / "BACKUP_MANIFEST.json"
+                row = {"directory": str(folder), "manifest_path": str(manifest_path),
+                       "status": "LEGACY_UNVERIFIED", "file_count": 0, "errors": []}
+                if manifest_path.is_file():
+                    try:
+                        manifest = load_json(manifest_path)
+                        records = manifest.get("files", []) if isinstance(manifest, dict) else []
+                        if not isinstance(records, list) or not manifest.get("verified"):
+                            raise ValueError("backup manifest is malformed or not marked verified")
+                        for item in records:
+                            if not isinstance(item, dict):
+                                row["errors"].append("Malformed backup file record.")
+                                continue
+                            name = str(item.get("name", ""))
+                            if not name or Path(name).name != name or name in {".", ".."}:
+                                row["errors"].append(f"Unsafe backup filename: {name!r}")
+                                continue
+                            file_path = folder / name
+                            if not file_path.is_file():
+                                row["errors"].append(f"Missing backup file: {name}")
+                            elif file_hash(file_path) != item.get("sha256"):
+                                row["errors"].append(f"Backup hash mismatch: {name}")
+                            else:
+                                row["file_count"] += 1
+                        row["status"] = "VERIFIED" if not row["errors"] else "BLOCKED"
+                    except Exception as error:
+                        row["status"] = "BLOCKED"
+                        row["errors"].append(f"Manifest check failed: {type(error).__name__}: {error}")
+                report["assembly_backups"].append(row)
+        snapshot_root = project / "BUILD_SNAPSHOTS"
+        if snapshot_root.is_dir():
+            for path in sorted(snapshot_root.glob("build_*.json"), key=lambda item: item.name, reverse=True)[:50]:
+                try:
+                    snapshot = load_json(path)
+                    valid = isinstance(snapshot, dict) and isinstance(snapshot.get("artwork", []), list)
+                    report["build_snapshots"].append({
+                        "path": str(path), "timestamp": snapshot.get("timestamp") if isinstance(snapshot, dict) else None,
+                        "title": snapshot.get("title") if isinstance(snapshot, dict) else None,
+                        "pages_built": snapshot.get("pages_built") if isinstance(snapshot, dict) else None,
+                        "final_pdf_sha256": snapshot.get("final_pdf_sha256") if isinstance(snapshot, dict) else None,
+                        "status": "READABLE" if valid else "MALFORMED",
+                    })
+                except Exception as error:
+                    report["build_snapshots"].append({"path": str(path), "status": "MALFORMED",
+                                                       "error": f"{type(error).__name__}: {error}"})
+        if any(row.get("status") == "BLOCKED" for row in report["assembly_backups"]) or any(row.get("status") == "MALFORMED" for row in report["build_snapshots"]):
+            report["status"] = "NEEDS_REVIEW"
+        elif report["assembly_backups"] or report["build_snapshots"]:
+            report["status"] = "PASS"
+        else:
+            report["status"] = "NEEDS_REVIEW"
+            report["errors"].append("No assembly backup or build snapshot history was found.")
+        report["verified_backup_count"] = sum(1 for row in report["assembly_backups"] if row.get("status") == "VERIFIED")
+        report["build_snapshot_count"] = len(report["build_snapshots"])
+    if project.is_dir():
+        save_json(project / "REPORTS" / "RECOVERY_INVENTORY.json", report)
+    return report
+
+
+def v94_restore_assembly_input_backup(project, backup_dir, confirm=False):
+    """Restore only a fully hash-verified backup, after backing up current INPUT and explicit confirmation."""
+    project = Path(project)
+    result = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "backup_directory": str(backup_dir),
+        "status": "BLOCKED", "restored_files": [], "errors": [],
+        "restored": False, "explicit_confirmation": bool(confirm),
+    }
+    if not project.is_dir():
+        result["errors"].append("Project directory does not exist.")
+        return result
+    if not confirm:
+        result["status"] = "CONFIRMATION_REQUIRED"
+        result["errors"].append("No files were restored because explicit confirmation was not provided.")
+        return result
+    backup_root = (project / "_FACTORY_BACKUPS").resolve()
+    try:
+        folder = Path(backup_dir).resolve()
+        if not folder.is_relative_to(backup_root) or not folder.is_dir():
+            raise ValueError("selected backup folder is outside the project's _FACTORY_BACKUPS directory")
+        manifest_path = folder / "BACKUP_MANIFEST.json"
+        manifest = load_json(manifest_path)
+        records = manifest.get("files", []) if isinstance(manifest, dict) else []
+        if not manifest.get("verified") or not isinstance(records, list) or not records:
+            raise ValueError("backup manifest is missing, unverified, or empty")
+        plan = []
+        for item in records:
+            if not isinstance(item, dict):
+                raise ValueError("backup manifest contains a malformed record")
+            name = str(item.get("name", ""))
+            if not name or Path(name).name != name or name in {".", ".."}:
+                raise ValueError(f"unsafe backup filename: {name!r}")
+            source = folder / name
+            if not source.is_file() or file_hash(source) != item.get("sha256"):
+                raise ValueError(f"backup file missing or hash mismatch: {name}")
+            plan.append({"name": name, "source": source, "sha256": item["sha256"]})
+    except Exception as error:
+        result["errors"].append(f"Backup preflight failed: {type(error).__name__}: {error}")
+        if project.is_dir():
+            save_json(project / "REPORTS" / "ASSEMBLY_INPUT_RESTORE.json", result)
+        return result
+    input_dir = project / "INPUT"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    current_backup = v83_backup_assembly_input(project, input_dir)
+    if current_backup.get("status") == "BLOCKED":
+        result["errors"].append("Current INPUT could not be backed up; restore was cancelled.")
+        result["current_input_backup"] = current_backup
+        save_json(project / "REPORTS" / "ASSEMBLY_INPUT_RESTORE.json", result)
+        return result
+    import shutil
+    existing = [path for path in input_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS]
+    for path in existing:
+        try:
+            path.unlink()
+        except OSError as error:
+            result["errors"].append(f"Could not clear current INPUT file {path.name}: {error}")
+            result["current_input_backup"] = current_backup
+            if current_backup.get("status") == "BACKUP_VERIFIED":
+                for item in current_backup.get("files", []):
+                    try:
+                        source = Path(item["backup"])
+                        destination = input_dir / Path(item["source"]).name
+                        if source.is_file() and not destination.exists():
+                            shutil.copy2(source, destination)
+                            if file_hash(destination) != item["sha256"]:
+                                raise IOError(f"Rollback hash mismatch: {destination.name}")
+                    except Exception as rollback_error:
+                        result["errors"].append(f"Current INPUT rollback failed: {type(rollback_error).__name__}: {rollback_error}")
+            save_json(project / "REPORTS" / "ASSEMBLY_INPUT_RESTORE.json", result)
+            return result
+    copied = []
+    try:
+        for item in plan:
+            destination = input_dir / item["name"]
+            if destination.exists():
+                raise FileExistsError(f"Restore destination already exists: {destination.name}")
+            copied.append(destination)
+            shutil.copy2(item["source"], destination)
+            if file_hash(destination) != item["sha256"]:
+                raise IOError(f"Restored hash mismatch: {destination.name}")
+        result["restored_files"] = [{"name": item["name"], "sha256": item["sha256"],
+                                     "destination": str(input_dir / item["name"])} for item in plan]
+        result["status"] = "RESTORED"
+        result["restored"] = True
+    except Exception as error:
+        for path in copied:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        rollback_errors = []
+        if current_backup.get("status") == "BACKUP_VERIFIED":
+            try:
+                for item in current_backup.get("files", []):
+                    source = Path(item["backup"])
+                    destination = input_dir / Path(item["source"]).name
+                    if source.is_file() and not destination.exists():
+                        shutil.copy2(source, destination)
+                        if file_hash(destination) != item["sha256"]:
+                            raise IOError(f"Rollback hash mismatch: {destination.name}")
+            except Exception as rollback_error:
+                rollback_errors.append(f"Current INPUT rollback failed: {type(rollback_error).__name__}: {rollback_error}")
+        result["status"] = "BLOCKED"
+        result["errors"].append(f"Restore failed: {type(error).__name__}: {error}")
+        result["errors"].extend(rollback_errors)
+    result["current_input_backup"] = current_backup
+    save_json(project / "REPORTS" / "ASSEMBLY_INPUT_RESTORE.json", result)
+    return result
+
+
+def v95_build_snapshot_integrity_audit(project):
+    """Validate build snapshot records and compare the latest snapshot to current FINAL/INPUT artifacts."""
+    project = Path(project)
+    report = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "project": str(project), "status": "NEEDS_REVIEW",
+        "snapshots": [], "errors": [], "warnings": [], "read_only": True,
+    }
+    if not project.is_dir():
+        report["status"] = "BLOCKED"
+        report["errors"].append("Project directory does not exist.")
+    else:
+        root = project / "BUILD_SNAPSHOTS"
+        files = sorted(root.glob("build_*.json"), key=lambda path: path.name, reverse=True) if root.is_dir() else []
+        for path in files[:50]:
+            try:
+                data = load_json(path)
+                if not isinstance(data, dict) or not isinstance(data.get("artwork", []), list):
+                    raise ValueError("snapshot schema is malformed")
+                report["snapshots"].append({"path": str(path), "timestamp": data.get("timestamp"),
+                                            "pages_built": data.get("pages_built"),
+                                            "final_pdf_sha256": data.get("final_pdf_sha256")})
+            except Exception as error:
+                report["errors"].append(f"{path.name}: {type(error).__name__}: {error}")
+        if not files:
+            report["warnings"].append("No build snapshots exist.")
+        else:
+            try:
+                latest = load_json(files[0])
+                expected_pdf = latest.get("final_pdf_sha256")
+                title = str(latest.get("title") or "")
+                candidates = []
+                if title:
+                    candidates.append(project / "FINAL" / f"{title}.pdf")
+                final_dir = project / "FINAL"
+                if final_dir.is_dir():
+                    candidates.extend(path for path in final_dir.glob("*.pdf") if path not in candidates)
+                current_pdf = next((path for path in candidates if path.is_file()), None)
+                if not current_pdf:
+                    report["warnings"].append("Latest build snapshot has no corresponding current FINAL PDF.")
+                elif expected_pdf and file_hash(current_pdf) != expected_pdf:
+                    report["warnings"].append("Current FINAL PDF hash differs from the latest build snapshot.")
+                    report["current_final_pdf"] = str(current_pdf)
+                else:
+                    report["current_final_pdf"] = str(current_pdf)
+                    report["latest_final_pdf_matches"] = bool(expected_pdf)
+                current_input = {path.name: file_hash(path) for path in (project / "INPUT").iterdir()
+                                 if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS} if (project / "INPUT").is_dir() else {}
+                artwork = latest.get("artwork", [])
+                if isinstance(artwork, list):
+                    mismatched = [row.get("filename") for row in artwork if isinstance(row, dict)
+                                  and row.get("filename") in current_input and row.get("sha256") != current_input[row.get("filename")]]
+                    if mismatched:
+                        report["warnings"].append("INPUT artwork differs from the latest snapshot for: " + ", ".join(str(value) for value in mismatched))
+            except Exception as error:
+                report["errors"].append(f"Latest build snapshot could not be compared: {type(error).__name__}: {error}")
+        report["status"] = "BLOCKED" if report["errors"] else ("NEEDS_REVIEW" if report["warnings"] else "PASS")
+    if project.is_dir():
+        save_json(project / "REPORTS" / "BUILD_SNAPSHOT_INTEGRITY.json", report)
+    return report
+
+
+def v96_recovery_action_plan(project, inventory=None, build_audit=None):
+    """Create prioritized recovery actions without restoring or changing any files."""
+    project = Path(project)
+    inventory = inventory if isinstance(inventory, dict) else {}
+    build_audit = build_audit if isinstance(build_audit, dict) else {}
+    tasks = []
+    for row in inventory.get("assembly_backups", []) if isinstance(inventory.get("assembly_backups", []), list) else []:
+        if not isinstance(row, dict):
+            continue
+        if row.get("status") == "BLOCKED":
+            tasks.append({"priority": "P0", "action": "Inspect damaged backup", "reason": "; ".join(row.get("errors", [])), "path": row.get("directory")})
+        elif row.get("status") == "LEGACY_UNVERIFIED":
+            tasks.append({"priority": "P1", "action": "Do not restore without manual verification", "reason": "This backup has no per-folder hash manifest.", "path": row.get("directory")})
+        elif row.get("status") == "VERIFIED":
+            tasks.append({"priority": "P2", "action": "Keep verified recovery point", "reason": f"{row.get('file_count', 0)} file(s) passed hash verification.", "path": row.get("directory")})
+    if build_audit.get("status") == "BLOCKED":
+        tasks.append({"priority": "P0", "action": "Repair malformed build history", "reason": "; ".join(build_audit.get("errors", [])) or "Build snapshot audit is blocked."})
+    for warning in build_audit.get("warnings", []) if isinstance(build_audit.get("warnings", []), list) else []:
+        tasks.append({"priority": "P1", "action": "Review build output drift", "reason": str(warning)})
+    if not tasks:
+        tasks.append({"priority": "P2", "action": "Continue with normal production checks", "reason": "No recovery action is currently indicated by these reports."})
+    order = {"P0": 0, "P1": 1, "P2": 2}
+    tasks.sort(key=lambda row: (order[row["priority"]], row["action"]))
+    result = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "task_count": len(tasks),
+        "priority_counts": {key: sum(1 for task in tasks if task["priority"] == key) for key in ("P0", "P1", "P2")},
+        "tasks": tasks, "read_only": True,
+    }
+    if project.is_dir():
+        save_json(project / "REPORTS" / "RECOVERY_ACTION_PLAN.json", result)
+    return result
+
+
+def v97_run_recovery_center(project):
+    """Run recovery inventory, build snapshot audit, and a prioritized recovery plan."""
+    project = Path(project)
+    if not project.is_dir():
+        return {"status": "BLOCKED", "project": str(project), "errors": ["Project directory does not exist."]}
+    inventory = v93_recovery_inventory(project)
+    build_audit = v95_build_snapshot_integrity_audit(project)
+    plan = v96_recovery_action_plan(project, inventory, build_audit)
+    statuses = [inventory.get("status"), build_audit.get("status")]
+    overall = "BLOCKED" if "BLOCKED" in statuses else ("NEEDS_REVIEW" if "NEEDS_REVIEW" in statuses else "PASS")
+    result = {
+        "schema_version": 1, "factory_version": FACTORY_VERSION,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "project": str(project), "status": overall,
+        "verified_backup_count": inventory.get("verified_backup_count", 0),
+        "build_snapshot_count": inventory.get("build_snapshot_count", 0),
+        "build_snapshot_integrity": build_audit.get("status"),
+        "action_count": plan.get("task_count", 0),
+        "reports": {
+            "recovery_inventory": str(project / "REPORTS" / "RECOVERY_INVENTORY.json"),
+            "build_snapshot_integrity": str(project / "REPORTS" / "BUILD_SNAPSHOT_INTEGRITY.json"),
+            "action_plan": str(project / "REPORTS" / "RECOVERY_ACTION_PLAN.json"),
+        },
+        "restore_performed": False, "assembly_started": False, "published": False,
+        "note": "Audit only. Restoring a backup requires the separate explicit-confirmation restore action.",
+    }
+    save_json(project / "REPORTS" / "RECOVERY_CENTER_SUMMARY.json", result)
+    return result
+
+
+def v97_recovery_center_menu():
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return {"status": "CANCELLED"}
+    print("1. Audit recovery points and build history")
+    print("2. Restore a verified assembly INPUT backup")
+    choice = input("Choose 1 or 2: ").strip()
+    if choice != "2":
+        return v97_run_recovery_center(project)
+    inventory = v93_recovery_inventory(project)
+    backups = [row for row in inventory.get("assembly_backups", []) if row.get("status") == "VERIFIED"]
+    if not backups:
+        print("No verified assembly INPUT backups are available to restore.")
+        return {"status": "BLOCKED", "errors": ["No verified backups found."]}
+    for index, row in enumerate(backups, 1):
+        print(f"{index}. {row['directory']} ({row.get('file_count', 0)} files)")
+    try:
+        selected = int(input("Backup number to restore: ").strip())
+    except ValueError:
+        return {"status": "CANCELLED"}
+    if selected < 1 or selected > len(backups):
+        return {"status": "CANCELLED"}
+    confirm = input("This replaces current INPUT images after backing them up. Type RESTORE to confirm: ").strip()
+    if confirm != "RESTORE":
+        return {"status": "CANCELLED"}
+    return v94_restore_assembly_input_backup(project, backups[selected - 1]["directory"], confirm=True)
 
 
 
