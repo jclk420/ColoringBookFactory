@@ -152,7 +152,7 @@ class ReleaseIntegrityBundleTests(unittest.TestCase):
         self.assertFalse(result["handoff_exported"])
 
     def test_version_and_menu_wiring(self):
-        self.assertIn('FACTORY_VERSION = "107.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "113.0"', self.source)
         self.assertIn('27. Final Release Integrity & Handoff Center', self.source)
         self.assertIn('elif c=="27": v82_release_integrity_menu()', self.source)
         tree = ast.parse(self.source)

@@ -156,7 +156,7 @@ class SafeArtworkProductionTests(unittest.TestCase):
         self.assertIn('if input_backup.get("status") == "BLOCKED":', self.source)
 
     def test_version_and_menu_wiring(self):
-        self.assertIn('FACTORY_VERSION = "107.0"', self.source)
+        self.assertIn('FACTORY_VERSION = "113.0"', self.source)
         self.assertIn('28. Safe Artwork Import & Guided Production', self.source)
         self.assertIn('elif c=="28": v87_safe_artwork_production_menu()', self.source)
         tree = ast.parse(self.source)

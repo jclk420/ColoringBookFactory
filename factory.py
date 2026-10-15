@@ -19,7 +19,7 @@ from hashlib import sha256
 # COLORING BOOK FACTORY
 # World-aware production engine: automated assembly, page builder,
 # PDF/KDP preflight, platform packaging, and production center.
-# Current version: 107.0.
+# Current version: 113.0.
 # Release history: see CHANGELOG.md (kept next to this file).
 #
 # Maintenance rule: every function has exactly ONE definition in this
@@ -32,7 +32,7 @@ PROJECTS = FACTORY / "Projects"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-FACTORY_VERSION = "107.0"
+FACTORY_VERSION = "113.0"
 WORLD_ENGINE_VERSION = "1.1"
 WORLDS_DIR = FACTORY / "Worlds"
 WORLD_INDEX_FILENAME = "world_index.json"
@@ -18993,6 +18993,7 @@ def factory_main_menu():
         print(" 29. Release Evidence History & Change Tracker (5-stage)")
         print(" 30. Recovery & Build History Center (verified restore)")
         print(" 31. Publishing Completion Center (PDF + exact upload checklist)")
+        print(" 32. Publishing Handoff Inventory (hashes + missing/empty-file warnings)")
         print("\nTOOLS")
         print(" 16. Maintenance / Factory Health")
         print(" 17. Backups / Safety")
@@ -19031,6 +19032,7 @@ def factory_main_menu():
         elif c=="29": v92_release_evidence_menu()
         elif c=="30": v97_recovery_center_menu()
         elif c=="31": v102_publishing_completion_menu()
+        elif c=="32": v112_publishing_handoff_menu()
         elif c=="16" or c=="H": maintenance_menu()
         elif c=="17":
             try: safety_backup_menu()
@@ -19583,7 +19585,7 @@ def v61_upload_readiness_board(project=None):
     }
     target = project / "REPORTS" / "UPLOAD_READINESS.json"
     save_json(target, report)
-    print("\\n" + "=" * 72)
+    print("\n" + "=" * 72)
     print(f"UPLOAD READINESS BOARD v{FACTORY_VERSION} — {project.name}")
     print("=" * 72)
     for row in results:
@@ -19642,7 +19644,7 @@ def v62_post_import_publishing_setup(project, package_results=None):
         "note": "Local preparation only. Review listing fields and upload each platform package manually.",
     }
     save_json(project / "REPORTS" / "POST_IMPORT_PUBLISHING_PREP.json", report)
-    print("\\nPOST-IMPORT PUBLISHING PREPARATION")
+    print("\nPOST-IMPORT PUBLISHING PREPARATION")
     print(f"Listings: {report['listing_report']}")
     print(f"Readiness: {report['readiness_report']}")
     print(f"Status: {report['status']}")
@@ -19910,7 +19912,7 @@ def v67_run_publishing_workflow(project):
         "note": "Local preparation only. Manual checklist statuses are carried forward; verify them against the marketplace. Nothing is uploaded by this workflow.",
     }
     save_json(project / "REPORTS" / "PUBLISHING_RUN_SUMMARY.json", report)
-    print("\\nONE-CLICK PUBLISHING RUN")
+    print("\nONE-CLICK PUBLISHING RUN")
     print(f"Project: {project}")
     print(f"Readiness: {report['status']} | Source PDF: {report['source_pdf_status']} | Action items: {report['action_count']}")
     print("Reports:")
@@ -20249,7 +20251,7 @@ def v72_run_creation_quality_workflow(project):
         "note": "Structural and technical checks only. The factory does not claim to generate artwork or judge artistic quality automatically.",
     }
     save_json(project / "REPORTS" / "CREATION_QUALITY_SUMMARY.json", report)
-    print("\\nCREATION & ARTWORK QUALITY CENTER")
+    print("\nCREATION & ARTWORK QUALITY CENTER")
     print(f"Project: {project}")
     print(f"Overall: {overall} | Creation: {readiness.get('status')} | Artwork: {artwork.get('status')} | Prompt handoff: {prompts.get('status')}")
     print(f"Action items: {report['action_count']}")
@@ -21936,6 +21938,47 @@ def v102_publishing_completion_menu():
             print(f"    MISSING: {issue}")
     print(f"Report: {report_path}")
     print("Read-only audit. Nothing was uploaded or published.")
+    return report
+
+
+def v112_publishing_handoff_menu():
+    """Create a read-only SHA-256 inventory for platform packages in the active project."""
+    project = v12_active_project() or choose_project()
+    if not project:
+        print("No project selected.")
+        return {"status": "CANCELLED"}
+    try:
+        from publishing_handoff import build_handoff_manifest, write_handoff_manifest_no_clobber
+        report = build_handoff_manifest(project)
+        report_path = write_handoff_manifest_no_clobber(project, report)
+        report["report_path"] = str(report_path)
+    except (ImportError, OSError, ValueError) as exc:
+        print(f"Publishing handoff inventory could not finish: {exc}")
+        return {"status": "BLOCKED", "errors": [str(exc)]}
+
+    summary = report.get("summary", {})
+    print("\nPublishing Handoff Inventory")
+    print(f"  Files fingerprinted: {summary.get('files', 0)}")
+    print(f"  Total bytes: {summary.get('bytes', 0)}")
+    print(f"  Empty files (P0): {summary.get('zero_byte_files', 0)}")
+    print(f"  Filename collisions (P1): {summary.get('case_collisions', 0)}")
+    print(f"  Read errors (P0): {summary.get('read_errors', 0)}")
+    actions = report.get("actions", [])
+    if actions:
+        print("\nACTION REQUIRED")
+        for action in actions:
+            priority = action.get("priority", "P?")
+            platform = action.get("platform", "")
+            detail = action.get("action", "Review this item.")
+            print(f"  [{priority}] {platform + ': ' if platform else ''}{detail}")
+            if action.get("path"):
+                print(f"       {action['path']}")
+            if action.get("paths"):
+                print(f"       Paths: {', '.join(action['paths'])}")
+    else:
+        print("No missing folders, empty files, filename collisions, or read errors were detected.")
+    print(f"\nInventory report: {report_path}")
+    print("Read-only inventory. It does not alter packages or upload/publish anything.")
     return report
 
 

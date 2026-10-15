@@ -1,8 +1,12 @@
 # ColoringBookFactory
 
-**Current factory version: 107.0**
+**Current factory version: 113.0**
 
 ColoringBookFactory is a Windows-oriented Python application for producing coloring books, organizing world/series lore, preparing marketplace listing drafts, and checking production packages before release.
+
+## Publishing handoff (options 31 and 32)
+
+Use **31. Publishing Completion Center** for the platform-specific PDF and listing checklist, then **32. Publishing Handoff Inventory** to fingerprint the files in each platform folder and identify missing folders, zero-byte files, filename collisions, and read errors. Reports are saved without overwriting earlier reports. See [Publishing Handoff Inventory](docs/PUBLISHING_HANDOFF_INVENTORY.md). These are local checks only; they do not upload or publish products.
 
 ## Requirements
 
