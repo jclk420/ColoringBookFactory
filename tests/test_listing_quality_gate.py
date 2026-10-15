@@ -133,6 +133,7 @@ class ListingQualityGateTests(unittest.TestCase):
             "v22_build_platform_listing",
             "v22_build_all_platform_listings",
             "v59_listing_draft_consistency_audit",
+            "v60_listing_draft_write_policy",
         }
         nodes = [node for node in tree.body
                  if isinstance(node, ast.FunctionDef) and node.name in wanted]
