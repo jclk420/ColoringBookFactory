@@ -168,6 +168,11 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
                     "fields": {"title": "Nightmare Test Book", "author": "J.A.C.",
                                "description": "A test listing description."},
                 }), encoding="utf-8")
+                # The readiness gate also requires a human-readable listing draft.
+                (listing / "listing-draft.txt").write_text(
+                    "Title: Nightmare Test Book\\nAuthor: J.A.C.\\nDescription: A test listing description.\\n",
+                    encoding="utf-8",
+                )
 
             report = build_completion_report(project)
             self.assertEqual(report["overall_status"], "READY_TO_UPLOAD", json.dumps({
