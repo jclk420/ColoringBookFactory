@@ -170,7 +170,11 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
                 }), encoding="utf-8")
 
             report = build_completion_report(project)
-            self.assertEqual(report["overall_status"], "READY_TO_UPLOAD")
+            self.assertEqual(report["overall_status"], "READY_TO_UPLOAD", json.dumps({
+                "summary": report["summary"],
+                "platforms": {name: {key: row[key] for key in ("status", "missing_requirements", "validation_errors", "review_issues")}
+                              for name, row in report["platforms"].items()},
+            }, indent=2))
             self.assertEqual(report["summary"]["READY_TO_UPLOAD"], len(DEFAULT_PLATFORMS))
             for platform in DEFAULT_PLATFORMS:
                 with self.subTest(platform=platform):
