@@ -18977,6 +18977,15 @@ def v22_platform_listing_menu():
         else:
             print("Invalid choice.")
 
+def repair_reconcile_project_menu():
+    """Open the verified recovery center for existing-project recovery.
+
+    Previously the main menu referenced this function without defining it,
+    so the NameError fallback incorrectly opened Import Existing Book.
+    """
+    return v97_recovery_center_menu()
+
+
 def factory_main_menu():
     PROJECTS.mkdir(exist_ok=True)
     while True:
@@ -19029,9 +19038,7 @@ def factory_main_menu():
         elif c=="4": continue_active_book()
         elif c=="5": import_existing_book_menu()
         elif c=="6": import_artwork_menu()
-        elif c=="7":
-            try: repair_reconcile_project_menu()
-            except NameError: import_existing_book_menu()
+        elif c=="7": repair_reconcile_project_menu()
         elif c=="8": production_menu()
         elif c=="9": cb13_creation_dashboard()
         elif c=="10": publishing_menu()
