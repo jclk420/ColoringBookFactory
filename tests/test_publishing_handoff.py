@@ -34,6 +34,32 @@ class PublishingHandoffTests(unittest.TestCase):
             self.assertEqual(report["summary"]["zero_byte_files"], 1)
             self.assertTrue(any(action["action"] == "Package file is empty." for action in report["actions"]))
 
+    def test_symlinks_are_blocked_without_hashing_the_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            project = base / "Book"
+            package = project / "PLATFORMS" / "KDP"
+            package.mkdir(parents=True)
+            outside = base / "private-source.pdf"
+            outside.write_bytes(b"external data that is not part of the package")
+            link = package / "interior.pdf"
+            try:
+                link.symlink_to(outside)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable in this environment: {exc}")
+            report = build_handoff_manifest(project, ("KDP",))
+            row = report["platforms"]["KDP"]
+            self.assertEqual(report["summary"]["symlink_files"], 1)
+            self.assertEqual(row["symlink_paths"], ["interior.pdf"])
+            self.assertEqual(row["files"], [])
+            self.assertTrue(any(action["priority"] == "P0" and "symbolic link" in action["action"]
+                                for action in report["actions"]))
+            self.assertEqual(outside.read_bytes(), b"external data that is not part of the package")
+
+    def test_handoff_version_includes_symlink_safety(self):
+        import publishing_handoff
+        self.assertEqual(publishing_handoff.VERSION, "1.1")
+
     def test_case_insensitive_filename_collisions_are_reported(self):
         # Test the pure path-grouping logic so this passes on Windows (case-insensitive)
         # and Linux/macOS (usually case-sensitive) without filesystem-dependent fixtures.
