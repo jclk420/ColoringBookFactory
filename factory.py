@@ -21639,7 +21639,9 @@ def v93_recovery_inventory(project):
                                 row["errors"].append(f"Unsafe backup filename: {name!r}")
                                 continue
                             file_path = folder / name
-                            if not file_path.is_file():
+                            if file_path.is_symlink():
+                                row["errors"].append(f"Symbolic link is not allowed in recovery backup: {name}")
+                            elif not file_path.is_file():
                                 row["errors"].append(f"Missing backup file: {name}")
                             elif file_hash(file_path) != item.get("sha256"):
                                 row["errors"].append(f"Backup hash mismatch: {name}")
@@ -21714,6 +21716,8 @@ def v94_restore_assembly_input_backup(project, backup_dir, confirm=False):
             if not name or Path(name).name != name or name in {".", ".."}:
                 raise ValueError(f"unsafe backup filename: {name!r}")
             source = folder / name
+            if source.is_symlink():
+                raise ValueError(f"symbolic links are not allowed in recovery backups: {name}")
             if not source.is_file() or file_hash(source) != item.get("sha256"):
                 raise ValueError(f"backup file missing or hash mismatch: {name}")
             plan.append({"name": name, "source": source, "sha256": item["sha256"]})

@@ -107,6 +107,28 @@ class RecoveryCenterTests(unittest.TestCase):
         self.assertEqual((input_dir / "old.png").read_bytes(), b"previous art")
         self.assertEqual(restored["current_input_backup"]["status"], "BACKUP_VERIFIED")
 
+    def test_symlink_backup_file_is_rejected_by_inventory_and_restore(self):
+        folder = self.create_backup()
+        original = folder / "old.png"
+        outside = self.root / "outside.png"
+        outside.write_bytes(b"old input")
+        original.unlink()
+        try:
+            original.symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlinks unavailable in this environment: {exc}")
+        inventory = self.ns["v93_recovery_inventory"](self.project)
+        self.assertEqual(inventory["assembly_backups"][0]["status"], "BLOCKED")
+        self.assertTrue(any("symbolic link" in error.lower()
+                            for error in inventory["assembly_backups"][0]["errors"]))
+        input_dir = self.project / "INPUT"
+        input_dir.mkdir()
+        current = input_dir / "current.png"
+        current.write_bytes(b"current")
+        restored = self.ns["v94_restore_assembly_input_backup"](self.project, folder, confirm=True)
+        self.assertEqual(restored["status"], "BLOCKED")
+        self.assertEqual(current.read_bytes(), b"current")
+
     def test_restore_refuses_tampered_backup_without_changing_input(self):
         folder = self.create_backup()
         (folder / "old.png").write_bytes(b"tampered")
