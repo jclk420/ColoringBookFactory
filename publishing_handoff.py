@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.0"
+VERSION = "1.1"
 PLATFORM_ROOTS = ("KDP", "GUMROAD", "PAYHIP", "DIGITAL")
 
 
@@ -37,7 +37,7 @@ def build_handoff_manifest(project: str | Path, platform_folders: tuple[str, ...
         "project": str(root),
         "read_only": True,
         "uploaded_or_published": False,
-        "summary": {"files": 0, "bytes": 0, "zero_byte_files": 0, "case_collisions": 0, "read_errors": 0},
+        "summary": {"files": 0, "bytes": 0, "zero_byte_files": 0, "case_collisions": 0, "symlink_files": 0, "read_errors": 0},
         "platforms": {},
         "actions": [],
     }
@@ -49,13 +49,13 @@ def build_handoff_manifest(project: str | Path, platform_folders: tuple[str, ...
     for folder_name in platform_folders:
         folder = root / "PLATFORMS" / folder_name
         row = {"folder": str(folder), "exists": folder.is_dir(), "files": [], "case_collisions": [],
-               "zero_byte_files": [], "read_errors": []}
+               "zero_byte_files": [], "symlink_paths": [], "read_errors": []}
         if not folder.is_dir():
             report["actions"].append({"priority": "P1", "platform": folder_name,
                                       "action": "Package folder is missing.", "path": str(folder)})
             report["platforms"][folder_name] = row
             continue
-        files = sorted(path for path in folder.rglob("*") if path.is_file())
+        files = sorted(path for path in folder.rglob("*") if path.is_file() or path.is_symlink())
         relative_paths = [path.relative_to(folder).as_posix() for path in files]
         collisions = _case_collisions(relative_paths)
         for variants in collisions:
@@ -66,6 +66,16 @@ def build_handoff_manifest(project: str | Path, platform_folders: tuple[str, ...
                                       "paths": variants})
         for path in files:
             relative = path.relative_to(folder).as_posix()
+            # Never follow a package symlink: it could point outside PLATFORMS or be dangling.
+            if path.is_symlink():
+                row["symlink_paths"].append(relative)
+                report["summary"]["symlink_files"] += 1
+                report["actions"].append({
+                    "priority": "P0", "platform": folder_name,
+                    "action": "Package contains a symbolic link; replace it with a regular file before handoff.",
+                    "path": str(path),
+                })
+                continue
             try:
                 size = path.stat().st_size
                 entry = {"path": relative, "size_bytes": size, "sha256": _sha256(path)}
