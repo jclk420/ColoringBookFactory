@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "2.1"
+VERSION = "2.2"
 DEFAULT_PLATFORMS = {
     "KDP": {"folder": "KDP", "listing_folder": "KDP", "required_any": [["*interior*.pdf"], ["*cover*.pdf"]],
             "listing_any": [["*.json"], ["*.txt"]],
