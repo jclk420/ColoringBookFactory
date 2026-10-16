@@ -181,7 +181,7 @@ class RecoveryCenterTests(unittest.TestCase):
         self.assertIn("Verified assembly backups: 2", printed)
         self.assertIn("Build snapshots found: 3", printed)
         self.assertIn("Recovery actions identified: 0", printed)
-        self.assertIn("Recovery Action Plan report:", printed)
+        self.assertIn("Action Plan report:", printed)
 
     def test_version_menu_and_build_backup_gate(self):
         self.assertIn('FACTORY_VERSION = "113.0"', self.source)
