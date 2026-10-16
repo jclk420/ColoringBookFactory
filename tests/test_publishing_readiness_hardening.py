@@ -43,7 +43,7 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
             path = Path(temp) / "large-interior.pdf"
             chunk_size = 1024 * 1024
             header = b"%PDF-1.4\n"
-            marker = b"7 0 obj << /Type /Page /Parent 1 0 R >> endobj\n"
+            marker = b"/Type /Page /Parent 1 0 R >> endobj\n"
             # Place the marker across the scanner's first 1 MiB chunk boundary.
             filler_length = chunk_size - len(header) - 5
             path.write_bytes(header + (b"x" * filler_length) + marker + (b"x" * 1_100_000) + b"\n%%EOF\n")
