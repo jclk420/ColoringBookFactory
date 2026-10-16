@@ -1,3 +1,11 @@
+## Publishing readiness hardening — v118–v122
+
+- **v118 — Exact blocker paths:** missing package and platform-listing requirements now name the exact directory that needs attention.
+- **v119 — Structured listing gate:** a text-only draft cannot receive READY_TO_UPLOAD because required metadata cannot be verified from the text file alone; the report explicitly requests JSON metadata review.
+- **v120 — Strict listing field shape:** a present but non-object JSON `fields` value is a blocker instead of silently bypassing required-field checks.
+- **v121 — Machine-readable deliverables:** each platform report includes an `expected_deliverables` matrix with the expected folder, accepted filename patterns, and whether each group is present.
+- **v122 — Regression coverage:** adds tests for exact missing paths, text-only listings, malformed listing fields, and blank required metadata. Checks remain local and read-only; no upload or marketplace approval is implied.
+
 ## v113.0–v117.0 — Integrated Publishing Handoff Workflow
 
 - Adds main-menu option 32 for the SHA-256 publishing handoff inventory.
