@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from publishing_completion import DEFAULT_PLATFORMS, build_completion_report
+from publishing_completion import DEFAULT_PLATFORMS, build_completion_report, validate_pdf
 
 
 def make_pdf(path: Path, pages: int = 2) -> None:
@@ -38,6 +38,21 @@ PROFILE = {
 
 
 class PublishingReadinessHardeningTests(unittest.TestCase):
+    def test_large_pdf_page_markers_are_counted_across_chunk_boundaries(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "large-interior.pdf"
+            chunk_size = 1024 * 1024
+            header = b"%PDF-1.4\n"
+            marker = b"/Type /Page /Parent 1 0 R >> endobj\n"
+            # Place the marker across the scanner's first 1 MiB chunk boundary.
+            filler_length = chunk_size - len(header) - 5
+            path.write_bytes(header + (b"x" * filler_length) + marker + (b"x" * 1_100_000) + b"\n%%EOF\n")
+            result = validate_pdf(path)
+            self.assertEqual(result["page_marker_count"], 1)
+            self.assertEqual(result["status"], "BASIC_CHECK_PASS")
+            self.assertFalse(result["warnings"])
+            self.assertFalse(result["errors"])
+
     def test_missing_deliverables_include_exact_folder_and_machine_readable_expectations(self):
         with tempfile.TemporaryDirectory() as temp:
             project, package, listing = make_project(Path(temp))

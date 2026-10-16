@@ -1,3 +1,10 @@
+## v133.0–v136.0 — Large PDF Page-Marker Scan Fix
+
+- **v133 — Full-file streaming scan:** page markers are counted across the whole PDF rather than only the first and last few kilobytes for large files.
+- **v134 — Bounded memory:** scans in chunks with a small overlap instead of loading a multi-megabyte or multi-gigabyte PDF into memory.
+- **v135 — Chunk-boundary safety:** markers split across read boundaries are still counted, without double-counting markers carried over from the previous chunk.
+- **v136 — Regression test from a large fixture:** validates that a PDF larger than 2 MB with its page marker across the 1 MiB boundary no longer receives a false page-count warning. This remains a lightweight marker scan, not full PDF conformance validation.
+
 ## v128.0–v132.0 — Realistic Multi-Platform Preflight Test
 
 - **v128 — Four-platform fixture:** added a synthetic book project with KDP, Gumroad, Payhip, and Digital PDF package folders and platform-specific listing drafts.
