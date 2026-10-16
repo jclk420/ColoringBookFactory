@@ -4473,8 +4473,32 @@ def ensure_master_book(project, source_pdf=None):
     if existing and existing.parent.resolve() == master.resolve():
         return existing, [], ["Existing MASTER PDF preserved; master assets are immutable."]
     pdf = source_pdf or existing or find_existing_book_pdf(project)
+    # Recovery path: an earlier finished-PDF import may have written
+    # MASTER/master_metadata.json but lost the copied *_MASTER.pdf. Reuse the
+    # explicitly recorded original source only when it still exists and is a PDF.
+    # Never substitute a different/incomplete interior merely because it is nearby.
     if pdf is None:
-        return None, ["No source PDF found for master package."], []
+        metadata_path = master / "master_metadata.json"
+        if metadata_path.is_file():
+            try:
+                prior_metadata = load_json(metadata_path)
+                recorded_source = prior_metadata.get("source_pdf") if isinstance(prior_metadata, dict) else None
+                candidate = Path(recorded_source).expanduser() if recorded_source else None
+                if candidate and candidate.is_file() and candidate.suffix.casefold() == ".pdf":
+                    pdf = candidate
+            except (OSError, ValueError, TypeError):
+                pass
+    if pdf is None:
+        return None, ["No source PDF found for master package. Checked project PDFs and the source_pdf recorded in MASTER metadata; no usable source was found."], []
+    pdf = Path(pdf)
+    if not pdf.is_file() or pdf.suffix.casefold() != ".pdf":
+        return None, ["The selected source is not an existing PDF file."], []
+    source_info = inspect_pdf(pdf)
+    if source_info.get("error") or not source_info.get("exists", True):
+        return None, [f"Source PDF failed inspection: {source_info.get('error', 'file could not be inspected')}"], []
+    expected_pages = source_info.get("page_count")
+    if expected_pages is not None and expected_pages < 1:
+        return None, ["Source PDF has no readable pages; MASTER was not created."], []
     master_pdf = master / f"{kdp_safe_filename(settings.get('title', project.name))}_MASTER.pdf"
     if master_pdf.exists():
         return master_pdf, [], ["Existing MASTER PDF preserved; source was not copied over it."]

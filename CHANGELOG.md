@@ -1,3 +1,10 @@
+## Compatibility fix — Recover Missing MASTER from Recorded Original PDF (factory version unchanged)
+
+- Repairs imported-finished-PDF projects where MASTER metadata survives but the copied *_MASTER.pdf is missing.
+- If normal project PDF discovery finds no source, reads only the recorded source_pdf path from MASTER metadata and reuses it only when it exists and is a PDF.
+- Rejects unreadable/zero-page source PDFs before creating a MASTER; never chooses a nearby interior PDF just to fill the gap.
+- Keeps the original source unchanged and retains the existing no-overwrite behavior for an existing MASTER PDF.
+- Repository changes alone do not restore files on the user's PC; the updated factory must be run on the affected project.
 ## v133.0–v136.0 — Large PDF Page-Marker Scan Fix
 
 - **v133 — Full-file streaming scan:** page markers are counted across the whole PDF rather than only the first and last few kilobytes for large files.
