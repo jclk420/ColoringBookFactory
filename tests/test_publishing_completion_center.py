@@ -67,6 +67,36 @@ class PublishingCompletionTests(unittest.TestCase):
             self.assertFalse(report["uploaded_or_published"])
 
 
+    def test_package_symlink_is_blocked_and_not_counted_as_a_deliverable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "Book"
+            master = root / "MASTER"
+            master.mkdir(parents=True)
+            make_pdf(master / "Book_MASTER.pdf")
+            package = root / "PLATFORMS" / "Sample"
+            package.mkdir(parents=True)
+            outside = Path(temp) / "outside.pdf"
+            make_pdf(outside)
+            link = package / "interior.pdf"
+            try:
+                link.symlink_to(outside)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable in this environment: {exc}")
+            (package / "cover.pdf").write_bytes(b"%PDF-1.4 " + b"x" * 100 + b" %%EOF")
+            listing = root / "MARKETING" / "LISTINGS" / "Sample"
+            listing.mkdir(parents=True)
+            (listing / "metadata.json").write_text("{\"platform\":\"Sample\",\"fields\":{\"title\":\"T\",\"author\":\"A\",\"description\":\"D\"}}", encoding="utf-8")
+            report = build_completion_report(root, profiles={
+                "Sample": {"folder": "Sample", "listing_folder": "Sample",
+                           "required_any": [["interior.pdf"], ["cover.pdf"]],
+                           "listing_any": [["metadata.json"]]}
+            })
+            row = report["platforms"]["Sample"]
+            self.assertEqual(row["status"], "BLOCKED")
+            self.assertNotIn("interior.pdf", row["package_files"])
+            self.assertTrue(any("symbolic link" in error and "interior.pdf" in error
+                                for error in row["validation_errors"]))
+            self.assertFalse(report["uploaded_or_published"])
     def test_default_profiles_do_not_borrow_another_platforms_listing(self):
         with tempfile.TemporaryDirectory() as temp:
             project = Path(temp) / "Book"
