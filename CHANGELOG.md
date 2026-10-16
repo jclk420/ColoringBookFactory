@@ -1,3 +1,11 @@
+## v123.0–v127.0 — Package File Integrity Gate
+
+- **v123 — Empty package-file blocker:** the publishing readiness report blocks any zero-byte file inside an enabled platform package, including non-PDF extras.
+- **v124 — Cover image signature checks:** PNG and JPEG files are checked against their declared file extension's basic binary signature and minimum size.
+- **v125 — Actionable image errors:** malformed cover-image findings identify the exact relative package path and are included in machine-readable validation errors.
+- **v126 — Integrated diagnostics:** publishing readiness reports expose package image checks alongside existing PDF checks without modifying source assets.
+- **v127 — Regression coverage:** tests cover invalid cover signatures and zero-byte package extras. This remains a lightweight local check, not full image decoding or marketplace acceptance.
+
 ## Publishing readiness hardening — v118–v122
 
 - **v118 — Exact blocker paths:** missing package and platform-listing requirements now name the exact directory that needs attention.
