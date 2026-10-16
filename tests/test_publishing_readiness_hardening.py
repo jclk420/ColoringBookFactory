@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from publishing_completion import build_completion_report
+from publishing_completion import DEFAULT_PLATFORMS, build_completion_report
 
 
 def make_pdf(path: Path, pages: int = 2) -> None:
@@ -125,6 +125,58 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
             self.assertEqual(row["status"], "BLOCKED")
             self.assertTrue(any("Package file is empty: upload-notes.txt" in issue
                                 for issue in row["validation_errors"]))
+\n
+    def test_realistic_four_platform_fixture_passes_expected_preflight(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "Nightmare Test Book"
+            master = project / "MASTER"
+            master.mkdir(parents=True)
+            make_pdf(master / "Nightmare_MASTER.pdf", pages=3)
+            png = b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 24
+            pdf_bytes_path = master / "Nightmare_MASTER.pdf"
+            pdf_bytes = pdf_bytes_path.read_bytes()
+
+            for platform, profile in DEFAULT_PLATFORMS.items():
+                package = project / "PLATFORMS" / profile["folder"]
+                listing = project / "MARKETING" / "LISTINGS" / profile["listing_folder"]
+                package.mkdir(parents=True)
+                listing.mkdir(parents=True)
+                for group in profile["required_any"]:
+                    pattern = group[0]
+                    if pattern == "*.pdf":
+                        filename = "digital-interior.pdf"
+                    elif "*interior*.pdf" in group:
+                        filename = "Nightmare-interior.pdf"
+                    elif "*cover*.pdf" in group:
+                        filename = "Nightmare-cover.pdf"
+                    elif any("cover" in item or "thumbnail" in item for item in group):
+                        filename = "Nightmare-cover.png"
+                    elif any("description" in item or "metadata" in item for item in group):
+                        filename = "description.txt"
+                    else:
+                        self.fail(f"Test fixture does not understand requirement: {group}")
+                    target = package / filename
+                    if target.suffix.casefold() == ".pdf":
+                        target.write_bytes(pdf_bytes)
+                    elif target.suffix.casefold() == ".png":
+                        target.write_bytes(png)
+                    else:
+                        target.write_text("Product description for test fixture.", encoding="utf-8")
+                (listing / "LISTING.json").write_text(json.dumps({
+                    "platform": platform,
+                    "fields": {"title": "Nightmare Test Book", "author": "J.A.C.",
+                               "description": "A test listing description."},
+                }), encoding="utf-8")
+
+            report = build_completion_report(project)
+            self.assertEqual(report["overall_status"], "READY_TO_UPLOAD")
+            self.assertEqual(report["summary"]["READY_TO_UPLOAD"], len(DEFAULT_PLATFORMS))
+            for platform in DEFAULT_PLATFORMS:
+                with self.subTest(platform=platform):
+                    row = report["platforms"][platform]
+                    self.assertEqual(row["status"], "READY_TO_UPLOAD")
+                    self.assertFalse(row["missing_requirements"])
+                    self.assertFalse(row["validation_errors"])
 
 
 if __name__ == "__main__":
