@@ -1,3 +1,11 @@
+## v128.0–v132.0 — Realistic Multi-Platform Preflight Test
+
+- **v128 — Four-platform fixture:** added a synthetic book project with KDP, Gumroad, Payhip, and Digital PDF package folders and platform-specific listing drafts.
+- **v129 — Default-profile integration coverage:** test exercises the production default platform profiles instead of a custom one-platform profile.
+- **v130 — Deliverable matrix coverage:** fixture creates files matching each configured required-deliverable group and checks that missing-file reports remain empty.
+- **v131 — Combined integrity coverage:** fixture runs PDF header/EOF/page-marker checks, image signature checks, package-file checks, and listing metadata validation together.
+- **v132 — Readiness regression gate:** test asserts every default platform reaches READY_TO_UPLOAD only when its synthetic package and metadata satisfy current local checks. This is test data, not a real marketplace upload or a substitute for platform-specific preflight.
+
 ## v123.0–v127.0 — Package File Integrity Gate
 
 - **v123 — Empty package-file blocker:** the publishing readiness report blocks any zero-byte file inside an enabled platform package, including non-PDF extras.
