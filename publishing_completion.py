@@ -71,9 +71,9 @@ def validate_image(path: Path) -> dict[str, Any]:
         with path.open("rb") as stream:
             head = stream.read(16)
         suffix = path.suffix.casefold()
-        if suffix == ".png" and not head.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        if suffix == ".png" and not head.startswith(b"\x89PNG\r\n\x1a\n"):
             result["errors"].append("PNG filename does not contain a PNG signature.")
-        elif suffix in {".jpg", ".jpeg"} and not head.startswith(b"\\xff\\xd8\\xff"):
+        elif suffix in {".jpg", ".jpeg"} and not head.startswith(b"\xff\xd8\xff"):
             result["errors"].append("JPEG filename does not contain a JPEG signature.")
         if not result["errors"]:
             result["valid"] = True
