@@ -133,7 +133,7 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
             master = project / "MASTER"
             master.mkdir(parents=True)
             make_pdf(master / "Nightmare_MASTER.pdf", pages=3)
-            png = b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 24
+            png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
             pdf_bytes_path = master / "Nightmare_MASTER.pdf"
             pdf_bytes = pdf_bytes_path.read_bytes()
 
