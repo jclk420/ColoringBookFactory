@@ -183,6 +183,27 @@ class RecoveryCenterTests(unittest.TestCase):
         self.assertIn("Recovery actions identified: 0", printed)
         self.assertIn("Action Plan report:", printed)
 
+    def test_missing_snapshot_is_not_mislabeled_as_output_drift(self):
+        plan = self.ns["v96_recovery_action_plan"](
+            self.project,
+            {"assembly_backups": []},
+            {"status": "NEEDS_REVIEW", "warnings": ["No build snapshots exist."]},
+        )
+        self.assertEqual(plan["task_count"], 1)
+        task = plan["tasks"][0]
+        self.assertEqual(task["priority"], "P2")
+        self.assertEqual(task["action"], "Create an initial build snapshot")
+        self.assertIn("not evidence", task["reason"])
+
+    def test_real_snapshot_drift_warning_keeps_review_action(self):
+        plan = self.ns["v96_recovery_action_plan"](
+            self.project,
+            {"assembly_backups": []},
+            {"status": "NEEDS_REVIEW", "warnings": ["Current FINAL PDF hash differs from the latest build snapshot."]},
+        )
+        self.assertEqual(plan["tasks"][0]["priority"], "P1")
+        self.assertEqual(plan["tasks"][0]["action"], "Review build output drift")
+
     def test_version_menu_and_build_backup_gate(self):
         self.assertIn('FACTORY_VERSION = "113.0"', self.source)
         self.assertIn('30. Recovery & Build History Center', self.source)

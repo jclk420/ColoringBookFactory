@@ -21863,8 +21863,18 @@ def v96_recovery_action_plan(project, inventory=None, build_audit=None):
             tasks.append({"priority": "P2", "action": "Keep verified recovery point", "reason": f"{row.get('file_count', 0)} file(s) passed hash verification.", "path": row.get("directory")})
     if build_audit.get("status") == "BLOCKED":
         tasks.append({"priority": "P0", "action": "Repair malformed build history", "reason": "; ".join(build_audit.get("errors", [])) or "Build snapshot audit is blocked."})
-    for warning in build_audit.get("warnings", []) if isinstance(build_audit.get("warnings", []), list) else []:
-        tasks.append({"priority": "P1", "action": "Review build output drift", "reason": str(warning)})
+    warnings = build_audit.get("warnings", []) if isinstance(build_audit.get("warnings", []), list) else []
+    for warning in warnings:
+        message = str(warning)
+        if message.strip().casefold() == "no build snapshots exist.":
+            tasks.append({
+                "priority": "P2",
+                "action": "Create an initial build snapshot",
+                "reason": "No historical build snapshot exists. This is missing history, not evidence that the current PDF or artwork has drifted.",
+                "path": str(project / "BUILD_SNAPSHOTS"),
+            })
+        else:
+            tasks.append({"priority": "P1", "action": "Review build output drift", "reason": message})
     if not tasks:
         tasks.append({"priority": "P2", "action": "Continue with normal production checks", "reason": "No recovery action is currently indicated by these reports."})
     order = {"P0": 0, "P1": 1, "P2": 2}
