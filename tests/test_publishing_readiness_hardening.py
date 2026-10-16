@@ -55,7 +55,7 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
     def test_text_only_listing_cannot_be_marked_ready(self):
         with tempfile.TemporaryDirectory() as temp:
             project, package, listing = make_project(Path(temp))
-            (package / "cover.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 20)
+            (package / "cover.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)
             (listing / "LISTING.txt").write_text("Title: Book", encoding="utf-8")
             text_only_profile = {"Sample": {
                 "folder": "Sample", "listing_folder": "Sample",
@@ -71,7 +71,7 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
     def test_non_object_listing_fields_block_readiness(self):
         with tempfile.TemporaryDirectory() as temp:
             project, package, listing = make_project(Path(temp))
-            (package / "cover.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 20)
+            (package / "cover.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)
             (listing / "LISTING.json").write_text(json.dumps({
                 "platform": "Sample", "fields": ["Book", "J.A.C.", "Description"]
             }), encoding="utf-8")
@@ -85,7 +85,7 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
     def test_blank_required_listing_fields_remain_review_items(self):
         with tempfile.TemporaryDirectory() as temp:
             project, package, listing = make_project(Path(temp))
-            (package / "cover.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 20)
+            (package / "cover.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)
             (listing / "LISTING.json").write_text(json.dumps({
                 "platform": "Sample", "fields": {"title": "Book", "author": "", "description": "Desc"}
             }), encoding="utf-8")
@@ -114,7 +114,7 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
     def test_zero_byte_extra_package_file_blocks_readiness(self):
         with tempfile.TemporaryDirectory() as temp:
             project, package, listing = make_project(Path(temp))
-            (package / "cover.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 20)
+            (package / "cover.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)
             (package / "upload-notes.txt").write_bytes(b"")
             (listing / "LISTING.json").write_text(json.dumps({
                 "platform": "Sample",
