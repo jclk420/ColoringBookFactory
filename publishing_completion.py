@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "2.4"
+VERSION = "2.5"
 DEFAULT_PLATFORMS = {
     "KDP": {"folder": "KDP", "listing_folder": "KDP", "required_any": [["*interior*.pdf"], ["*cover*.pdf"]],
             "listing_any": [["*.json"], ["*.txt"]],
@@ -103,7 +103,7 @@ def _matches_any(folder: Path, patterns: list[str]) -> list[str]:
     matches: set[Path] = set()
     if folder.is_dir():
         for pattern in patterns:
-            matches.update(p for p in folder.rglob(pattern) if p.is_file())
+            matches.update(p for p in folder.rglob(pattern) if p.is_file() and not p.is_symlink())
     return sorted(p.relative_to(folder).as_posix() for p in matches)
 
 def _master_candidates(project: Path) -> list[Path]:
@@ -111,7 +111,7 @@ def _master_candidates(project: Path) -> list[Path]:
     candidates = []
     for directory in (project / "MASTER", project):
         if directory.is_dir():
-            candidates.extend(p for p in directory.glob("*.pdf") if p.is_file())
+            candidates.extend(p for p in directory.glob("*.pdf") if p.is_file() and not p.is_symlink())
     unique = sorted(set(candidates))
     preferred = [p for p in unique if "master" in p.stem.casefold()]
     return preferred or unique
@@ -152,7 +152,9 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
         if not profile.get("enabled", True):
             continue
         package_dir = root / "PLATFORMS" / str(profile.get("folder") or name.upper().replace(" ", "_"))
-        package_files = sorted(p.relative_to(package_dir).as_posix() for p in package_dir.rglob("*") if p.is_file()) if package_dir.is_dir() else []
+        package_paths = sorted(package_dir.rglob("*")) if package_dir.is_dir() else []
+        package_symlinks = [p for p in package_paths if p.is_symlink()]
+        package_files = sorted(p.relative_to(package_dir).as_posix() for p in package_paths if p.is_file() and not p.is_symlink())
         missing = []
         if not package_dir.is_dir():
             missing.append(f"Platform package folder is missing: {package_dir}")
@@ -164,15 +166,18 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
         # Default profiles use platform-specific folders so one platform's drafts
         # cannot accidentally satisfy another platform's listing requirements.
         listing_dir = listing_root / str(profile.get("listing_folder", "")) if profile.get("listing_folder") else listing_root
-        listing_files = sorted(p.relative_to(listing_dir).as_posix() for p in listing_dir.rglob("*") if p.is_file()) if listing_dir.is_dir() else []
+        listing_paths = sorted(listing_dir.rglob("*")) if listing_dir.is_dir() else []
+        listing_symlinks = [p for p in listing_paths if p.is_symlink()]
+        listing_files = sorted(p.relative_to(listing_dir).as_posix() for p in listing_paths if p.is_file() and not p.is_symlink())
         for group in profile.get("listing_any", []):
             if not _matches_any(listing_dir, group):
                 missing.append(f"Platform-specific listing draft missing in {listing_dir}; expected one of: " + " OR ".join(group))
         review_issues = []
-        validation_errors = []
+        validation_errors = [f"Package contains a symbolic link; replace it with a regular file: {p.relative_to(package_dir).as_posix()}" for p in package_symlinks]
+        validation_errors.extend(f"Listing folder contains a symbolic link; replace it with a regular file: {p.relative_to(listing_dir).as_posix()}" for p in listing_symlinks)
         package_file_checks = []
         if package_dir.is_dir():
-            for package_path in sorted(p for p in package_dir.rglob("*") if p.is_file()):
+            for package_path in sorted(p for p in package_dir.rglob("*") if p.is_file() and not p.is_symlink()):
                 relative_path = package_path.relative_to(package_dir).as_posix()
                 try:
                     if package_path.stat().st_size == 0:
