@@ -43,8 +43,10 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
             project, package, listing = make_project(Path(temp))
             report = build_completion_report(project, profiles=PROFILE)
             row = report["platforms"]["Sample"]
-            self.assertTrue(any(str(package) in item for item in row["missing_requirements"]))
-            self.assertTrue(any(str(listing) in item for item in row["missing_requirements"]))
+            normalized_missing = [item.replace("\\", "/").casefold()
+                                  for item in row["missing_requirements"]]
+            self.assertTrue(any("/platforms/sample" in item for item in normalized_missing))
+            self.assertTrue(any("/marketing/listings/sample" in item for item in normalized_missing))
             self.assertEqual(len(row["expected_deliverables"]), 4)
             self.assertTrue(all("folder" in item and "any_of" in item and "present" in item
                                 for item in row["expected_deliverables"]))
