@@ -55,7 +55,7 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
     def test_text_only_listing_cannot_be_marked_ready(self):
         with tempfile.TemporaryDirectory() as temp:
             project, package, listing = make_project(Path(temp))
-            (package / "cover.png").write_bytes(b"image placeholder")
+            (package / "cover.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 20)
             (listing / "LISTING.txt").write_text("Title: Book", encoding="utf-8")
             text_only_profile = {"Sample": {
                 "folder": "Sample", "listing_folder": "Sample",
@@ -71,7 +71,7 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
     def test_non_object_listing_fields_block_readiness(self):
         with tempfile.TemporaryDirectory() as temp:
             project, package, listing = make_project(Path(temp))
-            (package / "cover.png").write_bytes(b"image placeholder")
+            (package / "cover.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 20)
             (listing / "LISTING.json").write_text(json.dumps({
                 "platform": "Sample", "fields": ["Book", "J.A.C.", "Description"]
             }), encoding="utf-8")
@@ -85,7 +85,7 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
     def test_blank_required_listing_fields_remain_review_items(self):
         with tempfile.TemporaryDirectory() as temp:
             project, package, listing = make_project(Path(temp))
-            (package / "cover.png").write_bytes(b"image placeholder")
+            (package / "cover.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 20)
             (listing / "LISTING.json").write_text(json.dumps({
                 "platform": "Sample", "fields": {"title": "Book", "author": "", "description": "Desc"}
             }), encoding="utf-8")
@@ -94,6 +94,37 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
             row = report["platforms"]["Sample"]
             self.assertEqual(row["status"], "NEEDS_REVIEW")
             self.assertTrue(any("author" in issue for issue in row["review_issues"]))
+
+
+    def test_cover_with_wrong_image_signature_blocks_readiness(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project, package, listing = make_project(Path(temp))
+            (package / "cover.png").write_bytes(b"not actually a PNG image")
+            (listing / "LISTING.json").write_text(json.dumps({
+                "platform": "Sample",
+                "fields": {"title": "Book", "author": "J.A.C.", "description": "Description"},
+            }), encoding="utf-8")
+            report = build_completion_report(project, profiles=PROFILE)
+            row = report["platforms"]["Sample"]
+            self.assertEqual(row["status"], "BLOCKED")
+            self.assertTrue(any("PNG filename does not contain a PNG signature" in issue
+                                for issue in row["validation_errors"]))
+            self.assertTrue(row["package_image_checks"])
+
+    def test_zero_byte_extra_package_file_blocks_readiness(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project, package, listing = make_project(Path(temp))
+            (package / "cover.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 20)
+            (package / "upload-notes.txt").write_bytes(b"")
+            (listing / "LISTING.json").write_text(json.dumps({
+                "platform": "Sample",
+                "fields": {"title": "Book", "author": "J.A.C.", "description": "Description"},
+            }), encoding="utf-8")
+            report = build_completion_report(project, profiles=PROFILE)
+            row = report["platforms"]["Sample"]
+            self.assertEqual(row["status"], "BLOCKED")
+            self.assertTrue(any("Package file is empty: upload-notes.txt" in issue
+                                for issue in row["validation_errors"]))
 
 
 if __name__ == "__main__":
