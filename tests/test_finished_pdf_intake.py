@@ -79,7 +79,7 @@ class FinishedPdfIntakeTests(unittest.TestCase):
             validate = load_validator(lambda path: calls.append(path) or {"page_count": 1, "error": None, "encrypted": False})
             result = validate(link)
             self.assertEqual(result["status"], "BLOCKED")
-            self.assertTrue(any("symbolic-link" in error for error in result["errors"]))
+            self.assertTrue(any("symbolic-link" in error.casefold() for error in result["errors"]))
             self.assertEqual(calls, [])
 
 
