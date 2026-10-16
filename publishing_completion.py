@@ -55,6 +55,33 @@ def validate_pdf(path: Path) -> dict[str, Any]:
         result["errors"].append(f"Could not read PDF: {exc}")
     return result
 
+
+def validate_image(path: Path) -> dict[str, Any]:
+    """Perform a conservative signature/size check for supported cover image formats."""
+    result = {"path": str(path), "exists": path.is_file(), "valid": False,
+              "status": "BLOCKED", "errors": [], "size_bytes": 0}
+    if not path.is_file():
+        result["errors"].append("Image file is missing.")
+        return result
+    try:
+        size = path.stat().st_size
+        result["size_bytes"] = size
+        if size < 16:
+            result["errors"].append(f"Image file is only {size} bytes; likely empty or incomplete.")
+        with path.open("rb") as stream:
+            head = stream.read(16)
+        suffix = path.suffix.casefold()
+        if suffix == ".png" and not head.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+            result["errors"].append("PNG filename does not contain a PNG signature.")
+        elif suffix in {".jpg", ".jpeg"} and not head.startswith(b"\\xff\\xd8\\xff"):
+            result["errors"].append("JPEG filename does not contain a JPEG signature.")
+        if not result["errors"]:
+            result["valid"] = True
+            result["status"] = "BASIC_CHECK_PASS"
+    except OSError as exc:
+        result["errors"].append(f"Could not read image: {exc}")
+    return result
+
 def _matches_any(folder: Path, patterns: list[str]) -> list[str]:
     matches: set[Path] = set()
     if folder.is_dir():
@@ -126,6 +153,24 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
                 missing.append(f"Platform-specific listing draft missing in {listing_dir}; expected one of: " + " OR ".join(group))
         review_issues = []
         validation_errors = []
+        package_file_checks = []
+        if package_dir.is_dir():
+            for package_path in sorted(p for p in package_dir.rglob("*") if p.is_file()):
+                relative_path = package_path.relative_to(package_dir).as_posix()
+                try:
+                    if package_path.stat().st_size == 0:
+                        validation_errors.append(f"Package file is empty: {relative_path}")
+                    if package_path.suffix.casefold() in {".png", ".jpg", ".jpeg"}:
+                        image_result = validate_image(package_path)
+                        package_file_checks.append(image_result)
+                        validation_errors.extend(
+                            f"Package image {relative_path}: {error}"
+                            for error in image_result["errors"]
+                        )
+                except OSError as exc:
+                    validation_errors.append(
+                        f"Could not inspect package file {relative_path}: {type(exc).__name__}: {exc}"
+                    )
         json_listing_files = _matches_any(listing_dir, ["*.json"])
         if not json_listing_files:
             review_issues.append(
@@ -170,6 +215,7 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
             "package_files": package_files, "listing_folder": str(listing_dir), "listing_files": listing_files,
             "missing_requirements": missing, "validation_errors": validation_errors,
             "review_issues": review_issues, "package_pdf_checks": pdf_checks,
+            "package_image_checks": package_file_checks,
             "expected_deliverables": [
                 {"kind": "package", "folder": str(package_dir), "any_of": list(group),
                  "present": bool(_matches_any(package_dir, group)) if package_dir.is_dir() else False}
