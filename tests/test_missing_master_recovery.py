@@ -41,6 +41,7 @@ class MissingMasterRecoveryTests(unittest.TestCase):
                 "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8")),
                 "kdp_safe_filename": lambda value: value.replace(" ", ""),
                 "inspect_pdf": lambda _p: {"exists": True, "page_count": 64, "file_size_mb": 40.77},
+                "pdf_page_count": lambda _p: 64,
                 "file_hash": lambda _p: "fixture-hash",
                 "save_json": lambda p, value: pathlib.Path(p).write_text(
                     json.dumps(value), encoding="utf-8"
@@ -84,6 +85,7 @@ class MissingMasterRecoveryTests(unittest.TestCase):
                 "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8")),
                 "kdp_safe_filename": lambda value: value,
                 "inspect_pdf": lambda _p: {"exists": True, "page_count": 64},
+                "pdf_page_count": lambda _p: 64,
                 "shutil": shutil,
                 "datetime": datetime,
                 "FACTORY_VERSION": "137.0",
