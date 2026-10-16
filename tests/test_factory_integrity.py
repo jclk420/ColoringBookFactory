@@ -497,6 +497,19 @@ class FactoryIntegrityTests(unittest.TestCase):
         self.assertEqual(result["location"], "Hollow Stitch Nursery")
         self.assertEqual(result["location_evidence"], ["pdf_title"])
 
+    def test_recover_repair_menu_routes_to_recovery_center_not_import_menu(self):
+        self.assertEqual(
+            len(self.functions.get("repair_reconcile_project_menu", [])), 1,
+            "Recover / Repair must have a real handler; it must not fall back to Import Existing Book",
+        )
+        menu = self.functions["factory_main_menu"][0]
+        menu_source = ast.get_source_segment(self.source, menu) or ""
+        self.assertIn('elif c=="7": repair_reconcile_project_menu()', menu_source)
+        handler = self.functions["repair_reconcile_project_menu"][0]
+        handler_source = ast.get_source_segment(self.source, handler) or ""
+        self.assertIn("return v97_recovery_center_menu()", handler_source)
+        self.assertNotIn("import_existing_book_menu()", handler_source)
+
     def test_lore_intake_uses_review_staging_and_is_menu_connected(self):
         for token in ('INTAKE_DIR = FACTORY / "INTAKE"', "INTAKE_MANIFEST_FILENAME",
                       "STAGED_FOR_REVIEW", "lore_intake_collect_records",
