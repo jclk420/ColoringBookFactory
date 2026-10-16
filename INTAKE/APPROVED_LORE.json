@@ -1,0 +1,18 @@
+{
+    "schema_version": 1,
+    "entities": [
+        {
+            "kind": "book",
+            "name": "Nightmare Cryptids",
+            "world": "Nightmare World",
+            "location": "Hollow Stitch Nursery",
+            "bible": "Nightmare Series",
+            "source_hash": "affa0871bfbe5036aeea860399d076e99a99a99f93d4dccc08ffa43fab9e1d26",
+            "source_path": "C:\\ColoringBookFactory\\INTAKE\\Review\\Nightmare World\\Books\\Nightmare Cryptids\\cOPYCryptidsInterior.pdf",
+            "original_source": "C:\\Users\\J\\Desktop\\cOPYCryptidsInterior.pdf",
+            "approved_at": "2026-10-12T21:49:16",
+            "status": "APPROVED",
+            "note": "Approved intake record; not yet written into a Series Bible."
+        }
+    ]
+}

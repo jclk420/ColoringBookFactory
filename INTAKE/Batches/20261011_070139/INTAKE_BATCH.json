@@ -6,7 +6,7 @@
         {
             "source": "C:\\Users\\J\\Desktop\\cOPYCryptidsInterior.pdf",
             "sha256": "affa0871bfbe5036aeea860399d076e99a99a99f93d4dccc08ffa43fab9e1d26",
-            "status": "STAGED_FOR_REVIEW",
+            "status": "APPROVED_FOR_LORE_REGISTRY",
             "classification": {
                 "kind": "book",
                 "name": "Nightmare Cryptids",
@@ -88,7 +88,9 @@
                         "location_reason": "Exact registered location phrase found in file evidence"
                     }
                 }
-            ]
+            ],
+            "reviewed_at": "2026-10-12T21:49:16",
+            "registry_duplicate": false
         }
     ],
     "rejected": [],
