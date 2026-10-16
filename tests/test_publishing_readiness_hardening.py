@@ -55,7 +55,12 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
             project, package, listing = make_project(Path(temp))
             (package / "cover.png").write_bytes(b"image placeholder")
             (listing / "LISTING.txt").write_text("Title: Book", encoding="utf-8")
-            report = build_completion_report(project, profiles=PROFILE)
+            text_only_profile = {"Sample": {
+                "folder": "Sample", "listing_folder": "Sample",
+                "required_any": [["interior.pdf"], ["cover.png"]],
+                "listing_any": [["*.txt"]],
+            }}
+            report = build_completion_report(project, profiles=text_only_profile)
             row = report["platforms"]["Sample"]
             self.assertEqual(row["status"], "NEEDS_REVIEW")
             self.assertTrue(any("No structured JSON listing metadata" in issue
