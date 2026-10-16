@@ -48,6 +48,12 @@ class FinishedPdfIntakeTests(unittest.TestCase):
             self.assertEqual(result["status"], "PASS")
             self.assertEqual(result["page_count"], 64)
             self.assertEqual(result["file_size_bytes"], len(b"%PDF-1.4 test"))
+            encrypted_validate = load_validator(
+                lambda p: {"page_count": 64, "error": None, "encrypted": True}
+            )
+            encrypted_result = encrypted_validate(path)
+            self.assertEqual(encrypted_result["status"], "BLOCKED")
+            self.assertTrue(any("Encrypted PDFs" in error for error in encrypted_result["errors"]))
 
     def test_rejects_symlink_source_without_inspecting_target(self):
         with tempfile.TemporaryDirectory() as temp:
