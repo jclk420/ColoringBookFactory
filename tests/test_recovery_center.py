@@ -1,10 +1,12 @@
 """Regression tests for the v93-v97 recovery and build-history center."""
 import ast
 import hashlib
+import io
 import json
 import re
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
 
@@ -16,6 +18,7 @@ NAMES = (
     "v95_build_snapshot_integrity_audit",
     "v96_recovery_action_plan",
     "v97_run_recovery_center",
+    "v97_recovery_center_menu",
 )
 
 
@@ -154,6 +157,31 @@ class RecoveryCenterTests(unittest.TestCase):
         self.assertEqual(result["verified_backup_count"], 1)
         self.assertFalse(result["restore_performed"])
         self.assertFalse(result["assembly_started"])
+
+    def test_audit_menu_prints_result_instead_of_returning_silently(self):
+        expected = {
+            "status": "PASS", "project": str(self.project),
+            "verified_backup_count": 2, "build_snapshot_count": 3,
+            "build_snapshot_integrity": "PASS", "action_count": 0,
+            "reports": {"action_plan": str(self.project / "REPORTS" / "RECOVERY_ACTION_PLAN.json")},
+            "note": "Audit only.",
+        }
+        self.ns.update({
+            "v12_active_project": lambda: self.project,
+            "input": lambda prompt: "1",
+            "v97_run_recovery_center": lambda project: expected,
+        })
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = self.ns["v97_recovery_center_menu"]()
+        self.assertEqual(result, expected)
+        printed = output.getvalue()
+        self.assertIn("RECOVERY CENTER AUDIT", printed)
+        self.assertIn("Overall status: PASS", printed)
+        self.assertIn("Verified assembly backups: 2", printed)
+        self.assertIn("Build snapshots found: 3", printed)
+        self.assertIn("Recovery actions identified: 0", printed)
+        self.assertIn("Recovery Action Plan report:", printed)
 
     def test_version_menu_and_build_backup_gate(self):
         self.assertIn('FACTORY_VERSION = "113.0"', self.source)
