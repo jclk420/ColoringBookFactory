@@ -55,6 +55,16 @@ class FinishedPdfIntakeTests(unittest.TestCase):
             self.assertEqual(encrypted_result["status"], "BLOCKED")
             self.assertTrue(any("Encrypted PDFs" in error for error in encrypted_result["errors"]))
 
+    def test_folder_intake_preflights_cover_before_project_creation(self):
+        source = FACTORY_PATH.read_text(encoding="utf-8")
+        node = next(item for item in ast.parse(source).body
+                    if isinstance(item, ast.FunctionDef) and item.name == "import_finished_book_folder_v128")
+        segment = ast.get_source_segment(source, node) or ""
+        self.assertLess(segment.index("_discover_separate_cover(folder, interior_pdf)"),
+                        segment.index("project.mkdir(parents=True, exist_ok=True)"))
+        self.assertIn('if cover_status == "AMBIGUOUS":', segment)
+        self.assertIn("No project folder or MASTER was created.", segment)
+
     def test_rejects_symlink_source_without_inspecting_target(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

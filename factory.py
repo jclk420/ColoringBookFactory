@@ -9849,6 +9849,20 @@ def import_finished_book_folder_v128():
             print(f"ERROR: {error}")
         print("No project folder or MASTER was created.")
         return None
+    # Verify that a dedicated cover exists and is unambiguous before creating a project.
+    # A missing/ambiguous cover should not leave a half-imported project behind.
+    cover_found, cover_candidates, cover_status = _discover_separate_cover(folder, interior_pdf)
+    if cover_status == "AMBIGUOUS":
+        print("ERROR: Multiple plausible cover files were found.")
+        for item in cover_candidates[:5]:
+            print(f"  {item['score']:>4}  {item['path'].name}")
+        print("Rename the intended cover with 'cover' or 'full-wrap' in the filename and retry.")
+        return None
+    if not cover_found:
+        print("ERROR: No dedicated cover file was found in the selected book folder.")
+        print("No project folder or MASTER was created. Add the separate cover and retry.")
+        return None
+
     info = inspect_pdf(interior_pdf)
     print(f"\nInterior: {interior_pdf.name}")
     print(f"Pages:    {info.get('page_count')}")
