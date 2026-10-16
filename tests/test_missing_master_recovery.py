@@ -48,7 +48,7 @@ class MissingMasterRecoveryTests(unittest.TestCase):
                 ),
                 "shutil": shutil,
                 "datetime": datetime,
-                "FACTORY_VERSION": "137.0",
+                "FACTORY_VERSION": "113.0",
                 "PLATFORM_ENGINE_VERSION": "4.3",
             }
             function = matches[0]
@@ -88,7 +88,7 @@ class MissingMasterRecoveryTests(unittest.TestCase):
                 "pdf_page_count": lambda _p: 64,
                 "shutil": shutil,
                 "datetime": datetime,
-                "FACTORY_VERSION": "137.0",
+                "FACTORY_VERSION": "113.0",
                 "PLATFORM_ENGINE_VERSION": "4.3",
             }
             exec(compile(ast.Module(body=[function], type_ignores=[]),
