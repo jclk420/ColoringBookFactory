@@ -1,4 +1,4 @@
-## v137.0 — Recover Missing MASTER from Recorded Original PDF
+## Compatibility fix — Recover Missing MASTER from Recorded Original PDF (factory version unchanged)
 
 - Repairs imported-finished-PDF projects where MASTER metadata survives but the copied *_MASTER.pdf is missing.
 - If normal project PDF discovery finds no source, reads only the recorded source_pdf path from MASTER metadata and reuses it only when it exists and is a PDF.
