@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "2.0"
+VERSION = "2.1"
 DEFAULT_PLATFORMS = {
     "KDP": {"folder": "KDP", "listing_folder": "KDP", "required_any": [["*interior*.pdf"], ["*cover*.pdf"]],
             "listing_any": [["*.json"], ["*.txt"]],
@@ -115,7 +115,7 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
         else:
             for group in profile.get("required_any", []):
                 if not _matches_any(package_dir, group):
-                    missing.append("Required package file missing; expected one of: " + " OR ".join(group))
+                    missing.append(f"Required package file missing in {package_dir}; expected one of: " + " OR ".join(group))
         listing_root = root / "MARKETING" / "LISTINGS"
         # Default profiles use platform-specific folders so one platform's drafts
         # cannot accidentally satisfy another platform's listing requirements.
@@ -123,10 +123,15 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
         listing_files = sorted(p.relative_to(listing_dir).as_posix() for p in listing_dir.rglob("*") if p.is_file()) if listing_dir.is_dir() else []
         for group in profile.get("listing_any", []):
             if not _matches_any(listing_dir, group):
-                missing.append("Platform-specific listing draft missing one of: " + " OR ".join(group))
+                missing.append(f"Platform-specific listing draft missing in {listing_dir}; expected one of: " + " OR ".join(group))
         review_issues = []
         validation_errors = []
-        for relative in _matches_any(listing_dir, ["*.json"]):
+        json_listing_files = _matches_any(listing_dir, ["*.json"])
+        if not json_listing_files:
+            review_issues.append(
+                "No structured JSON listing metadata was found; a text draft alone cannot verify title, author, description, or platform."
+            )
+        for relative in json_listing_files:
             listing_path = listing_dir / relative
             try:
                 payload = json.loads(listing_path.read_text(encoding="utf-8"))
@@ -137,12 +142,12 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
                 if listed_platform and str(listed_platform).casefold() != str(name).casefold():
                     validation_errors.append(f"Listing platform mismatch in {relative}: expected {name}, found {listed_platform}.")
                 fields = payload.get("fields", {})
-                if fields and not isinstance(fields, dict):
+                if not isinstance(fields, dict):
                     validation_errors.append(f"Listing fields must be an object: {relative}")
-                elif isinstance(fields, dict):
-                    for required_field in ("title", "author", "description"):
-                        if not str(fields.get(required_field, "")).strip():
-                            review_issues.append(f"Listing field '{required_field}' is blank in {relative}.")
+                    continue
+                for required_field in ("title", "author", "description"):
+                    if not str(fields.get(required_field, "")).strip():
+                        review_issues.append(f"Listing field '{required_field}' is blank in {relative}.")
             except (OSError, UnicodeError, json.JSONDecodeError) as exc:
                 validation_errors.append(f"Listing JSON could not be read ({relative}): {type(exc).__name__}: {exc}")
         pdf_checks = []
@@ -165,6 +170,15 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
             "package_files": package_files, "listing_folder": str(listing_dir), "listing_files": listing_files,
             "missing_requirements": missing, "validation_errors": validation_errors,
             "review_issues": review_issues, "package_pdf_checks": pdf_checks,
+            "expected_deliverables": [
+                {"kind": "package", "folder": str(package_dir), "any_of": list(group),
+                 "present": bool(_matches_any(package_dir, group)) if package_dir.is_dir() else False}
+                for group in profile.get("required_any", [])
+            ] + [
+                {"kind": "listing", "folder": str(listing_dir), "any_of": list(group),
+                 "present": bool(_matches_any(listing_dir, group)) if listing_dir.is_dir() else False}
+                for group in profile.get("listing_any", [])
+            ],
             "notes": profile.get("notes", ""),
             "upload_confirmed": False, "next_step": "Resolve blockers, review marketplace-specific fields, then upload manually."}
         for issue in missing + validation_errors:
