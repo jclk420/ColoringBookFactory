@@ -21919,8 +21919,30 @@ def v97_recovery_center_menu():
     print("1. Audit recovery points and build history")
     print("2. Restore a verified assembly INPUT backup")
     choice = input("Choose 1 or 2: ").strip()
+    if choice == "1":
+        try:
+            result = v97_run_recovery_center(project)
+        except Exception as error:
+            message = f"{type(error).__name__}: {error}"
+            print(f"Recovery Center audit failed: {message}")
+            return {"status": "BLOCKED", "project": str(project), "errors": [message]}
+        print("\\nRECOVERY CENTER AUDIT")
+        print("=" * 72)
+        print(f"Project: {result.get('project', project)}")
+        print(f"Overall status: {result.get('status', 'UNKNOWN')}")
+        print(f"Verified assembly backups: {result.get('verified_backup_count', 0)}")
+        print(f"Build snapshots found: {result.get('build_snapshot_count', 0)}")
+        print(f"Build snapshot integrity: {result.get('build_snapshot_integrity', 'UNKNOWN')}")
+        print(f"Recovery actions identified: {result.get('action_count', 0)}")
+        for name, path in result.get("reports", {}).items():
+            print(f"{name.replace('_', ' ').title()} report: {path}")
+        for error in result.get("errors", []):
+            print(f"ERROR: {error}")
+        print(result.get("note", "Audit only; no restore or rebuild was performed."))
+        return result
     if choice != "2":
-        return v97_run_recovery_center(project)
+        print("Invalid choice. Enter 1 for audit or 2 for restore.")
+        return {"status": "CANCELLED", "message": "Invalid menu choice."}
     inventory = v93_recovery_inventory(project)
     backups = [row for row in inventory.get("assembly_backups", []) if row.get("status") == "VERIFIED"]
     if not backups:
