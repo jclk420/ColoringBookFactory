@@ -125,7 +125,8 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
             self.assertEqual(row["status"], "BLOCKED")
             self.assertTrue(any("Package file is empty: upload-notes.txt" in issue
                                 for issue in row["validation_errors"]))
-\n
+
+
     def test_realistic_four_platform_fixture_passes_expected_preflight(self):
         with tempfile.TemporaryDirectory() as temp:
             project = Path(temp) / "Nightmare Test Book"
