@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "2.3"
+VERSION = "2.4"
 DEFAULT_PLATFORMS = {
     "KDP": {"folder": "KDP", "listing_folder": "KDP", "required_any": [["*interior*.pdf"], ["*cover*.pdf"]],
             "listing_any": [["*.json"], ["*.txt"]],
@@ -21,6 +21,23 @@ DEFAULT_PLATFORMS = {
                     "listing_any": [["*.json"], ["*.txt"]],
                     "notes": "Platform-neutral download package."},
 }
+
+def _count_pdf_page_markers(path: Path, chunk_size: int = 1024 * 1024) -> int:
+    """Count uncompressed page-object markers across a file without loading it all into memory."""
+    pattern = re.compile(rb"/Type\s*/Page(?!s)\b")
+    overlap = b""
+    count = 0
+    with path.open("rb") as stream:
+        while True:
+            chunk = stream.read(chunk_size)
+            if not chunk:
+                break
+            data = overlap + chunk
+            boundary = len(overlap)
+            count += sum(1 for match in pattern.finditer(data) if match.end() > boundary)
+            overlap = data[-64:]
+    return count
+
 
 def validate_pdf(path: Path) -> dict[str, Any]:
     """Check basic PDF signatures and page evidence without changing the source."""
@@ -43,8 +60,8 @@ def validate_pdf(path: Path) -> dict[str, Any]:
             result["errors"].append("PDF header signature is missing near the beginning.")
         if b"%%EOF" not in tail:
             result["errors"].append("PDF end-of-file marker is missing; file may be truncated.")
-        data = path.read_bytes() if size <= 2_000_000 else head + tail
-        pages = len(re.findall(rb"/Type\s*/Page(?!s)\b", data))
+        # Scan the entire file so markers in large PDFs are not missed between the ends.
+        pages = _count_pdf_page_markers(path)
         result["page_marker_count"] = pages
         if pages == 0:
             result["warnings"].append("Page count could not be confirmed by a lightweight scan; open the PDF or use a PDF parser.")
