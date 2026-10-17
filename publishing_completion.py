@@ -135,6 +135,88 @@ def _find_master(project: Path) -> Path | None:
     candidates = _master_candidates(project)
     return candidates[0] if len(candidates) == 1 else None
 
+def _verify_platform_manifest(package_dir: Path, master_sha256: str | None) -> dict[str, Any]:
+    """Verify manifest inventory, file hashes, and source MASTER fingerprint."""
+    manifest_path = package_dir / "PACKAGE_MANIFEST.json"
+    result: dict[str, Any] = {"status": "READY", "path": str(manifest_path), "errors": [], "warnings": [],
+                              "listed_files": [], "unexpected_files": [], "missing_files": [], "hash_mismatches": []}
+    if manifest_path.is_symlink():
+        result["status"] = "BLOCKED"
+        result["errors"].append("PACKAGE_MANIFEST.json is a symbolic link.")
+        return result
+    if not manifest_path.is_file():
+        result["status"] = "NEEDS_REVIEW"
+        result["warnings"].append("Package manifest is missing; package integrity and source freshness are not fully evidenced.")
+        return result
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        result["status"] = "BLOCKED"
+        result["errors"].append(f"Package manifest cannot be read: {type(exc).__name__}: {exc}")
+        return result
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), list):
+        result["status"] = "BLOCKED"
+        result["errors"].append("Package manifest schema is invalid; expected an object with a files list.")
+        return result
+    names: set[str] = set()
+    for raw in manifest["files"]:
+        if not isinstance(raw, str) or not raw.strip():
+            result["errors"].append(f"Invalid path in package manifest: {raw!r}")
+            continue
+        name = raw.replace("\\", "/")
+        parts = name.split("/")
+        if name.startswith("/") or any(part in {"", ".", ".."} for part in parts) or (len(parts[0]) > 1 and parts[0][1] == ":"):
+            result["errors"].append(f"Unsafe path in package manifest: {raw!r}")
+            continue
+        if name in names:
+            result["errors"].append(f"Duplicate path in package manifest: {name}")
+            continue
+        names.add(name)
+    result["listed_files"] = sorted(names, key=str.casefold)
+    expected = names - {"PACKAGE_MANIFEST.json"}
+    actual: set[str] = set()
+    try:
+        for item in package_dir.rglob("*"):
+            if item.is_file() and not item.is_symlink() and item != manifest_path:
+                actual.add(item.relative_to(package_dir).as_posix())
+    except (OSError, RuntimeError) as exc:
+        result["errors"].append(f"Package inventory failed: {type(exc).__name__}: {exc}")
+    result["unexpected_files"] = sorted(actual - expected, key=str.casefold)
+    result["missing_files"] = sorted(expected - actual, key=str.casefold)
+    if result["unexpected_files"]:
+        result["errors"].append("Unlisted package files: " + ", ".join(result["unexpected_files"]))
+    if result["missing_files"]:
+        result["errors"].append("Manifest files missing from package: " + ", ".join(result["missing_files"]))
+    hashes = manifest.get("file_hashes", {})
+    if not isinstance(hashes, dict):
+        result["errors"].append("Package manifest file_hashes must be an object.")
+        hashes = {}
+    for name in sorted(expected & actual, key=str.casefold):
+        digest = hashes.get(name)
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+            result["warnings"].append(f"No valid SHA-256 recorded for package file: {name}")
+            continue
+        try:
+            actual_digest = _sha256(package_dir.joinpath(*name.split("/")))
+        except OSError as exc:
+            result["errors"].append(f"Could not hash package file {name}: {type(exc).__name__}: {exc}")
+            continue
+        if actual_digest.casefold() != digest.casefold():
+            result["hash_mismatches"].append(name)
+    if result["hash_mismatches"]:
+        result["errors"].append("Package file hashes do not match the manifest: " + ", ".join(result["hash_mismatches"]))
+    recorded_master = manifest.get("master_sha256")
+    if not isinstance(recorded_master, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", recorded_master):
+        result["warnings"].append("Manifest does not contain a valid source MASTER SHA-256.")
+    elif master_sha256 and recorded_master.casefold() != master_sha256.casefold():
+        result["errors"].append("Manifest source MASTER SHA-256 differs from the current MASTER PDF.")
+    if result["errors"]:
+        result["status"] = "BLOCKED"
+    elif result["warnings"]:
+        result["status"] = "NEEDS_REVIEW"
+    return result
+
+
 def build_completion_report(project: str | Path, profiles: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return actionable readiness diagnostics; never rebuild or modify publishing assets."""
     root = Path(project).expanduser().resolve()
@@ -183,6 +265,10 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
             for group in profile.get("required_any", []):
                 if not _matches_any(package_dir, group):
                     missing.append(f"Required package file missing in {package_dir}; expected one of: " + " OR ".join(group))
+        manifest_check = _verify_platform_manifest(package_dir, master_sha256) if package_dir.is_dir() else {
+            "status": "BLOCKED", "path": str(package_dir / "PACKAGE_MANIFEST.json"),
+            "errors": ["Cannot verify package manifest because the package folder is missing."],
+            "warnings": [], "listed_files": [], "unexpected_files": [], "missing_files": [], "hash_mismatches": []}
         listing_root = root / "MARKETING" / "LISTINGS"
         # Default profiles use platform-specific folders so one platform's drafts
         # cannot accidentally satisfy another platform's listing requirements.
@@ -193,8 +279,9 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
         for group in profile.get("listing_any", []):
             if not _matches_any(listing_dir, group):
                 missing.append(f"Platform-specific listing draft missing in {listing_dir}; expected one of: " + " OR ".join(group))
-        review_issues = []
-        validation_errors = [f"Package contains a symbolic link; replace it with a regular file: {p.relative_to(package_dir).as_posix()}" for p in package_symlinks]
+        review_issues = list(manifest_check["warnings"])
+        validation_errors = list(manifest_check["errors"])
+        validation_errors.extend(f"Package contains a symbolic link; replace it with a regular file: {p.relative_to(package_dir).as_posix()}" for p in package_symlinks)
         validation_errors.extend(f"Listing folder contains a symbolic link; replace it with a regular file: {p.relative_to(listing_dir).as_posix()}" for p in listing_symlinks)
         package_file_checks = []
         if package_dir.is_dir():
@@ -288,6 +375,7 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
         report["platforms"][name] = {"status": status, "package_folder": str(package_dir),
             "package_files": package_files, "listing_folder": str(listing_dir), "listing_files": listing_files,
             "missing_requirements": missing, "validation_errors": validation_errors,
+            "manifest_verification": manifest_check,
             "review_issues": review_issues, "package_pdf_checks": pdf_checks,
             "package_image_checks": package_file_checks,
             "expected_deliverables": [
