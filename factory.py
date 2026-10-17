@@ -8533,7 +8533,12 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
             staging.rename(root)
 
         # Manifest is regenerated at final location so its file list is authoritative.
-        final_files = sorted(p.name for p in root.iterdir() if p.is_file())
+        # The manifest is the inventory, not one of the files it inventories.
+        # Including it would make its own recorded SHA-256 stale on every write.
+        final_files = sorted(
+            p.name for p in root.iterdir()
+            if p.is_file() and p.name != "PACKAGE_MANIFEST.json"
+        )
         manifest["files"] = final_files
         manifest["file_hashes"] = {name: file_hash(root / name) for name in final_files}
         save_json(root / "PACKAGE_MANIFEST.json", manifest)
@@ -19256,6 +19261,10 @@ def v23_verify_package_root(root):
             continue
         if normalized in expected:
             errors.append(f"Duplicate manifest path: {normalized}")
+            continue
+        # The manifest cannot hash itself: rewriting it changes its own digest.
+        # Ignore a legacy self-entry, but never count the manifest as a deliverable.
+        if normalized == "PACKAGE_MANIFEST.json":
             continue
         expected.add(normalized)
         target = root.joinpath(*parts)

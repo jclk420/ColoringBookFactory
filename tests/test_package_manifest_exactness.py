@@ -56,6 +56,30 @@ class PackageManifestExactnessTests(unittest.TestCase):
         self.assertEqual(result["checked_files"], 2)
         self.assertEqual(result["actual_files"], ["assets/cover.png", "interior.pdf"])
 
+    def test_legacy_manifest_self_entry_is_ignored_without_counting_it(self):
+        hashes = {
+            "interior.pdf": hashlib.sha256((self.root / "interior.pdf").read_bytes()).hexdigest(),
+            "assets/cover.png": hashlib.sha256((self.root / "assets/cover.png").read_bytes()).hexdigest(),
+            # A self-hash can never remain valid after rewriting the manifest.
+            "PACKAGE_MANIFEST.json": "0" * 64,
+        }
+        self.write_manifest(
+            ["interior.pdf", "assets/cover.png", "PACKAGE_MANIFEST.json"],
+            hashes=hashes,
+        )
+        result = self.verify(self.root)
+        self.assertEqual(result["status"], "READY", result)
+        self.assertEqual(result["checked_files"], 2)
+        self.assertNotIn("PACKAGE_MANIFEST.json", result["expected_files"])
+        self.assertNotIn("PACKAGE_MANIFEST.json", result["actual_files"])
+
+    def test_generator_excludes_manifest_from_its_own_file_hashes(self):
+        source = FACTORY_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            'if p.is_file() and p.name != "PACKAGE_MANIFEST.json"',
+            source,
+        )
+
     def test_unlisted_nested_file_blocks_readiness(self):
         self.write_file("assets/preview.png", b"untracked")
         result = self.verify(self.root)
