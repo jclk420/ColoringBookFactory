@@ -23,11 +23,11 @@ class _ImageProbe:
 
     def verify(self):
         data = self.path.read_bytes()
-        if data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
-            if b"IEND\\xaeB\\x60\\x82" not in data:
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            if b"IEND\xaeB\x60\x82" not in data:
                 raise ValueError("truncated or corrupt PNG payload")
-        elif data.startswith(b"\\xff\\xd8\\xff"):
-            if not data.endswith(b"\\xff\\xd9"):
+        elif data.startswith(b"\xff\xd8\xff"):
+            if not data.endswith(b"\xff\xd9"):
                 raise ValueError("truncated JPEG payload")
         elif data.startswith(b"RIFF") and data[8:12] == b"WEBP":
             if len(data) < 16:
@@ -149,7 +149,7 @@ class RequiredPlatformAssetTests(unittest.TestCase):
     def test_valid_image_signature_with_corrupt_payload_blocks_package(self):
         profile = {"files": ["interior_pdf"], "variant": {"mode": "copy"}}
         extra_image = self.root / "bonus.png"
-        extra_image.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"header only, no image chunks")
+        extra_image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"header only, no image chunks")
         errors, _ = self.validate(
             self.root, self.master, profile, [self.interior, extra_image]
         )
