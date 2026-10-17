@@ -41,6 +41,7 @@ def load_splitter(page_sizes):
     namespace = {
         "Path": Path,
         "_pdf_reader_class": lambda: FakeReader,
+        "_platform_sanitized_filename": lambda name, max_chars=70: str(name)[:max_chars],
     }
     exec(compile(ast.Module(body=matches, type_ignores=[]), str(FACTORY_PATH), "exec"), namespace)
     return namespace["_pdf_split_by_size"]
