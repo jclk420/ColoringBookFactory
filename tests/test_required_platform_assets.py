@@ -104,6 +104,15 @@ class RequiredPlatformAssetTests(unittest.TestCase):
         )
         self.assertTrue(any("Required artifact is empty: METADATA.json" in item for item in errors))
 
+    def test_corrupt_unrequired_image_still_blocks_package(self):
+        profile = {"files": ["interior_pdf"], "variant": {"mode": "copy"}}
+        extra_image = self.root / "bonus.png"
+        extra_image.write_bytes(b"not actually a PNG")
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior, extra_image]
+        )
+        self.assertTrue(any("Generated image is invalid" in item for item in errors))
+
     def test_metadata_json_must_match_current_master_fingerprint(self):
         profile = {"files": ["interior_pdf", "metadata"], "variant": {"mode": "copy"}}
         master_hash = hashlib.sha256(self.master.read_bytes()).hexdigest()
