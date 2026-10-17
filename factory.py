@@ -7240,7 +7240,15 @@ def platform_preflight(project, platform_name, master_pdf=None, profile=None):
         if page_count > int(rules.get("max_pages", 10000)):
             errors.append(f"Page count {page_count} exceeds platform maximum {rules['max_pages']}.")
     size_mb = info.get("file_size_mb")
-    if size_mb is not None and size_mb > float(rules.get("max_file_mb", 999999)):
+    # Split-mode platforms validate the size of each generated part, not
+    # the unsplit MASTER. Blocking the source here would make the splitter
+    # unreachable for precisely the large PDFs it is meant to handle.
+    split_mode = profile.get("variant", {}).get("mode") == "etsy_split"
+    if (
+        not split_mode
+        and size_mb is not None
+        and size_mb > float(rules.get("max_file_mb", 999999))
+    ):
         errors.append(f"PDF size {size_mb:.3f} MB exceeds profile limit of {rules['max_file_mb']} MB.")
     if rules.get("require_landscape") is False and any(x.get("orientation") == "landscape" for x in info.get("sizes", [])):
         warnings.append("One or more PDF pages are landscape; confirm this is intentional.")
