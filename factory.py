@@ -8490,6 +8490,16 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
                 )
             )
 
+        # Enforce the package contract before writing a manifest or publishing
+        # the staging directory. A validation helper that is never invoked
+        # cannot protect users from incomplete upload folders.
+        package_errors, package_warnings = validate_generated_package(
+            staging, master, profile, generated
+        )
+        warnings.extend(package_warnings)
+        if package_errors:
+            raise RuntimeError("Platform package validation failed: " + " | ".join(package_errors))
+
         preflight_path = staging / "PLATFORM_PREFLIGHT.json"
         save_json(preflight_path, audit)
         generated.append(preflight_path)
