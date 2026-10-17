@@ -72,10 +72,8 @@ class RequiredProfileDeliverableTests(unittest.TestCase):
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == "write_text"
-            and any(
-                isinstance(arg, ast.Name) and arg.id == "checklist_path"
-                for arg in node.args
-            )
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "checklist_path"
         ]
         validation_lines = [
             node.lineno for node in ast.walk(generator)
