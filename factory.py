@@ -4730,6 +4730,30 @@ def validate_generated_package(root, master_pdf, profile, generated):
         elif filename.casefold() == "preview_sheet.png" and not has_image_signature(path):
             errors.append("Required preview sheet is not a valid PNG image.")
 
+    # Validate the generated metadata payload itself, not just that a nonempty
+    # METADATA.json file exists. Its source fingerprint must match this build's
+    # MASTER so stale or malformed listing data cannot pass package preflight.
+    if "metadata" in expected_files:
+        metadata_path = root / "METADATA.json"
+        if metadata_path.is_file() and metadata_path.stat().st_size > 0:
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, ValueError, TypeError) as error:
+                errors.append(f"Required metadata JSON is invalid: {type(error).__name__}: {error}")
+            else:
+                if not isinstance(metadata, dict):
+                    errors.append("Required metadata JSON must contain an object.")
+                else:
+                    if not str(metadata.get("title", "")).strip():
+                        errors.append("Required metadata title is missing.")
+                    if not str(metadata.get("platform", "")).strip():
+                        errors.append("Required metadata platform is missing.")
+                    recorded_master_hash = str(metadata.get("source_master_sha256", "")).strip()
+                    if not re.fullmatch(r"[0-9a-fA-F]{64}", recorded_master_hash):
+                        errors.append("Metadata source MASTER SHA-256 is missing or invalid.")
+                    elif recorded_master_hash.casefold() != master_hash.casefold():
+                        errors.append("Metadata source MASTER SHA-256 is stale or does not match the current MASTER PDF.")
+
     return errors, warnings
 
 
