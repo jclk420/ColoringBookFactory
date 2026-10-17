@@ -64,6 +64,35 @@ class RequiredPlatformAssetTests(unittest.TestCase):
         )
         self.assertFalse(any("Required platform cover PDF is missing" in item for item in errors))
 
+    def test_generator_enforces_package_validation_before_manifest(self):
+        tree = ast.parse(FACTORY_PATH.read_text(encoding="utf-8"), filename=str(FACTORY_PATH))
+        generator = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "generate_platform_package_v112"
+        )
+        calls = [
+            (node.lineno, node.func.id)
+            for node in ast.walk(generator)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        ]
+        validation_lines = [line for line, name in calls if name == "validate_generated_package"]
+        manifest_lines = [
+            node.lineno for node in ast.walk(generator)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "save_json"
+            and any(
+                isinstance(arg, ast.Name) and arg.id == "manifest_path"
+                for arg in node.args
+            )
+        ]
+        self.assertTrue(validation_lines, "generator must invoke the package validator")
+        self.assertTrue(manifest_lines, "generator must write the package manifest")
+        self.assertLess(
+            min(validation_lines), min(manifest_lines),
+            "package validation must run before manifest creation/publishing",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
