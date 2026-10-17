@@ -46,20 +46,29 @@ class RequiredProfileDeliverableTests(unittest.TestCase):
 
     def test_missing_checklist_is_blocking(self):
         cover = self.root / "cover.png"
-        cover.write_bytes(b"image placeholder")
+        cover.write_bytes(bytes([137]) + b"PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR")
         errors, _ = self.validate(self.root, self.master, self.profile, [self.interior, cover])
         self.assertTrue(any("Required platform upload checklist is missing" in error for error in errors))
 
     def test_valid_cover_preview_and_checklist_satisfy_profile(self):
         cover = self.root / "cover.png"
-        cover.write_bytes(b"image placeholder")
+        cover.write_bytes(bytes([137]) + b"PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR")
         checklist = self.root / "PLATFORM_UPLOAD_CHECKLIST.txt"
         checklist.write_text("checklist", encoding="utf-8")
         errors, _ = self.validate(
             self.root, self.master, self.profile, [self.interior, cover, checklist]
         )
         self.assertFalse(any("Required cover preview image is missing" in error for error in errors))
+        self.assertFalse(any("Required cover preview image is invalid" in error for error in errors))
         self.assertFalse(any("Required platform upload checklist is missing" in error for error in errors))
+
+    def test_corrupt_cover_preview_is_blocking(self):
+        cover = self.root / "cover.png"
+        cover.write_bytes(b"not really a PNG image")
+        checklist = self.root / "PLATFORM_UPLOAD_CHECKLIST.txt"
+        checklist.write_text("checklist", encoding="utf-8")
+        errors, _ = self.validate(self.root, self.master, self.profile, [self.interior, cover, checklist])
+        self.assertTrue(any("Required cover preview image is invalid" in error for error in errors))
 
     def test_generator_writes_checklist_before_package_validation(self):
         tree = ast.parse(FACTORY_PATH.read_text(encoding="utf-8"), filename=str(FACTORY_PATH))

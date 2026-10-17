@@ -82,6 +82,15 @@ class RequiredPlatformAssetTests(unittest.TestCase):
         )
         self.assertTrue(any("Required artifact is empty: PREVIEW_SHEET.png" in item for item in errors))
 
+    def test_nonempty_but_invalid_preview_sheet_blocks_package(self):
+        profile = {"files": ["interior_pdf", "preview_sheet"], "variant": {"mode": "copy"}}
+        preview = self.root / "PREVIEW_SHEET.png"
+        preview.write_bytes(b"not actually a PNG")
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior, preview]
+        )
+        self.assertTrue(any("Required preview sheet is not a valid PNG image" in item for item in errors))
+
     def test_empty_required_metadata_blocks_package(self):
         profile = {"files": ["interior_pdf", "metadata"], "variant": {"mode": "copy"}}
         metadata = self.root / "METADATA.json"
