@@ -75,6 +75,24 @@ class TransactionalPlatformPublishTests(unittest.TestCase):
         self.assertFalse(self.root.exists())
         self.assertFalse(self.staging.exists())
 
+    def test_generator_verifies_staged_manifest_before_publish(self):
+        source = FACTORY_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(FACTORY_PATH))
+        generator = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "generate_platform_package_v112"
+        )
+        body = ast.get_source_segment(source, generator)
+        self.assertIsNotNone(body)
+        self.assertIn("staged_verification = v23_verify_package_root(staging)", body)
+        self.assertIn("if staged_verification.get(\"errors\")", body)
+        self.assertLess(
+            body.index("staged_verification = v23_verify_package_root(staging)"),
+            body.index("_publish_staged_package(staging, root, validator)"),
+            "manifest and inventory verification must pass before publication",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
