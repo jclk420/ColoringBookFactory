@@ -69,6 +69,25 @@ class RequiredPlatformAssetTests(unittest.TestCase):
         self.assertFalse(any("Required platform cover PDF is missing" in item for item in errors))
         self.assertFalse(any("Variant integrity mismatch" in item for item in errors))
 
+    def test_missing_required_digital_cover_preview_is_blocking(self):
+        profile = {"files": ["digital_pdf", "cover_preview"], "variant": {"mode": "copy"}}
+        errors, _ = self.validate(self.root, self.master, profile, [self.interior])
+        self.assertTrue(any("Required digital cover-preview image is missing" in item for item in errors))
+
+    def test_cover_preview_image_satisfies_digital_cover_requirement(self):
+        profile = {"files": ["digital_pdf", "cover_preview"], "variant": {"mode": "copy"}}
+        cover = self.root / "Book_COVER.png"
+        cover.write_bytes(b"cover image placeholder")
+        errors, _ = self.validate(self.root, self.master, profile, [self.interior, cover])
+        self.assertFalse(any("Required digital cover-preview image is missing" in item for item in errors))
+
+    def test_preview_sheet_does_not_satisfy_cover_preview_requirement(self):
+        profile = {"files": ["digital_pdf", "cover_preview"], "variant": {"mode": "copy"}}
+        preview = self.root / "PREVIEW_SHEET.png"
+        preview.write_bytes(b"preview sheet")
+        errors, _ = self.validate(self.root, self.master, profile, [self.interior, preview])
+        self.assertTrue(any("Required digital cover-preview image is missing" in item for item in errors))
+
     def test_cover_pdf_alone_does_not_satisfy_required_interior_pdf(self):
         cover_pdf = self.root / "Book_COVER.pdf"
         cover_pdf.write_bytes(b"cover pdf")
