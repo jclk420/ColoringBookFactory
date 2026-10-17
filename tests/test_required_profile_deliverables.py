@@ -59,6 +59,7 @@ class RequiredProfileDeliverableTests(unittest.TestCase):
             self.root, self.master, self.profile, [self.interior, cover, checklist]
         )
         self.assertFalse(any("Required cover preview image is missing" in error for error in errors))
+        self.assertFalse(any("Required cover preview image is invalid" in error for error in errors))
         self.assertFalse(any("Required platform upload checklist is missing" in error for error in errors))
 
     def test_corrupt_cover_preview_is_blocking(self):
