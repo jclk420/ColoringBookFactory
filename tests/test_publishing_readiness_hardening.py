@@ -184,6 +184,7 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
                 package_files = sorted(p for p in package.rglob("*") if p.is_file())
                 (package / "PACKAGE_MANIFEST.json").write_text(json.dumps({
                     "schema_version": 1,
+                    "status": "READY",
                     "files": [p.relative_to(package).as_posix() for p in package_files]
                              + ["PACKAGE_MANIFEST.json"],
                     "file_hashes": {
