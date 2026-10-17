@@ -4598,8 +4598,21 @@ def validate_generated_package(root, master_pdf, profile, generated):
     if "digital_pdf" in files or "interior_pdf" in files:
         expected_files.add("pdf")
     if "preview_sheet" in files: expected_files.add("preview")
+    if "cover_preview" in files: expected_files.add("cover_preview")
     if "metadata" in files: expected_files.add("metadata")
     if "product_description" in files: expected_files.add("description")
+    if "checklist" in files: expected_files.add("checklist")
+    if "cover_preview" in expected_files and not any(
+        p.exists() and p.suffix.casefold() in {".png", ".jpg", ".jpeg", ".webp"}
+        and ("COVER" in p.name.upper() or p.name.casefold() in {"cover.png", "cover.jpg", "cover.jpeg", "cover.webp"})
+        for p in generated
+    ):
+        errors.append("Required cover preview image is missing.")
+    if "checklist" in expected_files and not any(
+        p.exists() and p.is_file() and p.suffix.casefold() == ".txt" and "CHECKLIST" in p.name.upper()
+        for p in generated
+    ):
+        errors.append("Required platform upload checklist is missing.")
     if "cover_pdf" in files and not any(
         p.suffix.casefold() == ".pdf" and "COVER" in p.name.upper() and p.exists()
         for p in generated
@@ -8502,6 +8515,43 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
                     warnings,
                 )
             )
+
+        # Profiles that promise a checklist must ship one with the package,
+        # even when no older project-level KDP checklist exists to copy.
+        if "checklist" in profile.get("files", []) and not any(
+            p.exists() and p.is_file() and p.suffix.casefold() == ".txt" and "CHECKLIST" in p.name.upper()
+            for p in generated
+        ):
+            checklist_path = staging / "PLATFORM_UPLOAD_CHECKLIST.txt"
+            has_interior = any(
+                p.suffix.casefold() == ".pdf" and "COVER" not in p.name.upper()
+                for p in generated
+            )
+            has_cover_pdf = any(
+                p.suffix.casefold() == ".pdf" and "COVER" in p.name.upper()
+                for p in generated
+            )
+            has_cover_preview = any(
+                p.suffix.casefold() in {".png", ".jpg", ".jpeg", ".webp"}
+                and ("COVER" in p.name.upper() or p.name.casefold().startswith("cover."))
+                for p in generated
+            )
+            checklist_path.write_text(
+                "\n".join([
+                    f"{platform_name} UPLOAD CHECKLIST",
+                    "=" * (len(platform_name) + 17),
+                    "",
+                    f"Product: {title}",
+                    f"Interior PDF: {'[ ]' if has_interior else 'MISSING'}",
+                    f"Cover PDF: {'[ ]' if has_cover_pdf else 'N/A or missing'}",
+                    f"Cover preview: {'[ ]' if has_cover_preview else 'MISSING'}",
+                    "Metadata: confirm title, author, keywords, and description before upload.",
+                    "Final marketplace checks: verify trim size, bleed, pricing, rights, and live listing details.",
+                    "",
+                ]),
+                encoding="utf-8",
+            )
+            generated.append(checklist_path)
 
         # Enforce the package contract before writing a manifest or publishing
         # the staging directory. A validation helper that is never invoked
