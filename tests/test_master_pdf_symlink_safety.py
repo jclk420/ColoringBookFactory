@@ -71,6 +71,27 @@ class MasterPdfSymlinkSafetyTests(unittest.TestCase):
         )
         self.assertIsNone(namespace["find_existing_book_pdf"](self.project))
 
+    def test_symlinked_master_directory_is_rejected(self):
+        outside_dir = self.base / "outside_master"
+        outside_dir.mkdir()
+        (outside_dir / "Book_MASTER.pdf").write_bytes(b"outside MASTER bytes")
+        self.master_dir.rmdir()
+        try:
+            self.master_dir.symlink_to(outside_dir, target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"Directory symbolic links are unavailable: {error}")
+
+        namespace = load_functions(
+            {"_unsafe_master_pdf_symlink", "find_master_pdf"},
+            {
+                "Path": Path,
+                "load_project_settings_safe": lambda _project: {"title": "Book"},
+                "kdp_safe_filename": lambda value: str(value),
+            },
+        )
+        self.assertEqual(namespace["_unsafe_master_pdf_symlink"](self.project), self.master_dir)
+        self.assertIsNone(namespace["find_master_pdf"](self.project))
+
     def test_master_repair_checks_symlink_before_creating_or_copying_master(self):
         source = FACTORY_PATH.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(FACTORY_PATH))
