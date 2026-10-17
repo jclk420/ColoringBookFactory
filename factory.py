@@ -4391,6 +4391,8 @@ def platform_master_dir(project):
 def _unsafe_master_pdf_symlink(project):
     """Return a symlink masquerading as the MASTER interior, if one exists."""
     master = Path(project) / "MASTER"
+    if master.is_symlink():
+        return master
     if not master.is_dir():
         return None
     for candidate in sorted(master.glob("*_MASTER.pdf")):
@@ -4495,7 +4497,8 @@ def ensure_master_book(project, source_pdf=None):
     unsafe_master = _unsafe_master_pdf_symlink(project)
     if unsafe_master is not None:
         return None, [
-            f"MASTER PDF is a symbolic link and cannot be used or overwritten: {unsafe_master}"
+            f"MASTER PDF is a symbolic link, or the MASTER directory is a symbolic link; "
+            f"it cannot be used or overwritten: {unsafe_master}"
         ], []
     settings = load_project_settings_safe(project)
     master = platform_master_dir(project)
