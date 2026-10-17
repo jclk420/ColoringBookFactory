@@ -10,6 +10,38 @@ import unittest
 FACTORY_PATH = Path(__file__).resolve().parents[1] / "factory.py"
 
 
+class _ImageProbe:
+    """Dependency-free stand-in for Pillow's full-payload verify() in AST tests."""
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def verify(self):
+        data = self.path.read_bytes()
+        if data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+            if b"IEND\\xaeB\\x60\\x82" not in data:
+                raise ValueError("truncated or corrupt PNG payload")
+        elif data.startswith(b"\\xff\\xd8\\xff"):
+            if not data.endswith(b"\\xff\\xd9"):
+                raise ValueError("truncated JPEG payload")
+        elif data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+            if len(data) < 16:
+                raise ValueError("truncated WebP payload")
+        else:
+            raise ValueError("unsupported or malformed image payload")
+
+
+class _ImageModule:
+    @staticmethod
+    def open(path):
+        return _ImageProbe(path)
+
+
 def load_validator():
     tree = ast.parse(FACTORY_PATH.read_text(encoding="utf-8"), filename=str(FACTORY_PATH))
     matches = [
@@ -24,6 +56,7 @@ def load_validator():
         "re": re,
         "inspect_pdf": lambda path: {"error": None},
         "file_hash": lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+        "Image": _ImageModule,
     }
     module = ast.Module(body=matches, type_ignores=[])
     exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
@@ -112,6 +145,15 @@ class RequiredPlatformAssetTests(unittest.TestCase):
             self.root, self.master, profile, [self.interior, extra_image]
         )
         self.assertTrue(any("Generated image is invalid" in item for item in errors))
+
+    def test_valid_image_signature_with_corrupt_payload_blocks_package(self):
+        profile = {"files": ["interior_pdf"], "variant": {"mode": "copy"}}
+        extra_image = self.root / "bonus.png"
+        extra_image.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"header only, no image chunks")
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior, extra_image]
+        )
+        self.assertTrue(any("Generated image failed full image verification" in item for item in errors))
 
     def test_metadata_json_must_match_current_master_fingerprint(self):
         profile = {"files": ["interior_pdf", "metadata"], "variant": {"mode": "copy"}}
