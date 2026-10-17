@@ -106,6 +106,8 @@ class MasterPdfSymlinkSafetyTests(unittest.TestCase):
             body.index("platform_master_dir(project)"),
         )
         self.assertIn("MASTER PDF is a symbolic link", body)
+        self.assertIn("not candidate.is_symlink()", body)
+        self.assertIn("if pdf.is_symlink()", body)
 
 
 if __name__ == "__main__":
