@@ -7056,7 +7056,12 @@ def _pdf_split_by_size(source_pdf, output_dir, base_name, max_mb, max_files):
                     writer.write(handle)
                 size = tmp.stat().st_size
                 tmp.unlink(missing_ok=True)
-                if size <= limit or index == start:
+                # A first page larger than the platform limit cannot be
+                # split further. Reject it instead of letting the first-page
+                # exception accidentally advance past the size check.
+                if size > limit and index == start:
+                    return [], [f"A single page exceeds the {max_mb} MB platform file limit."]
+                if size <= limit:
                     index += 1
                     continue
                 # Rebuild without the last page.
