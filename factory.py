@@ -4388,12 +4388,29 @@ def platform_master_dir(project):
     return path
 
 
+def _unsafe_master_pdf_symlink(project):
+    """Return a symlink masquerading as the MASTER interior, if one exists."""
+    master = Path(project) / "MASTER"
+    if not master.is_dir():
+        return None
+    for candidate in sorted(master.glob("*_MASTER.pdf")):
+        if candidate.is_symlink():
+            return candidate
+    return None
+
+
 def find_master_pdf(project):
+    project = Path(project)
+    # Do not fall through to a different PDF when a MASTER symlink exists:
+    # doing so could silently bypass an unsafe/corrupted MASTER state.
+    if _unsafe_master_pdf_symlink(project) is not None:
+        return None
     master = project / "MASTER"
     if master.exists():
         existing = sorted(master.glob("*_MASTER.pdf"))
-        if existing:
-            return existing[0]
+        for candidate in existing:
+            if candidate.is_file() and not candidate.is_symlink():
+                return candidate
     settings = load_project_settings_safe(project)
     title = kdp_safe_filename(settings.get("title", project.name))
     candidates = [project / "PDF" / f"{title}.pdf", project / "PDF" / "final.pdf"]
@@ -4401,7 +4418,7 @@ def find_master_pdf(project):
         candidates.extend(sorted((project / "PDF").glob("*.pdf")))
     candidates.extend(sorted((project / "FINAL").glob("*.pdf")) if (project / "FINAL").exists() else [])
     for candidate in candidates:
-        if candidate.exists():
+        if candidate.is_file() and not candidate.is_symlink():
             return candidate
     return None
 
@@ -4412,7 +4429,13 @@ def find_existing_book_pdf(project):
     for root in roots:
         if root.exists():
             found.extend(root.glob("*.pdf"))
-    found = [p for p in found if PLATFORM_DIRNAME not in p.parts and "MASTER" not in p.parts]
+    found = [
+        p for p in found
+        if PLATFORM_DIRNAME not in p.parts
+        and "MASTER" not in p.parts
+        and p.is_file()
+        and not p.is_symlink()
+    ]
     if not found:
         return None
     found.sort(key=lambda p: ("INTERIOR" not in p.name.upper(), len(p.parts), p.name.lower()))
@@ -4469,6 +4492,11 @@ def _platform_cover(project):
 
 
 def ensure_master_book(project, source_pdf=None):
+    unsafe_master = _unsafe_master_pdf_symlink(project)
+    if unsafe_master is not None:
+        return None, [
+            f"MASTER PDF is a symbolic link and cannot be used or overwritten: {unsafe_master}"
+        ], []
     settings = load_project_settings_safe(project)
     master = platform_master_dir(project)
     existing = find_master_pdf(project)
