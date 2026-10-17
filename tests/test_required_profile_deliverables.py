@@ -46,13 +46,13 @@ class RequiredProfileDeliverableTests(unittest.TestCase):
 
     def test_missing_checklist_is_blocking(self):
         cover = self.root / "cover.png"
-        cover.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n\\x00\\x00\\x00\\x0dIHDR")
+        cover.write_bytes(bytes([137]) + b"PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR")
         errors, _ = self.validate(self.root, self.master, self.profile, [self.interior, cover])
         self.assertTrue(any("Required platform upload checklist is missing" in error for error in errors))
 
     def test_valid_cover_preview_and_checklist_satisfy_profile(self):
         cover = self.root / "cover.png"
-        cover.write_bytes(b"image placeholder")
+        cover.write_bytes(bytes([137]) + b"PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR")
         checklist = self.root / "PLATFORM_UPLOAD_CHECKLIST.txt"
         checklist.write_text("checklist", encoding="utf-8")
         errors, _ = self.validate(
