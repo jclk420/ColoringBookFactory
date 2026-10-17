@@ -19220,13 +19220,15 @@ def v23_capability_report():
 
 
 def v23_verify_package_root(root):
-    """Verify a package manifest against current direct-child files without modifying the package."""
+    """Verify the complete package tree against its manifest without modifying files."""
     root = Path(root)
     errors = []
     warnings = []
     manifest_path = root / "PACKAGE_MANIFEST.json"
     if not root.is_dir():
         return {"status": "BLOCKED", "root": str(root), "errors": ["Package directory is missing."], "warnings": [], "checked_files": 0}
+    if manifest_path.is_symlink():
+        return {"status": "BLOCKED", "root": str(root), "errors": ["PACKAGE_MANIFEST.json must be a regular file, not a symbolic link."], "warnings": [], "checked_files": 0}
     if not manifest_path.is_file():
         return {"status": "BLOCKED", "root": str(root), "errors": ["PACKAGE_MANIFEST.json is missing."], "warnings": [], "checked_files": 0}
     try:
@@ -19238,50 +19240,88 @@ def v23_verify_package_root(root):
     hashes = manifest.get("file_hashes", {})
     if not isinstance(hashes, dict):
         hashes = {}
-        warnings.append("Manifest file_hashes field is missing or invalid.")
+        errors.append("Manifest file_hashes field must be an object.")
     expected = set()
     checked = 0
-    for raw_name in manifest.get("files", []):
-        name = str(raw_name)
-        if not name or Path(name).name != name or "/" in name or "\\" in name or name in {".", ".."}:
+    for raw_name in manifest["files"]:
+        if not isinstance(raw_name, str):
+            errors.append(f"Manifest path must be a string: {raw_name!r}")
+            continue
+        name = raw_name
+        normalized = name.replace("\\", "/")
+        parts = normalized.split("/")
+        if (not name or normalized.startswith("/") or any(part in {"", ".", ".."} for part in parts)
+                or (len(parts[0]) >= 2 and parts[0][1] == ":")):
             errors.append(f"Unsafe manifest path rejected: {name!r}")
             continue
-        expected.add(name)
-        target = root / name
-        if not target.is_file():
-            errors.append(f"Manifest file is missing: {name}")
+        if normalized in expected:
+            errors.append(f"Duplicate manifest path: {normalized}")
             continue
-        checked += 1
-        if target.stat().st_size <= 0:
-            errors.append(f"Manifest file is empty: {name}")
-        expected_hash = hashes.get(name)
-        if expected_hash:
-            try:
-                actual_hash = file_hash(target)
-            except OSError as error:
-                errors.append(f"Cannot hash {name}: {error}")
+        expected.add(normalized)
+        target = root.joinpath(*parts)
+        try:
+            if target.is_symlink():
+                errors.append(f"Manifest file is a symbolic link: {normalized}")
                 continue
-            if actual_hash != expected_hash:
-                errors.append(f"SHA-256 mismatch: {name}")
-        else:
-            warnings.append(f"No recorded SHA-256 for: {name}")
-    actual = {item.name for item in root.iterdir() if item.is_file() and item.name != "PACKAGE_MANIFEST.json"}
-    extras = sorted(actual - expected)
+            if not target.is_file():
+                errors.append(f"Manifest file is missing: {normalized}")
+                continue
+            if not target.resolve().is_relative_to(root.resolve()):
+                errors.append(f"Manifest path resolves outside the package root: {normalized}")
+                continue
+            checked += 1
+            if target.stat().st_size <= 0:
+                errors.append(f"Manifest file is empty: {normalized}")
+            expected_hash = hashes.get(normalized)
+            if expected_hash is None or expected_hash == "":
+                warnings.append(f"No recorded SHA-256 for: {normalized}")
+            elif not isinstance(expected_hash, str) or len(expected_hash) != 64 or any(c not in "0123456789abcdefABCDEF" for c in expected_hash):
+                errors.append(f"Invalid SHA-256 value in manifest for: {normalized}")
+            else:
+                try:
+                    actual_hash = file_hash(target)
+                except OSError as error:
+                    errors.append(f"Cannot hash {normalized}: {error}")
+                    continue
+                if actual_hash.casefold() != expected_hash.casefold():
+                    errors.append(f"SHA-256 mismatch: {normalized}")
+        except (OSError, RuntimeError, ValueError) as error:
+            errors.append(f"Cannot inspect {normalized}: {type(error).__name__}: {error}")
+    actual = set()
+    symlinks = []
+    try:
+        for item in root.rglob("*"):
+            if item == manifest_path:
+                continue
+            relative = item.relative_to(root).as_posix()
+            if item.is_symlink():
+                symlinks.append(relative)
+            elif item.is_file():
+                actual.add(relative)
+    except (OSError, RuntimeError) as error:
+        errors.append(f"Cannot inventory package tree: {type(error).__name__}: {error}")
+    for name in sorted(symlinks, key=str.casefold):
+        errors.append(f"Package contains a symbolic link; replace it with a regular file: {name}")
+    extras = sorted(actual - expected, key=str.casefold)
+    missing_from_disk = sorted(expected - actual, key=str.casefold)
     if extras:
-        warnings.append("Unexpected files not listed in manifest: " + ", ".join(extras))
-    status = "BLOCKED" if errors else ("REVIEW" if warnings else "READY")
+        errors.append("Unexpected files not listed in manifest: " + ", ".join(extras))
+    # Missing expected files are already reported individually above; retain a stable
+    # machine-readable list for reports and callers.
     return {
-        "status": status,
+        "status": "BLOCKED" if errors else ("REVIEW" if warnings else "READY"),
         "root": str(root),
         "manifest": str(manifest_path),
         "manifest_schema_version": manifest.get("schema_version"),
-        "expected_files": sorted(expected),
+        "expected_files": sorted(expected, key=str.casefold),
+        "actual_files": sorted(actual, key=str.casefold),
         "unexpected_files": extras,
+        "missing_files": missing_from_disk,
+        "symlink_paths": sorted(symlinks, key=str.casefold),
         "checked_files": checked,
         "errors": errors,
         "warnings": warnings,
     }
-
 
 def v23_package_manifest_verify(project):
     """Verify enabled platform package manifests and write a diagnostic report."""
