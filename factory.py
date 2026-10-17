@@ -4614,7 +4614,14 @@ def validate_generated_package(root, master_pdf, profile, generated):
         master_hash = file_hash(master_pdf)
         # Copy-mode variants must be byte-identical to MASTER. This is a deliberate
         # safety invariant until a profile explicitly implements a transformation.
-        if profile.get("variant", {}).get("mode") == "copy" and file_hash(p) != master_hash:
+        # Only the interior/variant PDF is required to be byte-identical
+        # in copy mode. A distinct print cover PDF is a separate deliverable.
+        is_cover_pdf = "COVER" in p.name.upper()
+        if (
+            profile.get("variant", {}).get("mode") == "copy"
+            and not is_cover_pdf
+            and file_hash(p) != master_hash
+        ):
             errors.append(f"Variant integrity mismatch: {p.name} differs from MASTER despite copy mode.")
     for label, filename in [("preview", "PREVIEW_SHEET.png"), ("metadata", "METADATA.json"), ("description", "PRODUCT_DESCRIPTION.txt")]:
         if label in expected_files and not (root / filename).exists(): errors.append(f"Required artifact missing: {filename}")
@@ -8438,6 +8445,12 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
             if "preview_sheet" in profile.get("files", []):
                 generated.append(create_preview_sheet(project, staging, master, settings))
 
+        # Gumroad builds its own cover and individual thumbnail previews, but
+        # its profile also promises the common preview sheet. Generate it too
+        # so the shared package contract is actually satisfiable.
+        if platform_name == "Gumroad" and "preview_sheet" in profile.get("files", []):
+            generated.append(create_preview_sheet(project, staging, master, settings))
+
         metadata = {
             "schema_version": 5,
             "factory_version": FACTORY_VERSION,
@@ -8489,6 +8502,16 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
                     warnings,
                 )
             )
+
+        # Enforce the package contract before writing a manifest or publishing
+        # the staging directory. A validation helper that is never invoked
+        # cannot protect users from incomplete upload folders.
+        package_errors, package_warnings = validate_generated_package(
+            staging, master, profile, generated
+        )
+        warnings.extend(package_warnings)
+        if package_errors:
+            raise RuntimeError("Platform package validation failed: " + " | ".join(package_errors))
 
         preflight_path = staging / "PLATFORM_PREFLIGHT.json"
         save_json(preflight_path, audit)
