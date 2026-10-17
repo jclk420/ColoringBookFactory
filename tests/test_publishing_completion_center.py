@@ -130,7 +130,8 @@ class PublishingCompletionTests(unittest.TestCase):
             master_digest = hashlib.sha256((master_dir / "Book_MASTER.pdf").read_bytes()).hexdigest()
             interior_digest = hashlib.sha256((package / "interior.pdf").read_bytes()).hexdigest()
             (package / "PACKAGE_MANIFEST.json").write_text(json.dumps({
-                "schema_version": 1, "files": ["interior.pdf", "PACKAGE_MANIFEST.json"],
+                "schema_version": 1, "status": "READY",
+                "files": ["interior.pdf", "PACKAGE_MANIFEST.json"],
                 "file_hashes": {"interior.pdf": interior_digest}, "master_sha256": master_digest
             }), encoding="utf-8")
             listing = project / "MARKETING" / "LISTINGS" / "Sample"
