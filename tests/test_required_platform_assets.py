@@ -1,6 +1,8 @@
 """Required platform deliverables must fail closed when missing."""
 import ast
 import hashlib
+import json
+import re
 from pathlib import Path
 import unittest
 
@@ -18,6 +20,8 @@ def load_validator():
         raise AssertionError("validate_generated_package must have exactly one definition")
     namespace = {
         "Path": Path,
+        "json": json,
+        "re": re,
         "inspect_pdf": lambda path: {"error": None},
         "file_hash": lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest(),
     }
@@ -99,6 +103,37 @@ class RequiredPlatformAssetTests(unittest.TestCase):
             self.root, self.master, profile, [self.interior, metadata]
         )
         self.assertTrue(any("Required artifact is empty: METADATA.json" in item for item in errors))
+
+    def test_metadata_json_must_match_current_master_fingerprint(self):
+        profile = {"files": ["interior_pdf", "metadata"], "variant": {"mode": "copy"}}
+        master_hash = hashlib.sha256(self.master.read_bytes()).hexdigest()
+        metadata = self.root / "METADATA.json"
+        metadata.write_text(json.dumps({
+            "title": "Book", "platform": "Digital PDF",
+            "source_master_sha256": master_hash,
+        }), encoding="utf-8")
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior, metadata]
+        )
+        self.assertFalse(any("Metadata source MASTER SHA-256" in item for item in errors))
+
+        metadata.write_text(json.dumps({
+            "title": "Book", "platform": "Digital PDF",
+            "source_master_sha256": "0" * 64,
+        }), encoding="utf-8")
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior, metadata]
+        )
+        self.assertTrue(any("Metadata source MASTER SHA-256 is stale" in item for item in errors))
+
+    def test_malformed_metadata_json_blocks_package(self):
+        profile = {"files": ["interior_pdf", "metadata"], "variant": {"mode": "copy"}}
+        metadata = self.root / "METADATA.json"
+        metadata.write_text("{not valid json", encoding="utf-8")
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior, metadata]
+        )
+        self.assertTrue(any("Required metadata JSON is invalid" in item for item in errors))
 
     def test_generator_enforces_package_validation_before_manifest(self):
         tree = ast.parse(FACTORY_PATH.read_text(encoding="utf-8"), filename=str(FACTORY_PATH))
