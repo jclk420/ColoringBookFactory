@@ -8445,6 +8445,12 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
             if "preview_sheet" in profile.get("files", []):
                 generated.append(create_preview_sheet(project, staging, master, settings))
 
+        # Gumroad builds its own cover and individual thumbnail previews, but
+        # its profile also promises the common preview sheet. Generate it too
+        # so the shared package contract is actually satisfiable.
+        if platform_name == "Gumroad" and "preview_sheet" in profile.get("files", []):
+            generated.append(create_preview_sheet(project, staging, master, settings))
+
         metadata = {
             "schema_version": 5,
             "factory_version": FACTORY_VERSION,
