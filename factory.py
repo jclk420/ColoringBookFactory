@@ -4669,6 +4669,13 @@ def validate_generated_package(root, master_pdf, profile, generated):
              or p.name.casefold() in {"cover.png", "cover.jpg", "cover.jpeg", "cover.webp"})
     ]
     cover_candidates = [p for p in cover_named if has_image_signature(p)]
+    for image_path in generated:
+        if image_path.exists() and image_path.is_file() and image_path.suffix.casefold() in {
+            ".png", ".jpg", ".jpeg", ".webp"
+        } and not has_image_signature(image_path):
+            errors.append(
+                f"Generated image is invalid or has a mismatched file extension: {image_path.name}"
+            )
     if "cover_preview" in expected_files and not cover_candidates:
         if cover_named:
             errors.append("Required cover preview image is invalid or has a mismatched file extension.")
