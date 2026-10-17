@@ -4753,6 +4753,20 @@ def validate_generated_package(root, master_pdf, profile, generated):
         info = inspect_pdf(p)
         if info.get("error"):
             errors.append(f"Generated PDF failed inspection: {p.name}: {info['error']}")
+        if info.get("exists") is False:
+            errors.append(f"Generated PDF does not exist: {p.name}")
+        page_count = info.get("page_count")
+        if page_count is None:
+            if not info.get("error"):
+                errors.append(f"Generated PDF page count could not be verified: {p.name}")
+        else:
+            try:
+                if int(page_count) < 1:
+                    errors.append(f"Generated PDF contains no pages: {p.name}")
+            except (TypeError, ValueError):
+                errors.append(f"Generated PDF page count is invalid: {p.name}")
+        if info.get("encrypted") is True:
+            errors.append(f"Generated PDF is encrypted or locked: {p.name}")
         # Copy-mode variants must be byte-identical to MASTER. A separate
         # print cover is not an interior/variant PDF.
         is_cover_pdf = "COVER" in p.name.upper()
