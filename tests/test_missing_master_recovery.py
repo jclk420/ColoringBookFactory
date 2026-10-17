@@ -36,6 +36,7 @@ class MissingMasterRecoveryTests(unittest.TestCase):
                     "trim_width": 8.5, "trim_height": 11, "dpi": 300
                 },
                 "platform_master_dir": lambda _p: master_dir,
+                "_unsafe_master_pdf_symlink": lambda _p: None,
                 "find_master_pdf": lambda _p: None,
                 "find_existing_book_pdf": lambda _p: None,
                 "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8")),
@@ -80,6 +81,7 @@ class MissingMasterRecoveryTests(unittest.TestCase):
                 "Path": pathlib.Path,
                 "load_project_settings_safe": lambda _p: {"title": "Book"},
                 "platform_master_dir": lambda _p: master_dir,
+                "_unsafe_master_pdf_symlink": lambda _p: None,
                 "find_master_pdf": lambda _p: None,
                 "find_existing_book_pdf": lambda _p: None,
                 "load_json": lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8")),
