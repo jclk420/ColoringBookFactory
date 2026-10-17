@@ -126,6 +126,13 @@ class PublishingCompletionTests(unittest.TestCase):
             package = project / "PLATFORMS" / "Sample"
             package.mkdir(parents=True)
             make_pdf(package / "interior.pdf")
+            import hashlib
+            master_digest = hashlib.sha256((master_dir / "Book_MASTER.pdf").read_bytes()).hexdigest()
+            interior_digest = hashlib.sha256((package / "interior.pdf").read_bytes()).hexdigest()
+            (package / "PACKAGE_MANIFEST.json").write_text(json.dumps({
+                "schema_version": 1, "files": ["interior.pdf", "PACKAGE_MANIFEST.json"],
+                "file_hashes": {"interior.pdf": interior_digest}, "master_sha256": master_digest
+            }), encoding="utf-8")
             listing = project / "MARKETING" / "LISTINGS" / "Sample"
             listing.mkdir(parents=True)
             (listing / "LISTING.json").write_text(json.dumps({
@@ -141,6 +148,57 @@ class PublishingCompletionTests(unittest.TestCase):
             self.assertEqual(report["overall_status"], "READY_TO_UPLOAD")
             self.assertFalse(report["platforms"]["Sample"]["upload_confirmed"])
             self.assertFalse(report["uploaded_or_published"])
+
+    def test_stale_package_manifest_hash_blocks_readiness(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "Book"
+            master_dir = project / "MASTER"
+            master_dir.mkdir(parents=True)
+            make_pdf(master_dir / "Book_MASTER.pdf")
+            package = project / "PLATFORMS" / "Sample"
+            package.mkdir(parents=True)
+            make_pdf(package / "interior.pdf")
+            listing = project / "MARKETING" / "LISTINGS" / "Sample"
+            listing.mkdir(parents=True)
+            (listing / "LISTING.json").write_text(json.dumps({
+                "platform": "Sample", "fields": {"title": "Book", "author": "J.A.C.", "description": "A book"}
+            }), encoding="utf-8")
+            (listing / "LISTING.txt").write_text("Book", encoding="utf-8")
+            (package / "PACKAGE_MANIFEST.json").write_text(json.dumps({
+                "schema_version": 1, "files": ["interior.pdf", "PACKAGE_MANIFEST.json"],
+                "file_hashes": {"interior.pdf": "0" * 64},
+                "master_sha256": hashlib.sha256((master_dir / "Book_MASTER.pdf").read_bytes()).hexdigest()
+            }), encoding="utf-8")
+            report = build_completion_report(project, profiles={
+                "Sample": {"folder": "Sample", "listing_folder": "Sample",
+                           "required_any": [["interior.pdf"]], "listing_any": [["*.json"], ["*.txt"]]}
+            })
+            row = report["platforms"]["Sample"]
+            self.assertEqual(row["status"], "BLOCKED")
+            self.assertIn("interior.pdf", row["manifest_verification"]["hash_mismatches"])
+
+    def test_missing_package_manifest_never_claims_ready(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "Book"
+            master_dir = project / "MASTER"
+            master_dir.mkdir(parents=True)
+            make_pdf(master_dir / "Book_MASTER.pdf")
+            package = project / "PLATFORMS" / "Sample"
+            package.mkdir(parents=True)
+            make_pdf(package / "interior.pdf")
+            listing = project / "MARKETING" / "LISTINGS" / "Sample"
+            listing.mkdir(parents=True)
+            (listing / "LISTING.json").write_text(json.dumps({
+                "platform": "Sample", "fields": {"title": "Book", "author": "J.A.C.", "description": "A book"}
+            }), encoding="utf-8")
+            (listing / "LISTING.txt").write_text("Book", encoding="utf-8")
+            report = build_completion_report(project, profiles={
+                "Sample": {"folder": "Sample", "listing_folder": "Sample",
+                           "required_any": [["interior.pdf"]], "listing_any": [["*.json"], ["*.txt"]]}
+            })
+            self.assertEqual(report["platforms"]["Sample"]["status"], "NEEDS_REVIEW")
+            self.assertTrue(any("manifest is missing" in item for item in report["platforms"]["Sample"]["review_issues"]))
 
     def test_invalid_package_pdf_blocks_readiness(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -178,6 +178,20 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
                         target.write_bytes(png)
                     else:
                         target.write_text("Product description for test fixture.", encoding="utf-8")
+                # Publishing readiness now verifies the package manifest against the
+                # exact recursive inventory and the current MASTER PDF.
+                import hashlib
+                package_files = sorted(p for p in package.rglob("*") if p.is_file())
+                (package / "PACKAGE_MANIFEST.json").write_text(json.dumps({
+                    "schema_version": 1,
+                    "files": [p.relative_to(package).as_posix() for p in package_files]
+                             + ["PACKAGE_MANIFEST.json"],
+                    "file_hashes": {
+                        p.relative_to(package).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                        for p in package_files
+                    },
+                    "master_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+                }), encoding="utf-8")
                 (listing / "LISTING.json").write_text(json.dumps({
                     "platform": platform,
                     "fields": {"title": "Nightmare Test Book", "author": "J.A.C.",
