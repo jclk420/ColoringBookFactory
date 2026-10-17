@@ -42,7 +42,7 @@ class _ImageModule:
         return _ImageProbe(path)
 
 
-def load_validator():
+def load_validator(pdf_inspector=None):
     tree = ast.parse(FACTORY_PATH.read_text(encoding="utf-8"), filename=str(FACTORY_PATH))
     matches = [
         node for node in tree.body
@@ -54,7 +54,11 @@ def load_validator():
         "Path": Path,
         "json": json,
         "re": re,
-        "inspect_pdf": lambda path: {"error": None},
+        "inspect_pdf": pdf_inspector or (
+            lambda path: {
+                "error": None, "exists": True, "page_count": 1, "encrypted": False
+            }
+        ),
         "file_hash": lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest(),
         "Image": _ImageModule,
     }
@@ -101,6 +105,39 @@ class RequiredPlatformAssetTests(unittest.TestCase):
         )
         self.assertFalse(any("Required platform cover PDF is missing" in item for item in errors))
         self.assertFalse(any("Variant integrity mismatch" in item for item in errors))
+
+    def test_generated_pdf_with_zero_pages_blocks_package(self):
+        validate = load_validator(
+            lambda _path: {"error": None, "exists": True, "page_count": 0, "encrypted": False}
+        )
+        errors, _ = validate(
+            self.root, self.master,
+            {"files": ["digital_pdf"], "variant": {"mode": "digital_copy"}},
+            [self.interior],
+        )
+        self.assertTrue(any("Generated PDF contains no pages" in item for item in errors))
+
+    def test_encrypted_generated_pdf_blocks_package(self):
+        validate = load_validator(
+            lambda _path: {"error": None, "exists": True, "page_count": 1, "encrypted": True}
+        )
+        errors, _ = validate(
+            self.root, self.master,
+            {"files": ["digital_pdf"], "variant": {"mode": "digital_copy"}},
+            [self.interior],
+        )
+        self.assertTrue(any("Generated PDF is encrypted or locked" in item for item in errors))
+
+    def test_unknown_generated_pdf_page_count_blocks_package(self):
+        validate = load_validator(
+            lambda _path: {"error": None, "exists": True, "page_count": None, "encrypted": False}
+        )
+        errors, _ = validate(
+            self.root, self.master,
+            {"files": ["digital_pdf"], "variant": {"mode": "digital_copy"}},
+            [self.interior],
+        )
+        self.assertTrue(any("page count could not be verified" in item for item in errors))
 
     def test_cover_pdf_alone_does_not_satisfy_required_interior_pdf(self):
         cover_pdf = self.root / "Book_COVER.pdf"
