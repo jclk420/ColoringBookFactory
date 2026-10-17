@@ -1,0 +1,69 @@
+"""Required platform deliverables must fail closed when missing."""
+import ast
+import hashlib
+from pathlib import Path
+import unittest
+
+
+FACTORY_PATH = Path(__file__).resolve().parents[1] / "factory.py"
+
+
+def load_validator():
+    tree = ast.parse(FACTORY_PATH.read_text(encoding="utf-8"), filename=str(FACTORY_PATH))
+    matches = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "validate_generated_package"
+    ]
+    if len(matches) != 1:
+        raise AssertionError("validate_generated_package must have exactly one definition")
+    namespace = {
+        "Path": Path,
+        "inspect_pdf": lambda path: {"error": None},
+        "file_hash": lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+    }
+    module = ast.Module(body=matches, type_ignores=[])
+    exec(compile(module, str(FACTORY_PATH), "exec"), namespace)
+    return namespace["validate_generated_package"]
+
+
+class RequiredPlatformAssetTests(unittest.TestCase):
+    def setUp(self):
+        self.validate = load_validator()
+        self.temp = __import__("tempfile").TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.master = self.root / "Book_MASTER.pdf"
+        self.master.write_bytes(b"same master content")
+        self.interior = self.root / "Book_DIGITAL.pdf"
+        self.interior.write_bytes(self.master.read_bytes())
+        self.profile = {
+            "files": ["interior_pdf", "cover_pdf"],
+            "variant": {"mode": "copy"},
+        }
+
+    def test_missing_required_cover_pdf_is_blocking_error(self):
+        errors, warnings = self.validate(
+            self.root, self.master, self.profile, [self.interior]
+        )
+        self.assertTrue(any("Required platform cover PDF is missing" in item for item in errors))
+        self.assertFalse(any("cover PDF" in item for item in warnings))
+
+    def test_cover_image_does_not_satisfy_cover_pdf_requirement(self):
+        cover_image = self.root / "Book_COVER.png"
+        cover_image.write_bytes(b"not a PDF")
+        errors, _ = self.validate(
+            self.root, self.master, self.profile, [self.interior, cover_image]
+        )
+        self.assertTrue(any("Required platform cover PDF is missing" in item for item in errors))
+
+    def test_real_cover_pdf_satisfies_required_cover_asset(self):
+        cover_pdf = self.root / "Book_COVER.pdf"
+        cover_pdf.write_bytes(b"cover pdf")
+        errors, _ = self.validate(
+            self.root, self.master, self.profile, [self.interior, cover_pdf]
+        )
+        self.assertFalse(any("Required platform cover PDF is missing" in item for item in errors))
+
+
+if __name__ == "__main__":
+    unittest.main()
