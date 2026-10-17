@@ -110,6 +110,21 @@ class RequiredPlatformAssetTests(unittest.TestCase):
         )
         self.assertTrue(any("Required interior PDF was not generated" in item for item in errors))
 
+    def test_digital_copy_mode_blocks_interior_different_from_master(self):
+        profile = {"files": ["digital_pdf"], "variant": {"mode": "digital_copy"}}
+        self.interior.write_bytes(b"different but nonempty PDF-like payload")
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior]
+        )
+        self.assertTrue(any("Variant integrity mismatch" in item for item in errors))
+
+    def test_digital_copy_mode_accepts_byte_identical_master(self):
+        profile = {"files": ["digital_pdf"], "variant": {"mode": "digital_copy"}}
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior]
+        )
+        self.assertFalse(any("Variant integrity mismatch" in item for item in errors))
+
     def test_empty_required_preview_sheet_blocks_package(self):
         profile = {"files": ["interior_pdf", "preview_sheet"], "variant": {"mode": "copy"}}
         preview = self.root / "PREVIEW_SHEET.png"
