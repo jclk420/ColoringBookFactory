@@ -63,6 +63,7 @@ class RequiredPlatformAssetTests(unittest.TestCase):
             self.root, self.master, self.profile, [self.interior, cover_pdf]
         )
         self.assertFalse(any("Required platform cover PDF is missing" in item for item in errors))
+        self.assertFalse(any("Variant integrity mismatch" in item for item in errors))
 
     def test_generator_enforces_package_validation_before_manifest(self):
         tree = ast.parse(FACTORY_PATH.read_text(encoding="utf-8"), filename=str(FACTORY_PATH))
