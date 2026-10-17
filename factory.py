@@ -4719,7 +4719,7 @@ def validate_generated_package(root, master_pdf, profile, generated):
         # print cover is not an interior/variant PDF.
         is_cover_pdf = "COVER" in p.name.upper()
         if (
-            profile.get("variant", {}).get("mode") == "copy"
+            profile.get("variant", {}).get("mode") in {"copy", "digital_copy"}
             and not is_cover_pdf
             and file_hash(p) != master_hash
         ):
