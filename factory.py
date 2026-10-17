@@ -4619,16 +4619,16 @@ def validate_generated_package(root, master_pdf, profile, generated):
     ):
         errors.append("Required platform cover PDF is missing; a cover image or interior PDF does not satisfy this requirement.")
     pdfs = [p for p in generated if p.suffix.lower() == ".pdf" and p.exists()]
-    if "pdf" in expected_files and not pdfs:
-        errors.append("Required platform PDF was not generated.")
+    interior_pdfs = [p for p in pdfs if "COVER" not in p.name.upper()]
+    if "pdf" in expected_files and not interior_pdfs:
+        errors.append("Required interior PDF was not generated; a cover PDF alone cannot satisfy this requirement.")
+    master_hash = file_hash(master_pdf)
     for p in pdfs:
         info = inspect_pdf(p)
-        if info.get("error"): errors.append(f"Generated PDF failed inspection: {p.name}: {info['error']}")
-        master_hash = file_hash(master_pdf)
-        # Copy-mode variants must be byte-identical to MASTER. This is a deliberate
-        # safety invariant until a profile explicitly implements a transformation.
-        # Only the interior/variant PDF is required to be byte-identical
-        # in copy mode. A distinct print cover PDF is a separate deliverable.
+        if info.get("error"):
+            errors.append(f"Generated PDF failed inspection: {p.name}: {info['error']}")
+        # Copy-mode variants must be byte-identical to MASTER. A separate
+        # print cover is not an interior/variant PDF.
         is_cover_pdf = "COVER" in p.name.upper()
         if (
             profile.get("variant", {}).get("mode") == "copy"
@@ -4636,8 +4636,39 @@ def validate_generated_package(root, master_pdf, profile, generated):
             and file_hash(p) != master_hash
         ):
             errors.append(f"Variant integrity mismatch: {p.name} differs from MASTER despite copy mode.")
-    for label, filename in [("preview", "PREVIEW_SHEET.png"), ("metadata", "METADATA.json"), ("description", "PRODUCT_DESCRIPTION.txt")]:
-        if label in expected_files and not (root / filename).exists(): errors.append(f"Required artifact missing: {filename}")
+
+    required_paths = []
+    for label, filename in [
+        ("preview", "PREVIEW_SHEET.png"),
+        ("metadata", "METADATA.json"),
+        ("description", "PRODUCT_DESCRIPTION.txt"),
+    ]:
+        if label in expected_files:
+            required_paths.append((root / filename, filename))
+    if "cover_preview" in expected_files:
+        cover_candidates = [
+            p for p in generated
+            if p.exists() and p.suffix.casefold() in {".png", ".jpg", ".jpeg", ".webp"}
+            and ("COVER" in p.name.upper()
+                 or p.name.casefold() in {"cover.png", "cover.jpg", "cover.jpeg", "cover.webp"})
+        ]
+        if cover_candidates:
+            required_paths.append((cover_candidates[0], cover_candidates[0].name))
+    if "checklist" in expected_files:
+        checklist_candidates = [
+            p for p in generated
+            if p.exists() and p.is_file() and p.suffix.casefold() == ".txt"
+            and "CHECKLIST" in p.name.upper()
+        ]
+        if checklist_candidates:
+            required_paths.append((checklist_candidates[0], checklist_candidates[0].name))
+
+    for path, filename in required_paths:
+        if not path.is_file():
+            errors.append(f"Required artifact missing: {filename}")
+        elif path.stat().st_size <= 0:
+            errors.append(f"Required artifact is empty: {filename}")
+
     return errors, warnings
 
 
