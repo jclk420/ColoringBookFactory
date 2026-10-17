@@ -4605,6 +4605,14 @@ def validate_generated_package(root, master_pdf, profile, generated):
         for p in generated
     ):
         errors.append("Required platform cover PDF is missing; a cover image or interior PDF does not satisfy this requirement.")
+    if "cover_preview" in files and not any(
+        p.exists()
+        and p.is_file()
+        and p.suffix.casefold() in {".png", ".jpg", ".jpeg", ".webp"}
+        and ("COVER" in p.name.upper() or p.name.casefold() in {"cover.png", "cover.jpg", "cover.jpeg", "cover.webp"})
+        for p in generated
+    ):
+        errors.append("Required digital cover-preview image is missing; a preview sheet or print-cover PDF does not satisfy this requirement.")
     pdfs = [p for p in generated if p.suffix.lower() == ".pdf" and p.exists()]
     if "pdf" in expected_files and not pdfs:
         errors.append("Required platform PDF was not generated.")
