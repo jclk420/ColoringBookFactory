@@ -4602,12 +4602,33 @@ def validate_generated_package(root, master_pdf, profile, generated):
     if "metadata" in files: expected_files.add("metadata")
     if "product_description" in files: expected_files.add("description")
     if "checklist" in files: expected_files.add("checklist")
-    if "cover_preview" in expected_files and not any(
-        p.exists() and p.suffix.casefold() in {".png", ".jpg", ".jpeg", ".webp"}
-        and ("COVER" in p.name.upper() or p.name.casefold() in {"cover.png", "cover.jpg", "cover.jpeg", "cover.webp"})
-        for p in generated
-    ):
-        errors.append("Required cover preview image is missing.")
+    def has_image_signature(path):
+        """Reject empty or obviously mislabeled/corrupt image assets without third-party dependencies."""
+        try:
+            header = path.read_bytes()[:12]
+        except OSError:
+            return False
+        suffix = path.suffix.casefold()
+        if suffix == ".png":
+            return header.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+        if suffix in {".jpg", ".jpeg"}:
+            return header.startswith(b"\\xff\\xd8\\xff")
+        if suffix == ".webp":
+            return len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP"
+        return False
+
+    cover_named = [
+        p for p in generated
+        if p.exists() and p.suffix.casefold() in {".png", ".jpg", ".jpeg", ".webp"}
+        and ("COVER" in p.name.upper()
+             or p.name.casefold() in {"cover.png", "cover.jpg", "cover.jpeg", "cover.webp"})
+    ]
+    cover_candidates = [p for p in cover_named if has_image_signature(p)]
+    if "cover_preview" in expected_files and not cover_candidates:
+        if cover_named:
+            errors.append("Required cover preview image is invalid or has a mismatched file extension.")
+        else:
+            errors.append("Required cover preview image is missing.")
     if "checklist" in expected_files and not any(
         p.exists() and p.is_file() and p.suffix.casefold() == ".txt" and "CHECKLIST" in p.name.upper()
         for p in generated
@@ -4645,15 +4666,8 @@ def validate_generated_package(root, master_pdf, profile, generated):
     ]:
         if label in expected_files:
             required_paths.append((root / filename, filename))
-    if "cover_preview" in expected_files:
-        cover_candidates = [
-            p for p in generated
-            if p.exists() and p.suffix.casefold() in {".png", ".jpg", ".jpeg", ".webp"}
-            and ("COVER" in p.name.upper()
-                 or p.name.casefold() in {"cover.png", "cover.jpg", "cover.jpeg", "cover.webp"})
-        ]
-        if cover_candidates:
-            required_paths.append((cover_candidates[0], cover_candidates[0].name))
+    if "cover_preview" in expected_files and cover_candidates:
+        required_paths.append((cover_candidates[0], cover_candidates[0].name))
     if "checklist" in expected_files:
         checklist_candidates = [
             p for p in generated
@@ -4668,6 +4682,8 @@ def validate_generated_package(root, master_pdf, profile, generated):
             errors.append(f"Required artifact missing: {filename}")
         elif path.stat().st_size <= 0:
             errors.append(f"Required artifact is empty: {filename}")
+        elif filename.casefold() == "preview_sheet.png" and not has_image_signature(path):
+            errors.append("Required preview sheet is not a valid PNG image.")
 
     return errors, warnings
 
