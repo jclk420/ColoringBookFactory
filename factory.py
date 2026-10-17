@@ -4614,7 +4614,14 @@ def validate_generated_package(root, master_pdf, profile, generated):
         master_hash = file_hash(master_pdf)
         # Copy-mode variants must be byte-identical to MASTER. This is a deliberate
         # safety invariant until a profile explicitly implements a transformation.
-        if profile.get("variant", {}).get("mode") == "copy" and file_hash(p) != master_hash:
+        # Only the interior/variant PDF is required to be byte-identical
+        # in copy mode. A distinct print cover PDF is a separate deliverable.
+        is_cover_pdf = "COVER" in p.name.upper()
+        if (
+            profile.get("variant", {}).get("mode") == "copy"
+            and not is_cover_pdf
+            and file_hash(p) != master_hash
+        ):
             errors.append(f"Variant integrity mismatch: {p.name} differs from MASTER despite copy mode.")
     for label, filename in [("preview", "PREVIEW_SHEET.png"), ("metadata", "METADATA.json"), ("description", "PRODUCT_DESCRIPTION.txt")]:
         if label in expected_files and not (root / filename).exists(): errors.append(f"Required artifact missing: {filename}")
