@@ -4610,9 +4610,9 @@ def validate_generated_package(root, master_pdf, profile, generated):
             return False
         suffix = path.suffix.casefold()
         if suffix == ".png":
-            return header.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+            return header.startswith(b"\x89PNG\r\n\x1a\n")
         if suffix in {".jpg", ".jpeg"}:
-            return header.startswith(b"\\xff\\xd8\\xff")
+            return header.startswith(b"\xff\xd8\xff")
         if suffix == ".webp":
             return len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP"
         return False
