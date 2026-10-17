@@ -19248,7 +19248,7 @@ def v23_verify_package_root(root):
             errors.append(f"Manifest path must be a string: {raw_name!r}")
             continue
         name = raw_name
-        normalized = name.replace("\\\\", "/")
+        normalized = name.replace("\\", "/")
         parts = normalized.split("/")
         if (not name or normalized.startswith("/") or any(part in {"", ".", ".."} for part in parts)
                 or (len(parts[0]) >= 2 and parts[0][1] == ":")):
