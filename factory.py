@@ -2625,10 +2625,10 @@ def _fit_text(draw, text, font_path_size, max_width, bold=False, min_size=18):
     return _cover_font(max(min_size, size), bold)
 
 
-def create_kdp_cover(project, settings, page_count):
-    """Create a polished 300-DPI rasterized paperback cover and a print-ready PDF."""
-    cover_folder = project / "KDP_PACKAGE"
-    cover_folder.mkdir(exist_ok=True)
+def create_kdp_cover(project, settings, page_count, output_folder=None, artwork_override=None):
+    """Create a polished 300-DPI paperback cover in the requested folder."""
+    cover_folder = Path(output_folder) if output_folder is not None else project / "KDP_PACKAGE"
+    cover_folder.mkdir(parents=True, exist_ok=True)
 
     title = str(settings.get("title", "Coloring Book")).strip() or "Coloring Book"
     author = str(settings.get("author", "Author")).strip() or "Author"
@@ -2666,8 +2666,10 @@ def create_kdp_cover(project, settings, page_count):
     if spine > 0:
         draw.rectangle([spine_x, 0, front_x, px(cover_h)], fill=(232, 232, 232))
 
-    # Use the first artwork as the front-cover focal image.
-    images = get_images(project)
+    # Prefer an explicit cover image when supplied; otherwise preserve the
+    # existing first-artwork behavior used by the full-book production flow.
+    override_path = Path(artwork_override) if artwork_override is not None else None
+    images = [override_path] if override_path and override_path.is_file() else get_images(project)
     effective_dpi = None
     if images:
         try:
@@ -2821,7 +2823,7 @@ def kdp_cover_preflight(project, settings, cover_file, page_count, cover_w, cove
     except Exception as error:
         errors.append(f"Cover PDF validation failed: {error}")
 
-    meta_file = project / "KDP_PACKAGE" / "cover_manifest.json"
+    meta_file = (Path(cover_file).parent / "cover_manifest.json") if cover_file is not None else project / "KDP_PACKAGE" / "cover_manifest.json"
     if meta_file.exists():
         try:
             meta = load_json(meta_file)
@@ -8586,6 +8588,65 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
 
         if platform_name == "KDP":
             _copy_required_kdp_assets(project, staging, generated)
+
+            # A finished-PDF import may not have gone through the book-building
+            # path that normally creates KDP_PACKAGE. Generate a full-wrap cover
+            # in staging when one was not supplied, without overwriting project assets.
+            if "cover_pdf" in profile.get("files", []) and not any(
+                p.exists() and p.is_file() and p.suffix.casefold() == ".pdf"
+                and "COVER" in p.name.upper() for p in generated
+            ) and settings.get("kdp_generate_cover", True):
+                author = str(settings.get("author", "")).strip()
+                if not author:
+                    raise RuntimeError(
+                        "Cannot auto-generate the required KDP cover PDF until an author/pen name is set in project metadata."
+                    )
+                cover_artwork = _platform_cover(project)
+                if not (cover_artwork and cover_artwork.suffix.casefold() in IMAGE_EXTENSIONS):
+                    artwork = get_images(project)
+                    cover_artwork = artwork[0] if artwork else None
+                cover_render_dir = staging / ".__cover_source"
+                if cover_artwork is None:
+                    rendered_cover, render_warnings = _render_pdf_front_page(master, cover_render_dir)
+                    warnings.extend(render_warnings)
+                    cover_artwork = rendered_cover
+                if cover_artwork is None:
+                    raise RuntimeError(
+                        "Cannot auto-generate the required KDP cover PDF: no usable cover artwork or renderable MASTER page was found."
+                    )
+                cover_pdf, cover_w, cover_h, cover_spine = create_kdp_cover(
+                    project, settings, int(audit.get("pdf", {}).get("page_count") or 0),
+                    output_folder=staging, artwork_override=cover_artwork,
+                )
+                generated.extend([
+                    cover_pdf,
+                    staging / f"{kdp_safe_filename(settings.get('title', project.name))}_COVER_PREVIEW.png",
+                    staging / "cover_manifest.json",
+                ])
+                shutil.rmtree(cover_render_dir, ignore_errors=True)
+                warnings.append(
+                    "A KDP full-wrap cover was auto-generated from available cover artwork or MASTER page 1. "
+                    "Visually review the cover PDF before uploading."
+                )
+
+            # Check every KDP cover PDF's page count and full-wrap dimensions,
+            # whether it was supplied by the project or generated above.
+            kdp_cover_pdf = next((
+                p for p in generated
+                if p.exists() and p.is_file() and p.suffix.casefold() == ".pdf"
+                and "COVER" in p.name.upper()
+            ), None)
+            if kdp_cover_pdf is not None:
+                cover_page_count = int(audit.get("pdf", {}).get("page_count") or 0)
+                cover_spine = kdp_spine_width(settings, cover_page_count)
+                cover_w = float(settings.get("trim_width", 8.5)) * 2 + cover_spine + 0.25
+                cover_h = float(settings.get("trim_height", 11)) + 0.25
+                cover_errors, cover_warnings = kdp_cover_preflight(
+                    project, settings, kdp_cover_pdf, cover_page_count, cover_w, cover_h, cover_spine
+                )
+                warnings.extend(cover_warnings)
+                if cover_errors:
+                    raise RuntimeError("KDP cover PDF failed print-geometry preflight: " + " | ".join(cover_errors))
 
         if platform_name == "Gumroad":
             generated.append(
