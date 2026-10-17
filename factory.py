@@ -8808,58 +8808,66 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
             "preflight": "PLATFORM_PREFLIGHT.json",
         }
 
+        if platform_name == "Gumroad":
+            # Record the specialized asset validation before publication so the
+            # package is self-describing before it replaces any prior release.
+            manifest["gumroad_asset_validation"] = {
+                "status": "PASS",
+                "errors": [],
+                "warnings": [],
+            }
+            gumroad_report = _gumroad_asset_report(staging, gumroad_manifest)
+            manifest["gumroad_asset_report"] = gumroad_report
+
         manifest_path = staging / "PACKAGE_MANIFEST.json"
         save_json(manifest_path, manifest)
         generated.append(manifest_path)
 
-        # Publish only after the entire package has passed validation.
+        # Verify the complete manifest and exact file inventory while the
+        # package is still staged. Any failure must leave the published folder
+        # untouched.
+        staged_verification = v23_verify_package_root(staging)
+        if staged_verification.get("errors"):
+            raise RuntimeError(
+                "Staged package manifest verification failed: "
+                + " | ".join(staged_verification["errors"])
+            )
+
+        # Publish transactionally. Keep the previous folder until post-rename
+        # validation succeeds, and restore it if any final check fails.
         root.parent.mkdir(parents=True, exist_ok=True)
+        backup = None
         if root.exists():
             backup = root.with_name(root.name + ".previous")
             if backup.exists():
                 shutil.rmtree(backup, ignore_errors=True)
             root.rename(backup)
-            try:
-                staging.rename(root)
-            except Exception:
-                if root.exists():
-                    shutil.rmtree(root, ignore_errors=True)
-                backup.rename(root)
-                raise
-            shutil.rmtree(backup, ignore_errors=True)
-        else:
+        try:
             staging.rename(root)
+        except Exception:
+            if root.exists():
+                shutil.rmtree(root, ignore_errors=True)
+            if backup is not None and backup.exists():
+                backup.rename(root)
+            raise
 
-        # Manifest is regenerated at final location so its file list is authoritative.
-        # The manifest is the inventory, not one of the files it inventories.
-        # Including it would make its own recorded SHA-256 stale on every write.
-        final_files = sorted(
-            p.name for p in root.iterdir()
-            if p.is_file() and p.name != "PACKAGE_MANIFEST.json"
-        )
-        manifest["files"] = final_files
-        manifest["file_hashes"] = {name: file_hash(root / name) for name in final_files}
-        save_json(root / "PACKAGE_MANIFEST.json", manifest)
+        try:
+            if platform_name == "Gumroad":
+                post_errors, post_warnings = _validate_gumroad_assets(root)
+                if post_errors:
+                    raise RuntimeError(
+                        "Gumroad post-publish validation failed: "
+                        + " | ".join(post_errors)
+                    )
+                warnings.extend(post_warnings)
+        except Exception:
+            shutil.rmtree(root, ignore_errors=True)
+            if backup is not None and backup.exists():
+                backup.rename(root)
+            raise
 
-        # Gumroad package gets an explicit post-publish validation flag.
-        if platform_name == "Gumroad":
-            post_errors, post_warnings = _validate_gumroad_assets(root)
-            if post_errors:
-                return {
-                    "status": "BLOCKED",
-                    "output": root,
-                    "audit": audit,
-                    "errors": post_errors,
-                    "warnings": warnings + post_warnings,
-                }
-            manifest["gumroad_asset_validation"] = {
-                "status": "PASS",
-                "errors": [],
-                "warnings": post_warnings,
-            }
-            gumroad_report = _gumroad_asset_report(root, gumroad_manifest)
-            manifest["gumroad_asset_report"] = gumroad_report
-            save_json(root / "PACKAGE_MANIFEST.json", manifest)
+        if backup is not None and backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
 
         final_status = manifest["status"]
         record_world_production_event(
