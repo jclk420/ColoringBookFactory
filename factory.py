@@ -4670,11 +4670,26 @@ def validate_generated_package(root, master_pdf, profile, generated):
     ]
     cover_candidates = [p for p in cover_named if has_image_signature(p)]
     for image_path in generated:
-        if image_path.exists() and image_path.is_file() and image_path.suffix.casefold() in {
-            ".png", ".jpg", ".jpeg", ".webp"
-        } and not has_image_signature(image_path):
+        if not (
+            image_path.exists()
+            and image_path.is_file()
+            and image_path.suffix.casefold() in {".png", ".jpg", ".jpeg", ".webp"}
+        ):
+            continue
+        if not has_image_signature(image_path):
             errors.append(
                 f"Generated image is invalid or has a mismatched file extension: {image_path.name}"
+            )
+            continue
+        # A valid magic header does not prove the whole image is decodable:
+        # truncated or corrupt image data must block package publication.
+        try:
+            with Image.open(image_path) as decoded_image:
+                decoded_image.verify()
+        except Exception as error:
+            errors.append(
+                f"Generated image failed full image verification: {image_path.name}: "
+                f"{type(error).__name__}: {error}"
             )
     if "cover_preview" in expected_files and not cover_candidates:
         if cover_named:
