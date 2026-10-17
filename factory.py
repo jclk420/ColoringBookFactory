@@ -4618,8 +4618,58 @@ def validate_generated_package(root, master_pdf, profile, generated):
     return errors, warnings
 
 
+def validate_finished_pdf_source(pdf_path):
+    """Fail closed before project creation or MASTER copying when a PDF source is unusable."""
+    report = {"status": "BLOCKED", "path": str(pdf_path) if pdf_path else None,
+              "page_count": None, "file_size_bytes": None, "errors": [], "warnings": []}
+    if not pdf_path:
+        report["errors"].append("No PDF source was selected.")
+        return report
+    try:
+        path = Path(pdf_path).expanduser()
+        report["path"] = str(path)
+        if path.is_symlink():
+            report["errors"].append("Symbolic-link PDF sources are not accepted; select the original PDF file.")
+            return report
+        if not path.exists() or not path.is_file():
+            report["errors"].append("Selected PDF does not exist or is not a regular file.")
+            return report
+        if path.suffix.casefold() != ".pdf":
+            report["errors"].append("Selected source must have a .pdf extension.")
+            return report
+        size = path.stat().st_size
+        report["file_size_bytes"] = size
+        if size <= 0:
+            report["errors"].append("Selected PDF is empty.")
+            return report
+        info = inspect_pdf(path)
+        if not isinstance(info, dict):
+            report["errors"].append("PDF inspection returned an invalid report.")
+            return report
+        if info.get("error"):
+            report["errors"].append(f"PDF inspection failed: {info['error']}")
+        page_count = info.get("page_count")
+        report["page_count"] = page_count
+        if not isinstance(page_count, int) or isinstance(page_count, bool) or page_count < 1:
+            report["errors"].append("PDF has no confirmed readable pages.")
+        if info.get("encrypted"):
+            report["errors"].append("Encrypted PDFs cannot be imported unless they can be opened by the Factory.")
+        if not report["errors"]:
+            report["status"] = "PASS"
+            report["warnings"] = []
+        return report
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        report["errors"].append(f"PDF source preflight failed: {type(error).__name__}: {error}")
+        return report
+
+
 def import_existing_pdf_to_master(project, pdf_path):
-    if not pdf_path or not Path(pdf_path).exists(): print("PDF not found."); return None
+    preflight = validate_finished_pdf_source(pdf_path)
+    if preflight.get("status") != "PASS":
+        for error in preflight.get("errors", []):
+            print(f"PDF import blocked: {error}")
+        return None
+    project = Path(project)
     pdf_path = Path(pdf_path); settings_path = project / "project.json"
     if not settings_path.exists():
         info = inspect_pdf(pdf_path); trim_w, trim_h = 8.5, 11
@@ -7084,9 +7134,13 @@ def convert_existing_pdf_enhanced():
     pdf = choose_pdf_file("Finished PDF")
     if not pdf:
         print("No valid PDF selected."); return None
+    preflight = validate_finished_pdf_source(pdf)
+    if preflight.get("status") != "PASS":
+        for error in preflight.get("errors", []):
+            print(f"ERROR: {error}")
+        print("No project folder or MASTER was created.")
+        return None
     info = inspect_pdf(pdf)
-    if info.get("error"):
-        print(f"ERROR: {info['error']}"); return None
     print("\nSOURCE ANALYSIS")
     print("-" * 78)
     print(f"File:       {pdf}")
@@ -9789,9 +9843,27 @@ def import_finished_book_folder_v128():
             print("Invalid selection."); return None
         interior_pdf = pdfs[int(raw) - 1]
 
+    preflight = validate_finished_pdf_source(interior_pdf)
+    if preflight.get("status") != "PASS":
+        for error in preflight.get("errors", []):
+            print(f"ERROR: {error}")
+        print("No project folder or MASTER was created.")
+        return None
+    # Verify that a dedicated cover exists and is unambiguous before creating a project.
+    # A missing/ambiguous cover should not leave a half-imported project behind.
+    cover_found, cover_candidates, cover_status = _discover_separate_cover(folder, interior_pdf)
+    if cover_status == "AMBIGUOUS":
+        print("ERROR: Multiple plausible cover files were found.")
+        for item in cover_candidates[:5]:
+            print(f"  {item['score']:>4}  {item['path'].name}")
+        print("Rename the intended cover with 'cover' or 'full-wrap' in the filename and retry.")
+        return None
+    if not cover_found:
+        print("ERROR: No dedicated cover file was found in the selected book folder.")
+        print("No project folder or MASTER was created. Add the separate cover and retry.")
+        return None
+
     info = inspect_pdf(interior_pdf)
-    if info.get("error"):
-        print(f"ERROR: {info['error']}"); return None
     print(f"\nInterior: {interior_pdf.name}")
     print(f"Pages:    {info.get('page_count')}")
     print(f"Size:     {info.get('file_size_mb')} MB")
