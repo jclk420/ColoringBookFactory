@@ -158,6 +158,28 @@ def _verify_platform_manifest(package_dir: Path, master_sha256: str | None) -> d
         result["status"] = "BLOCKED"
         result["errors"].append("Package manifest schema is invalid; expected an object with a files list.")
         return result
+
+    # Preserve the generator's declared readiness state. File hashes alone do
+    # not make a package upload-ready if its own manifest says it was blocked.
+    raw_status = manifest.get("status")
+    manifest_status = str(raw_status).strip().upper() if isinstance(raw_status, str) else ""
+    if manifest_status in {"BLOCKED", "FAILED", "ERROR", "NOT_READY"}:
+        result["errors"].append(f"Package manifest declares non-ready status: {manifest_status}.")
+    elif manifest_status in {"READY_WITH_WARNINGS", "NEEDS_REVIEW", "REVIEW", "WARNING", "WARNINGS"}:
+        result["warnings"].append(f"Package manifest declares review status: {manifest_status}.")
+    elif manifest_status not in {"READY", "PASS", "PASSED"}:
+        result["warnings"].append("Package manifest has no recognized readiness status; review this legacy or custom package.")
+
+    raw_warnings = manifest.get("warnings", [])
+    if isinstance(raw_warnings, list):
+        for warning in raw_warnings:
+            if isinstance(warning, str) and warning.strip():
+                result["warnings"].append("Package manifest warning: " + warning.strip())
+            elif warning is not None:
+                result["warnings"].append("Package manifest contains a malformed warning entry.")
+    elif raw_warnings not in (None, ""):
+        result["warnings"].append("Package manifest warnings field is malformed; review the package report.")
+
     names: set[str] = set()
     for raw in manifest["files"]:
         if not isinstance(raw, str) or not raw.strip():
