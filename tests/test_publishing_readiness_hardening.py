@@ -203,6 +203,44 @@ class PublishingReadinessHardeningTests(unittest.TestCase):
                     self.assertFalse(row["missing_requirements"])
                     self.assertFalse(row["validation_errors"])
 
+    def test_stale_package_interior_requires_review(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project, package, listing = make_project(Path(temp))
+            # Both PDFs are structurally readable, but their bytes differ from MASTER.
+            make_pdf(package / "interior.pdf", pages=3)
+            (package / "cover.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 24)
+            (listing / "LISTING.json").write_text(json.dumps({
+                "platform": "Sample",
+                "fields": {"title": "Book", "author": "J.A.C.", "description": "Description"},
+            }), encoding="utf-8")
+            (listing / "LISTING.txt").write_text("Title: Book", encoding="utf-8")
+            report = build_completion_report(project, profiles=PROFILE)
+            row = report["platforms"]["Sample"]
+            self.assertEqual(row["status"], "NEEDS_REVIEW")
+            self.assertTrue(any("differs from the current MASTER" in issue for issue in row["review_issues"]))
+            interior = next(item for item in row["package_pdf_checks"] if item["path"].endswith("interior.pdf"))
+            self.assertFalse(interior["matches_master"])
+
+    def test_pdf_and_image_symlinks_are_rejected_without_reading_targets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            target_pdf = root / "target.pdf"
+            make_pdf(target_pdf)
+            target_image = root / "target.png"
+            target_image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 24)
+            pdf_link, image_link = root / "linked.pdf", root / "linked.png"
+            try:
+                pdf_link.symlink_to(target_pdf)
+                image_link.symlink_to(target_image)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"symlinks unavailable in this environment: {error}")
+            pdf_result = validate_pdf(pdf_link)
+            image_result = __import__("publishing_completion").validate_image(image_link)
+            self.assertFalse(pdf_result["valid"])
+            self.assertTrue(any("symbolic link" in issue for issue in pdf_result["errors"]))
+            self.assertFalse(image_result["valid"])
+            self.assertTrue(any("symbolic links" in issue for issue in image_result["errors"]))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

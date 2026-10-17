@@ -1,6 +1,6 @@
 """Read-only publishing completion diagnostics for ColoringBookFactory."""
 from __future__ import annotations
-import argparse, json, re, sys
+import argparse, hashlib, json, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -39,11 +39,22 @@ def _count_pdf_page_markers(path: Path, chunk_size: int = 1024 * 1024) -> int:
     return count
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def validate_pdf(path: Path) -> dict[str, Any]:
     """Check basic PDF signatures and page evidence without changing the source."""
-    result = {"path": str(path), "exists": path.is_file(), "valid": False,
+    result = {"path": str(path), "exists": path.is_file() and not path.is_symlink(), "valid": False,
               "status": "BLOCKED", "errors": [], "warnings": [], "size_bytes": 0,
               "page_marker_count": 0}
+    if path.is_symlink():
+        result["errors"].append("PDF symbolic links are not accepted; use a regular file.")
+        return result
     if not path.is_file():
         result["errors"].append("PDF file is missing.")
         return result
@@ -75,8 +86,11 @@ def validate_pdf(path: Path) -> dict[str, Any]:
 
 def validate_image(path: Path) -> dict[str, Any]:
     """Perform a conservative signature/size check for supported cover image formats."""
-    result = {"path": str(path), "exists": path.is_file(), "valid": False,
+    result = {"path": str(path), "exists": path.is_file() and not path.is_symlink(), "valid": False,
               "status": "BLOCKED", "errors": [], "size_bytes": 0}
+    if path.is_symlink():
+        result["errors"].append("Image symbolic links are not accepted; use a regular file.")
+        return result
     if not path.is_file():
         result["errors"].append("Image file is missing.")
         return result
@@ -136,6 +150,7 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
     candidates = _master_candidates(root)
     report["source_pdf_candidates"] = [str(path) for path in candidates]
     master = _find_master(root)
+    master_sha256 = None
     if master is None:
         reason = "No master PDF was found." if not candidates else "Multiple master PDF candidates were found; select one and move/rename the others so the intended source is unambiguous."
         report["actions"].append({"priority": "P0", "action": reason + " Keep the selected source in MASTER and include MASTER in its filename.", "path": str(root / "MASTER"), "candidates": [str(path) for path in candidates]})
@@ -143,6 +158,12 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
     else:
         check = validate_pdf(master)
         report["source_pdf"] = check
+        if not check["errors"]:
+            try:
+                master_sha256 = _sha256(master)
+                check["sha256"] = master_sha256
+            except OSError as exc:
+                check["errors"].append(f"Could not hash source MASTER PDF: {type(exc).__name__}: {exc}")
         source_status = "BLOCKED" if check["errors"] else ("NEEDS_REVIEW" if check["warnings"] else "BASIC_CHECK_PASS")
         for error in check["errors"]:
             report["actions"].append({"priority": "P0", "action": error, "path": str(master)})
@@ -218,12 +239,43 @@ def build_completion_report(project: str | Path, profiles: dict[str, Any] | None
             except (OSError, UnicodeError, json.JSONDecodeError) as exc:
                 validation_errors.append(f"Listing JSON could not be read ({relative}): {type(exc).__name__}: {exc}")
         pdf_checks = []
-        for relative in _matches_any(package_dir, ["*.pdf"]):
-            pdf_result = validate_pdf(package_dir / relative)
+        package_pdfs = _matches_any(package_dir, ["*.pdf"])
+        comparable_interior_count = 0
+        for relative in package_pdfs:
+            package_pdf = package_dir / relative
+            pdf_result = validate_pdf(package_pdf)
             pdf_checks.append(pdf_result)
             if pdf_result["errors"]:
                 validation_errors.extend(f"Invalid package PDF {relative}: {error}" for error in pdf_result["errors"])
             review_issues.extend(f"Review package PDF {relative}: {warning}" for warning in pdf_result["warnings"])
+            stem = package_pdf.stem.casefold().replace("_", "-").replace(" ", "-")
+            is_interior_candidate = (
+                stem in {"interior", "book", "master", "digital-interior"}
+                or "interior" in stem
+                or stem.endswith("-book")
+                or stem.endswith("-master")
+            )
+            if is_interior_candidate:
+                comparable_interior_count += 1
+                if master_sha256 and not pdf_result["errors"]:
+                    try:
+                        package_digest = _sha256(package_pdf)
+                        pdf_result["sha256"] = package_digest
+                        pdf_result["matches_master"] = package_digest == master_sha256
+                        if not pdf_result["matches_master"]:
+                            review_issues.append(
+                                f"Package interior PDF {relative} differs from the current MASTER PDF; rebuild or verify the intended platform-specific interior."
+                            )
+                    except OSError as exc:
+                        validation_errors.append(
+                            f"Could not verify package PDF freshness for {relative}: {type(exc).__name__}: {exc}"
+                        )
+                else:
+                    pdf_result["matches_master"] = None
+        if package_pdfs and comparable_interior_count == 0:
+            review_issues.append(
+                "Could not identify a package interior PDF by filename, so freshness against the current MASTER could not be confirmed."
+            )
         if source_status == "NEEDS_REVIEW":
             review_issues.append("Source PDF passed basic checks but needs manual review.")
         if missing or validation_errors or source_status == "BLOCKED":
