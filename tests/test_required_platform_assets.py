@@ -77,6 +77,22 @@ class RequiredPlatformAssetTests(unittest.TestCase):
         )
         self.assertTrue(any("Required interior PDF was not generated" in item for item in errors))
 
+    def test_missing_required_digital_cover_preview_is_blocking(self):
+        profile = {"files": ["digital_pdf", "cover_preview"], "variant": {"mode": "copy"}}
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior]
+        )
+        self.assertTrue(any("Required digital cover-preview image is missing" in item for item in errors))
+
+    def test_print_cover_pdf_does_not_satisfy_digital_cover_preview(self):
+        profile = {"files": ["digital_pdf", "cover_preview"], "variant": {"mode": "copy"}}
+        cover_pdf = self.root / "Book_COVER.pdf"
+        cover_pdf.write_bytes(b"cover pdf")
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior, cover_pdf]
+        )
+        self.assertTrue(any("Required digital cover-preview image is missing" in item for item in errors))
+
     def test_empty_required_preview_sheet_blocks_package(self):
         profile = {"files": ["interior_pdf", "preview_sheet"], "variant": {"mode": "copy"}}
         preview = self.root / "PREVIEW_SHEET.png"
