@@ -65,6 +65,32 @@ class RequiredPlatformAssetTests(unittest.TestCase):
         self.assertFalse(any("Required platform cover PDF is missing" in item for item in errors))
         self.assertFalse(any("Variant integrity mismatch" in item for item in errors))
 
+    def test_cover_pdf_alone_does_not_satisfy_required_interior_pdf(self):
+        cover_pdf = self.root / "Book_COVER.pdf"
+        cover_pdf.write_bytes(b"cover pdf")
+        errors, _ = self.validate(
+            self.root, self.master, self.profile, [cover_pdf]
+        )
+        self.assertTrue(any("Required interior PDF was not generated" in item for item in errors))
+
+    def test_empty_required_preview_sheet_blocks_package(self):
+        profile = {"files": ["interior_pdf", "preview_sheet"], "variant": {"mode": "copy"}}
+        preview = self.root / "PREVIEW_SHEET.png"
+        preview.write_bytes(b"")
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior, preview]
+        )
+        self.assertTrue(any("Required artifact is empty: PREVIEW_SHEET.png" in item for item in errors))
+
+    def test_empty_required_metadata_blocks_package(self):
+        profile = {"files": ["interior_pdf", "metadata"], "variant": {"mode": "copy"}}
+        metadata = self.root / "METADATA.json"
+        metadata.write_bytes(b"")
+        errors, _ = self.validate(
+            self.root, self.master, profile, [self.interior, metadata]
+        )
+        self.assertTrue(any("Required artifact is empty: METADATA.json" in item for item in errors))
+
     def test_generator_enforces_package_validation_before_manifest(self):
         tree = ast.parse(FACTORY_PATH.read_text(encoding="utf-8"), filename=str(FACTORY_PATH))
         generator = next(
