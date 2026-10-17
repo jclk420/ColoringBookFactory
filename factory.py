@@ -8483,6 +8483,39 @@ def _write_gumroad_readme(staging, generated_names, warnings):
     return path
 
 
+def _publish_staged_package(staging, root, validator=None):
+    """Atomically publish a staged package and restore the previous package on failure."""
+    staging = Path(staging)
+    root = Path(root)
+    root.parent.mkdir(parents=True, exist_ok=True)
+    backup = None
+    if root.exists():
+        backup = root.with_name(root.name + ".previous")
+        if backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
+        root.rename(backup)
+
+    try:
+        staging.rename(root)
+        validation_warnings = []
+        if validator is not None:
+            validation_errors, validation_warnings = validator(root)
+            if validation_errors:
+                raise RuntimeError(
+                    "Post-publish package validation failed: "
+                    + " | ".join(validation_errors)
+                )
+    except Exception:
+        shutil.rmtree(root, ignore_errors=True)
+        if backup is not None and backup.exists():
+            backup.rename(root)
+        raise
+
+    if backup is not None and backup.exists():
+        shutil.rmtree(backup, ignore_errors=True)
+    return validation_warnings
+
+
 def generate_platform_package_v112(project, platform_name, quiet=False):
     """
     v11.6 platform package generator. Gumroad receives a dedicated asset
@@ -8833,41 +8866,10 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
                 + " | ".join(staged_verification["errors"])
             )
 
-        # Publish transactionally. Keep the previous folder until post-rename
-        # validation succeeds, and restore it if any final check fails.
-        root.parent.mkdir(parents=True, exist_ok=True)
-        backup = None
-        if root.exists():
-            backup = root.with_name(root.name + ".previous")
-            if backup.exists():
-                shutil.rmtree(backup, ignore_errors=True)
-            root.rename(backup)
-        try:
-            staging.rename(root)
-        except Exception:
-            if root.exists():
-                shutil.rmtree(root, ignore_errors=True)
-            if backup is not None and backup.exists():
-                backup.rename(root)
-            raise
-
-        try:
-            if platform_name == "Gumroad":
-                post_errors, post_warnings = _validate_gumroad_assets(root)
-                if post_errors:
-                    raise RuntimeError(
-                        "Gumroad post-publish validation failed: "
-                        + " | ".join(post_errors)
-                    )
-                warnings.extend(post_warnings)
-        except Exception:
-            shutil.rmtree(root, ignore_errors=True)
-            if backup is not None and backup.exists():
-                backup.rename(root)
-            raise
-
-        if backup is not None and backup.exists():
-            shutil.rmtree(backup, ignore_errors=True)
+        # The helper retains the previous package until post-rename checks pass
+        # and restores it if the new package cannot be validated.
+        validator = _validate_gumroad_assets if platform_name == "Gumroad" else None
+        warnings.extend(_publish_staged_package(staging, root, validator))
 
         final_status = manifest["status"]
         record_world_production_event(
