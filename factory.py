@@ -4517,13 +4517,20 @@ def ensure_master_book(project, source_pdf=None):
                 prior_metadata = load_json(metadata_path)
                 recorded_source = prior_metadata.get("source_pdf") if isinstance(prior_metadata, dict) else None
                 candidate = Path(recorded_source).expanduser() if recorded_source else None
-                if candidate and candidate.is_file() and candidate.suffix.casefold() == ".pdf":
+                if (
+                    candidate
+                    and candidate.is_file()
+                    and not candidate.is_symlink()
+                    and candidate.suffix.casefold() == ".pdf"
+                ):
                     pdf = candidate
             except (OSError, ValueError, TypeError):
                 pass
     if pdf is None:
         return None, ["No source PDF found for master package. Checked project PDFs and the source_pdf recorded in MASTER metadata; no usable source was found."], []
     pdf = Path(pdf)
+    if pdf.is_symlink():
+        return None, ["The selected source PDF is a symbolic link and cannot be used to create MASTER."], []
     if not pdf.is_file() or pdf.suffix.casefold() != ".pdf":
         return None, ["The selected source is not an existing PDF file."], []
     source_info = inspect_pdf(pdf)
