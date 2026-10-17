@@ -4534,35 +4534,78 @@ def ensure_master_book(project, source_pdf=None):
 
 
 def create_preview_sheet(project, output_dir, master_pdf, settings):
+    """Create a contact sheet from real cover/artwork assets or rendered MASTER pages."""
     output_dir.mkdir(parents=True, exist_ok=True)
     preview = output_dir / "PREVIEW_SHEET.png"
     images = []
     cover = _platform_cover(project)
     if cover and cover.suffix.lower() in IMAGE_EXTENSIONS:
-        try: images.append(Image.open(cover).convert("RGB"))
-        except Exception: pass
+        try:
+            with Image.open(cover) as source:
+                images.append(source.convert("RGB"))
+        except Exception:
+            pass
     try:
         for item in get_images(project)[:5]:
-            try: images.append(Image.open(item).convert("RGB"))
-            except Exception: pass
-    except Exception: pass
-    if not images:
-        img = Image.new("RGB", (1200, 1600), "white")
-        draw = ImageDraw.Draw(img)
-        draw.text((80, 120), str(settings.get("title", project.name)), fill="black")
-        draw.text((80, 180), "Digital Preview", fill="black")
-        img.save(preview)
-        return preview
-    thumb_w, thumb_h = 600, 800
-    canvas_img = Image.new("RGB", (thumb_w * 3, thumb_h * 2), "white")
-    for index, img in enumerate(images[:6]):
-        img.thumbnail((thumb_w - 40, thumb_h - 40))
-        x = (index % 3) * thumb_w + (thumb_w - img.width) // 2
-        y = (index // 3) * thumb_h + (thumb_h - img.height) // 2
-        canvas_img.paste(img, (x, y))
-    canvas_img.save(preview)
-    return preview
+            try:
+                with Image.open(item) as source:
+                    images.append(source.convert("RGB"))
+            except Exception:
+                pass
+    except Exception:
+        pass
 
+    # Finished-PDF imports often have no separate artwork folder. Render real
+    # pages from MASTER to fill the preview sheet rather than publishing a
+    # misleading title-only placeholder.
+    if len(images) < 6:
+        render_dir = output_dir / ".__preview_render"
+        try:
+            if render_dir.exists():
+                shutil.rmtree(render_dir, ignore_errors=True)
+            render_dir.mkdir(parents=True, exist_ok=True)
+            candidates, _render_warnings = _render_pdf_pages_universal(
+                master_pdf, render_dir, max_candidates=24
+            )
+            needed = max(0, 6 - len(images))
+            selected = _choose_gumroad_candidates(candidates, count=needed) if needed else []
+            if not selected:
+                selected = candidates[:needed]
+            for item in selected:
+                if len(images) >= 6:
+                    break
+                try:
+                    with Image.open(item["path"]) as source:
+                        images.append(source.convert("RGB"))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        finally:
+            shutil.rmtree(render_dir, ignore_errors=True)
+
+    if not images:
+        raise RuntimeError(
+            "Could not create a meaningful preview sheet: no usable artwork assets "
+            "were found and MASTER PDF pages could not be rendered."
+        )
+
+    thumb_w, thumb_h = 600, 800
+    columns = min(3, len(images))
+    rows = (len(images) + columns - 1) // columns
+    canvas_img = Image.new("RGB", (thumb_w * columns, thumb_h * rows), "white")
+    for index, img in enumerate(images):
+        img.thumbnail((thumb_w - 40, thumb_h - 40))
+        x = (index % columns) * thumb_w + (thumb_w - img.width) // 2
+        y = (index // columns) * thumb_h + (thumb_h - img.height) // 2
+        canvas_img.paste(img, (x, y))
+        try:
+            img.close()
+        except Exception:
+            pass
+    canvas_img.save(preview)
+    canvas_img.close()
+    return preview
 
 def write_product_description(project, output_dir, settings, platform_name):
     if platform_name == "Gumroad":
