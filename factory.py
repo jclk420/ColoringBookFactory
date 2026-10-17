@@ -8574,6 +8574,46 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
             if "preview_sheet" in profile.get("files", []):
                 generated.append(create_preview_sheet(project, staging, master, settings))
 
+        # Digital profiles require a dedicated cover preview even when a
+        # finished-PDF import has no separate MASTER_COVER image. Render the
+        # actual first page rather than letting the package fail for a missing
+        # optional artwork-folder asset.
+        if "cover_preview" in profile.get("files", []) and not any(
+            p.exists() and p.is_file() and p.suffix.casefold() in {".png", ".jpg", ".jpeg", ".webp"}
+            and ("COVER" in p.name.upper()
+                 or p.name.casefold() in {"cover.png", "cover.jpg", "cover.jpeg", "cover.webp"})
+            for p in generated
+        ):
+            cover_render_dir = staging / ".__cover_preview_source"
+            try:
+                rendered_cover, render_warnings = _render_pdf_front_page(master, cover_render_dir)
+                warnings.extend(render_warnings)
+                if rendered_cover is None:
+                    raise RuntimeError(
+                        "A required cover preview could not be rendered from MASTER page 1."
+                    )
+                with Image.open(rendered_cover) as source_image:
+                    rgb_image = source_image.convert("RGB")
+                front_panel, _was_wrap = _extract_gumroad_front_cover_panel(rgb_image)
+                cover_preview_path = staging / _platform_sanitized_filename(
+                    f"{title}_COVER_PREVIEW.png", 70
+                )
+                front_panel.save(cover_preview_path, "PNG", optimize=True)
+                try:
+                    front_panel.close()
+                except Exception:
+                    pass
+                try:
+                    rgb_image.close()
+                except Exception:
+                    pass
+                generated.append(cover_preview_path)
+                warnings.append(
+                    "Cover preview was rendered from MASTER page 1; visually review it before uploading."
+                )
+            finally:
+                shutil.rmtree(cover_render_dir, ignore_errors=True)
+
         # Gumroad builds its own cover and individual thumbnail previews, but
         # its profile also promises the common preview sheet. Generate it too
         # so the shared package contract is actually satisfiable.
