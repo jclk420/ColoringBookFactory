@@ -8523,15 +8523,28 @@ def generate_platform_package_v112(project, platform_name, quiet=False):
             for p in generated
         ):
             checklist_path = staging / "PLATFORM_UPLOAD_CHECKLIST.txt"
+            has_interior = any(
+                p.suffix.casefold() == ".pdf" and "COVER" not in p.name.upper()
+                for p in generated
+            )
+            has_cover_pdf = any(
+                p.suffix.casefold() == ".pdf" and "COVER" in p.name.upper()
+                for p in generated
+            )
+            has_cover_preview = any(
+                p.suffix.casefold() in {".png", ".jpg", ".jpeg", ".webp"}
+                and ("COVER" in p.name.upper() or p.name.casefold().startswith("cover."))
+                for p in generated
+            )
             checklist_path.write_text(
-                "\\n".join([
+                "\n".join([
                     f"{platform_name} UPLOAD CHECKLIST",
                     "=" * (len(platform_name) + 17),
                     "",
                     f"Product: {title}",
-                    f"Interior PDF: {'\\u2610' if any(p.suffix.casefold() == '.pdf' and 'COVER' not in p.name.upper() for p in generated) else 'MISSING'}",
-                    f"Cover PDF: {'\\u2610' if any(p.suffix.casefold() == '.pdf' and 'COVER' in p.name.upper() for p in generated) else 'N/A or missing'}",
-                    f"Cover preview: {'\\u2610' if any(p.suffix.casefold() in {'.png', '.jpg', '.jpeg', '.webp'} and ('COVER' in p.name.upper() or p.name.casefold().startswith('cover.')) for p in generated) else 'MISSING'}",
+                    f"Interior PDF: {'[ ]' if has_interior else 'MISSING'}",
+                    f"Cover PDF: {'[ ]' if has_cover_pdf else 'N/A or missing'}",
+                    f"Cover preview: {'[ ]' if has_cover_preview else 'MISSING'}",
                     "Metadata: confirm title, author, keywords, and description before upload.",
                     "Final marketplace checks: verify trim size, bleed, pricing, rights, and live listing details.",
                     "",
